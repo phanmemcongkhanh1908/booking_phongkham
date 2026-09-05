@@ -58,6 +58,15 @@ export async function reloadBotConfig(token?: string, chatId?: string, username?
       bot = new TelegramBot(finalToken, { polling: true });
       console.log("Telegram Bot started. Polling enabled.");
 
+      bot.on('polling_error', (error: any) => {
+        if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+          console.warn('⚠️ [Telegram] Polling conflict (409). Another instance of this bot is already running. Stopping polling on this instance to prevent crashes.');
+          bot.stopPolling();
+        } else {
+          console.error('[Telegram] Polling error:', error);
+        }
+      });
+
       // Try to fetch bot username if not set
       bot.getMe().then((me: any) => {
         if (me && me.username) {
