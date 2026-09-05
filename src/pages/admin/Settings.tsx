@@ -126,8 +126,13 @@ export default function Settings() {
   };
 
   const handleConnectGoogle = () => {
+    const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      alert("Lỗi: Chưa cấu hình VITE_GOOGLE_CLIENT_ID trên hệ thống (Render/Environment). Vui lòng thêm biến môi trường này và build lại ứng dụng.");
+      return;
+    }
     const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: (import.meta as any).env.VITE_GOOGLE_CLIENT_ID,
+      client_id: clientId,
       scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets',
       callback: (response: any) => {
         if (response.access_token) {
