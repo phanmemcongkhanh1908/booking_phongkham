@@ -1,0 +1,337 @@
+import { Router } from "express";
+import { db } from "../../db/index.js";
+import { services, providers, settings } from "../../db/schema.js";
+import { eq } from "drizzle-orm";
+import { requireAuth } from "../../core/middleware.js";
+
+const adminRouter = Router();
+
+adminRouter.use(requireAuth);
+
+// SERVICES CRUD
+adminRouter.get("/services", async (req, res, next) => {
+  try {
+    const allServices = await db.select().from(services).orderBy(services.name);
+    res.json({ success: true, data: allServices });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/services", async (req, res, next) => {
+  try {
+    const newService = await db.insert(services).values({
+      name: req.body.name,
+      description: req.body.description,
+      durationMins: parseInt(req.body.durationMins),
+      bufferBefore: parseInt(req.body.bufferBefore) || 0,
+      bufferAfter: parseInt(req.body.bufferAfter) || 0,
+    }).returning();
+    res.json({ success: true, data: newService[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.put("/services/:id", async (req, res, next) => {
+  try {
+    const updated = await db.update(services).set({
+      name: req.body.name,
+      description: req.body.description,
+      durationMins: parseInt(req.body.durationMins),
+      bufferBefore: parseInt(req.body.bufferBefore) || 0,
+      bufferAfter: parseInt(req.body.bufferAfter) || 0,
+      isActive: req.body.isActive,
+    }).where(eq(services.id, req.params.id)).returning();
+    res.json({ success: true, data: updated[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.delete("/services/:id", async (req, res, next) => {
+  try {
+    await db.delete(services).where(eq(services.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CONFIG (Working Hours & Interval)
+adminRouter.get("/config", async (req, res, next) => {
+  try {
+    // We assume the first provider represents the clinic working hours for this demo
+    const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
+    const workingHours = activeProviders.length > 0 ? activeProviders[0].workingHours : {};
+    
+    // Fallback settings if settings table is not available
+    let intervalStep = 30;
+    try {
+      const dbSettings = await db.select().from(settings).where(eq(settings.id, "global")).limit(1);
+      if (dbSettings.length > 0) {
+        intervalStep = (dbSettings[0].value as any).intervalStep || 30;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    res.json({ success: true, data: { workingHours, intervalStep } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.put("/config", async (req, res, next) => {
+  try {
+    const { workingHours, intervalStep } = req.body;
+    const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
+    if (activeProviders.length > 0) {
+      await db.update(providers)
+        .set({ workingHours })
+        .where(eq(providers.id, activeProviders[0].id));
+    }
+
+    try {
+      // Upsert settings
+      const existing = await db.select().from(settings).where(eq(settings.id, "global")).limit(1);
+      if (existing.length > 0) {
+        await db.update(settings).set({ value: { intervalStep: parseInt(intervalStep) || 30 } }).where(eq(settings.id, "global"));
+      } else {
+        await db.insert(settings).values({ id: "global", value: { intervalStep: parseInt(intervalStep) || 30 } });
+      }
+    } catch (e) {
+      // ignore if settings table fails
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+// Backup & Restore
+adminRouter.get("/backup", requireAuth, async (req, res, next) => {
+  try {
+    const { patients, providers, services, appointments, settings } = await import("../../db/schema.js");
+    const pts = await db.select().from(patients);
+    const prvs = await db.select().from(providers);
+    const srvs = await db.select().from(services);
+    const apts = await db.select().from(appointments);
+    const sets = await db.select().from(settings);
+    
+    res.json({
+      success: true,
+      data: {
+        patients: pts,
+        providers: prvs,
+        services: srvs,
+        appointments: apts,
+        settings: sets,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/restore", requireAuth, async (req, res, next) => {
+  try {
+    const backupData = req.body.data;
+    if (!backupData) return res.status(400).json({ success: false, error: { message: "No data provided" }});
+    
+    // In a real prod app, use transactions and insert in order of foreign keys
+    // For this prototype, we'll just insert what we can
+    const { patients, providers, services, appointments, settings } = await import("../../db/schema.js");
+    
+    if (backupData.patients && backupData.patients.length > 0) {
+      await db.insert(patients).values(backupData.patients).onConflictDoNothing();
+    }
+    if (backupData.providers && backupData.providers.length > 0) {
+      await db.insert(providers).values(backupData.providers).onConflictDoNothing();
+    }
+    if (backupData.services && backupData.services.length > 0) {
+      await db.insert(services).values(backupData.services).onConflictDoNothing();
+    }
+    if (backupData.appointments && backupData.appointments.length > 0) {
+      // Re-parse dates
+      const parsedApts = backupData.appointments.map((a: any) => ({
+        ...a,
+        startAt: new Date(a.startAt),
+        endAt: new Date(a.endAt),
+        createdAt: a.createdAt ? new Date(a.createdAt) : new Date(),
+        updatedAt: a.updatedAt ? new Date(a.updatedAt) : new Date(),
+      }));
+      await db.insert(appointments).values(parsedApts).onConflictDoNothing();
+    }
+    if (backupData.settings && backupData.settings.length > 0) {
+      await db.insert(settings).values(backupData.settings).onConflictDoNothing();
+    }
+
+    res.json({ success: true, message: "Restored successfully" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/wipe", requireAuth, async (req, res, next) => {
+  try {
+    const { appointments, patients, providers, services } = await import("../../db/schema.js");
+    await db.delete(appointments);
+    await db.delete(patients);
+    await db.delete(services);
+    await db.delete(providers);
+    res.json({ success: true, message: "All data wiped" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+import { sql } from "drizzle-orm";
+
+// ... (adminRouter already has imports, we just need to add routes)
+
+// Lấy dữ liệu thống kê
+adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
+  try {
+    // 1. Phân tích Dịch vụ mũi nhọn (Doanh thu & Số lượng theo dịch vụ)
+    const serviceStats = await db.execute(sql`
+      SELECT 
+        s.name, 
+        COUNT(a.id) as count, 
+        SUM(s.price) as revenue
+      FROM appointments a
+      JOIN services s ON a.service_id = s.id
+      WHERE a.status = 'COMPLETED'
+      GROUP BY s.name
+    `);
+
+    // 2. Tỉ lệ lấp đầy & Hủy (No-show) theo ngày trong 7 ngày qua
+    const occupancyStats = await db.execute(sql`
+      SELECT 
+        DATE(a.start_at) as date,
+        COUNT(CASE WHEN a.status = 'COMPLETED' THEN 1 END) as completed,
+        COUNT(CASE WHEN a.status = 'NO_SHOW' OR a.status = 'CANCEL_PATIENT' THEN 1 END) as cancelled,
+        COUNT(a.id) as total
+      FROM appointments a
+      WHERE a.start_at >= CURRENT_DATE - INTERVAL '7 days'
+      GROUP BY DATE(a.start_at)
+      ORDER BY DATE(a.start_at)
+    `);
+
+    res.json({
+      success: true,
+      data: {
+        serviceStats: serviceStats.rows || serviceStats,
+        occupancyStats: occupancyStats.rows || occupancyStats
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+adminRouter.get("/settings", requireAuth, async (req, res, next) => {
+  try {
+    const allSettings = await db.select().from(settings);
+    const config: Record<string, any> = {};
+    for (const s of allSettings) {
+      config[s.id] = s.value;
+    }
+    res.json({ success: true, data: config });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cập nhật cài đặt hệ thống
+adminRouter.post("/settings", requireAuth, async (req, res, next) => {
+  try {
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig } = req.body;
+    
+    // Save to DB
+    if (telegramToken !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'telegramToken', value: telegramToken })
+        .onConflictDoUpdate({ target: settings.id, set: { value: telegramToken } });
+    }
+    if (telegramChatId !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'telegramChatId', value: telegramChatId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: telegramChatId } });
+    }
+    if (telegramBotUsername !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'telegramBotUsername', value: telegramBotUsername })
+        .onConflictDoUpdate({ target: settings.id, set: { value: telegramBotUsername } });
+    }
+    if (clinicProfile !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'clinicProfile', value: clinicProfile })
+        .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
+    }
+    if (emailConfig !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'emailConfig', value: emailConfig })
+        .onConflictDoUpdate({ target: settings.id, set: { value: emailConfig } });
+    }
+
+    // Trigger reload bot
+    const { reloadBotConfig } = await import("../../core/telegram.js");
+    await reloadBotConfig(telegramToken, telegramChatId, telegramBotUsername);
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Test gửi email từ Admin Settings
+adminRouter.post("/settings/test-email", requireAuth, async (req, res, next) => {
+  try {
+    const { emailConfig, recipientEmail } = req.body;
+    const { testSmtpConnection, getEmailConfig } = await import("../../services/email.js");
+    
+    const configToTest = emailConfig || await getEmailConfig();
+    const target = recipientEmail || configToTest.user;
+
+    if (!target) {
+      return res.status(400).json({ success: false, error: { message: "Vui lòng nhập địa chỉ email nhận thư thử nghiệm" } });
+    }
+
+    await testSmtpConnection(configToTest, target);
+    res.json({ success: true, message: `Đã gửi thư kiểm tra thành công tới: ${target}` });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message || "Lỗi khi kết nối tới máy chủ SMTP" } });
+  }
+});
+
+// Test gửi tin nhắn Telegram từ Admin Settings
+adminRouter.post("/settings/test-telegram", requireAuth, async (req, res, next) => {
+  try {
+    const { getTelegramBotInstance } = await import("../../core/telegram.js");
+    const bot = getTelegramBotInstance();
+    if (!bot) {
+      return res.status(400).json({ success: false, error: { message: "Telegram Bot chưa được khởi tạo. Vui lòng kiểm tra Token." } });
+    }
+
+    const { telegramChatId } = req.body;
+    const chatIdRes = await db.select().from(settings).where(eq(settings.id, "telegramChatId")).limit(1);
+    const targetChatId = telegramChatId || (chatIdRes.length > 0 ? chatIdRes[0].value : null);
+
+    if (!targetChatId) {
+      return res.status(400).json({ success: false, error: { message: "Chưa cấu hình Chat ID để nhận tin nhắn kiểm tra." } });
+    }
+
+    await bot.sendMessage(targetChatId, "🔔 *[Dental Smart Booking]* Kiểm tra kết nối Telegram Bot thành công! Hệ thống sẵn sàng gửi thông báo.", {
+      parse_mode: "Markdown"
+    });
+
+    res.json({ success: true, message: `Đã gửi tin nhắn Telegram kiểm tra tới Chat ID: ${targetChatId}` });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message || "Lỗi khi gửi tin nhắn Telegram" } });
+  }
+});
+
+export default adminRouter;

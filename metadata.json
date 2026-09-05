@@ -1,0 +1,6 @@
+{
+  "name": "Dental Smart Booking",
+  "description": "Phần mềm đặt lịch hẹn thông minh cho phòng khám nha khoa. Không phí phần mềm, không phí bảo trì.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "80:3000"
+    environment:
+      - NODE_ENV=production
+      - SQL_HOST=db
+      - SQL_USER=dental_user
+      - SQL_PASSWORD=dental_secure_password_123
+      - SQL_DB_NAME=dental_db
+      # You can put actual VAPID/Telegram keys here or in a .env file on the VPS
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=dental_user
+      - POSTGRES_PASSWORD=dental_secure_password_123
+      - POSTGRES_DB=dental_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:
