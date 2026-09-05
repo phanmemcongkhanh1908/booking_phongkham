@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { roles, users } from "../db/schema.js";
+import { roles, users, providers } from "../db/schema.js";
 import { hashPassword } from "./security.js";
 import { eq } from "drizzle-orm";
 
@@ -31,10 +31,28 @@ export const bootstrapSystem = async () => {
         isActive: true
       });
       console.log(`[Bootstrap] Created default admin account: ${adminEmail} / admin@123`);
-    } else {
-      // (Optional) Reset password if it exists but user can't login, 
-      // but let's just leave it alone if it exists.
     }
+
+    // Ensure at least one active provider exists
+    const providerRecords = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
+    if (providerRecords.length === 0) {
+      const defaultWorkingHours = {
+        "monday": [{ "start": "08:00", "end": "17:00" }],
+        "tuesday": [{ "start": "08:00", "end": "17:00" }],
+        "wednesday": [{ "start": "08:00", "end": "17:00" }],
+        "thursday": [{ "start": "08:00", "end": "17:00" }],
+        "friday": [{ "start": "08:00", "end": "17:00" }]
+      };
+      await db.insert(providers).values({
+        name: "Bác sĩ chuyên khoa",
+        specialty: "Nha khoa tổng quát",
+        workingHours: defaultWorkingHours,
+        bookingEnabled: true,
+        isActive: true
+      });
+      console.log(`[Bootstrap] Created default provider.`);
+    }
+
   } catch (error) {
     console.error("[Bootstrap] Error bootstrapping system:", error);
   }
