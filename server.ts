@@ -14,10 +14,13 @@ import usersRouter from "./server/api/users/index.js";
 import adminRouter from "./server/api/admin/index.js";
 import patientsRouter from "./server/api/patients/index.js";
 import "./server/core/telegram.js"; // Initialize Telegram bot
+import { bootstrapSystem } from "./server/core/bootstrap.js";
 
 dotenv.config();
 
 async function startServer() {
+  await bootstrapSystem(); // Automatically create admin account if it doesn't exist
+
   const app = express();
   const PORT = 3000;
 

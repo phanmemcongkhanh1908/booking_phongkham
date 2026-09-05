@@ -9,7 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('admin@dentalsmartbooking.com');
-  const [password, setPassword] = useState('123456');
+  const [password, setPassword] = useState('admin@123');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const setAuth = useAuthStore(state => state.setAuth);
