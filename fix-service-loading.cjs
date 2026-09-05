@@ -1,3 +1,6 @@
+const fs = require('fs');
+
+const content = `
 import React, { useEffect, useState } from 'react';
 import { useBookingStore } from '../../../store/booking';
 import api from '../../../services/api';
@@ -77,7 +80,7 @@ export default function ServiceSelection() {
                     ~{svc.durationMins} phút
                   </span>
                   <span className="text-xs font-medium text-slate-500">
-                    • {svc.price ? `${svc.price.toLocaleString()}đ` : 'Miễn phí'}
+                    • {svc.price ? \`\${svc.price.toLocaleString()}đ\` : 'Miễn phí'}
                   </span>
                 </div>
               </div>
@@ -91,3 +94,6 @@ export default function ServiceSelection() {
     </Card>
   );
 }
+`;
+
+fs.writeFileSync('src/pages/public/components/ServiceSelection.tsx', content.trim());

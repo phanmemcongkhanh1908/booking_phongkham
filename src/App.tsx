@@ -5,6 +5,7 @@ import NotificationManager from './components/NotificationManager';
 
 // Lazy loading pages for better performance
 const PublicBooking = React.lazy(() => import('./pages/public/Booking'));
+const MyBooking = React.lazy(() => import('./pages/public/MyBooking'));
 const Login = React.lazy(() => import('./pages/admin/Login'));
 const Dashboard = React.lazy(() => import('./pages/admin/Dashboard'));
 
@@ -23,6 +24,7 @@ export default function App() {
           {/* Public Routes */}
           <Route path="/" element={<Navigate to="/book" replace />} />
           <Route path="/book/*" element={<PublicBooking />} />
+          <Route path="/lich-hen-cua-toi" element={<MyBooking />} />
           <Route path="/admin/login" element={<Login />} />
           
           {/* Admin Routes */}

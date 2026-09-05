@@ -1,4 +1,11 @@
+const fs = require('fs');
 
+let booking = fs.readFileSync('src/pages/public/Booking.tsx', 'utf8');
+
+// We need to use nested routes or just read location.pathname
+// The easiest way is to use <Routes> inside Booking.tsx
+
+const replacement = `
 import React, { useEffect } from 'react';
 import { useBookingStore } from '../../store/booking';
 import { Link, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -24,22 +31,6 @@ export default function Booking() {
   const currentStepObj = steps.find(s => s.path === currentPath);
   const step = currentStepObj ? currentStepObj.id : 1;
 
-  // Keep URL in sync with store step
-  useEffect(() => {
-    if (store.step === 1 && currentPath !== 'dich-vu') navigate('/book/dich-vu');
-    else if (store.step === 2 && currentPath !== 'chon-gio') navigate('/book/chon-gio');
-    else if (store.step === 3 && currentPath !== 'thong-tin') navigate('/book/thong-tin');
-    else if (store.step === 4 && currentPath !== 'hoan-tat') navigate('/book/hoan-tat');
-  }, [store.step, currentPath, navigate]);
-
-  // Keep store step in sync with URL
-  useEffect(() => {
-    if (currentPath === 'dich-vu' && store.step !== 1) store.setStep(1);
-    else if (currentPath === 'chon-gio' && store.step !== 2) store.setStep(2);
-    else if (currentPath === 'thong-tin' && store.step !== 3) store.setStep(3);
-    else if (currentPath === 'hoan-tat' && store.step !== 4) store.setStep(4);
-  }, [currentPath, store]);
-
   // Sync store step to URL on mount and update store
   useEffect(() => {
     if (currentPath === 'book' || currentPath === '') {
@@ -49,12 +40,12 @@ export default function Booking() {
 
   // Guard routing based on store state
   useEffect(() => {
-    if (step >= 2 && !store.serviceId) {
+    if (step >= 2 && !store.selectedServiceId) {
       navigate('/book/dich-vu', { replace: true });
-    } else if (step >= 3 && !store.selectedDate) {
+    } else if (step >= 3 && !store.selectedTime) {
       navigate('/book/chon-gio', { replace: true });
     }
-  }, [step, store.serviceId, store.selectedDate, navigate]);
+  }, [step, store.selectedServiceId, store.selectedTime, navigate]);
 
   return (
     <div className="min-h-screen bg-bg-base p-4 md:p-8 relative selection:bg-primary/20">
@@ -74,7 +65,7 @@ export default function Booking() {
                 
                 <div 
                   className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${((step - 1) / (steps.length - 2)) * 100}%` }}
+                  style={{ width: \`\${((step - 1) / (steps.length - 2)) * 100}%\` }}
                 />
                 {steps.slice(0, 3).map((s) => {
                   const isActive = step === s.id;
@@ -82,19 +73,19 @@ export default function Booking() {
                   return (
                     <div key={s.id} className="relative z-10 flex flex-col items-center gap-2">
                       <div 
-                        className={`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 shadow-sm ${
+                        className={\`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 shadow-sm \${
                           isActive 
                             ? 'bg-primary text-on-primary ring-4 ring-primary/20 scale-110' 
                             : isCompleted
                               ? 'bg-primary text-on-primary'
                               : 'bg-surface text-text-muted border border-border-subtle'
-                        }`}
+                        }\`}
                       >
                         {isCompleted ? <Check className="w-4 h-4 md:w-5 md:h-5" /> : s.id}
                       </div>
-                      <span className={`text-xs md:text-sm font-medium absolute -bottom-6 w-max text-center transition-colors ${
+                      <span className={\`text-xs md:text-sm font-medium absolute -bottom-6 w-max text-center transition-colors \${
                         isActive ? 'text-primary' : isCompleted ? 'text-text-main' : 'text-text-muted'
-                      }`}>
+                      }\`}>
                         {s.title}
                       </span>
                     </div>
@@ -126,3 +117,7 @@ export default function Booking() {
     </div>
   );
 }
+`;
+
+fs.writeFileSync('src/pages/public/Booking.tsx', replacement);
+

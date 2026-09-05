@@ -345,26 +345,37 @@ export default function Dashboard() {
                         <td className="px-4 py-3">{apt.serviceName}</td>
                         <td className="px-4 py-3">{apt.providerName}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(apt.status)}`}>
-                            {apt.status}
+                          
+                          <span 
+                            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
+                            style={{ 
+                              backgroundColor: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.bg || 'var(--bg-muted)', 
+                              color: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.color || 'var(--text-muted)',
+                              border: `1px solid ${APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.color || 'transparent'}40`
+                            }}
+                          >
+                            {LABEL_OVERRIDES[apt.status] || APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.label || apt.status}
                           </span>
+
                         </td>
-                        <td className="px-4 py-3 text-right space-x-2">
+                                                <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end items-center gap-2">
                           {apt.status === 'REQUESTED' && (
-                            <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="text-xs font-medium text-primary hover:underline">Xác nhận</button>
+                            <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-teal-50 text-teal-700 hover:bg-teal-100 border-transparent hover:border-current/10">Xác Nhận</button>
                           )}
                           {apt.status === 'CONFIRMED' && (
-                            <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs font-medium text-indigo-600 hover:underline">Check-in</button>
+                            <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-transparent hover:border-current/10">Check-in</button>
                           )}
                           {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
-                            <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs font-medium text-status-cancelled hover:underline">Hủy</button>
+                            <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
                           )}
                           {apt.status === 'CHECKED_IN' && (
-                            <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs font-medium text-purple-600 hover:underline">Phục vụ</button>
+                            <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 border-transparent hover:border-current/10">Đang Khám</button>
                           )}
                           {apt.status === 'IN_SERVICE' && (
-                            <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs font-medium text-green-600 hover:underline">Hoàn thành</button>
+                            <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-green-50 text-green-700 hover:bg-green-100 border-transparent hover:border-current/10">Hoàn Thành</button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     ))}

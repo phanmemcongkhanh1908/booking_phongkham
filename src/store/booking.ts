@@ -9,6 +9,7 @@ interface BookingState {
   sessionToken: string | null;
   slotStartTime: string | null;
   slotEndTime: string | null;
+  holdExpiresAt: number | null;
   
   // Success info
   appointmentId: string | null;
@@ -20,7 +21,7 @@ interface BookingState {
   
   setStep: (step: number) => void;
   setService: (id: string, name: string) => void;
-  setDateTimeSlot: (date: string, providerId: string | null, token: string, start: string, end: string) => void;
+  setDateTimeSlot: (date: string, providerId: string | null, token: string, start: string, end: string, expiresAt: number) => void;
   setAppointmentSuccess: (
     id: string, 
     name: string, 
@@ -41,6 +42,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   sessionToken: null,
   slotStartTime: null,
   slotEndTime: null,
+  holdExpiresAt: null,
   appointmentId: null,
   patientName: null,
   patientPhone: null,
@@ -50,7 +52,8 @@ export const useBookingStore = create<BookingState>((set) => ({
 
   setStep: (step) => set({ step }),
   setService: (id, name) => set({ serviceId: id, serviceName: name, step: 2 }),
-  setDateTimeSlot: (date, providerId, token, start, end) => set({ 
+  setDateTimeSlot: (date, providerId, token, start, end, expiresAt) => set({
+    holdExpiresAt: expiresAt, 
     selectedDate: date, 
     providerId, 
     sessionToken: token, 
@@ -76,6 +79,7 @@ export const useBookingStore = create<BookingState>((set) => ({
     sessionToken: null,
     slotStartTime: null,
     slotEndTime: null,
+  holdExpiresAt: null,
     appointmentId: null,
     patientName: null,
     patientPhone: null,

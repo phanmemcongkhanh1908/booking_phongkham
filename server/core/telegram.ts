@@ -288,3 +288,17 @@ export const sendPatientReminder = async (telegramId: string, appointmentData: a
     return false;
   }
 };
+export const sendPatientDocument = async (telegramId: string, buffer: Buffer, filename: string, caption?: string) => {
+  if (!bot || !telegramId) return false;
+  try {
+    const fileOptions = {
+      filename,
+      contentType: filename.endsWith('.pdf') ? 'application/pdf' : 'image/png'
+    };
+    await bot.sendDocument(telegramId, buffer, { caption, parse_mode: 'Markdown' }, fileOptions);
+    return true;
+  } catch (error) {
+    console.error("Failed to send Document to Telegram:", error);
+    return false;
+  }
+};

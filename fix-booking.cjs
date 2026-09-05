@@ -1,4 +1,8 @@
+const fs = require('fs');
 
+let content = fs.readFileSync('src/pages/public/Booking.tsx', 'utf8');
+
+const rewrite = `
 import React, { useEffect } from 'react';
 import { useBookingStore } from '../../store/booking';
 import { Link, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -74,7 +78,7 @@ export default function Booking() {
                 
                 <div 
                   className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${((step - 1) / (steps.length - 2)) * 100}%` }}
+                  style={{ width: \`\${((step - 1) / (steps.length - 2)) * 100}%\` }}
                 />
                 {steps.slice(0, 3).map((s) => {
                   const isActive = step === s.id;
@@ -82,19 +86,19 @@ export default function Booking() {
                   return (
                     <div key={s.id} className="relative z-10 flex flex-col items-center gap-2">
                       <div 
-                        className={`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 shadow-sm ${
+                        className={\`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 shadow-sm \${
                           isActive 
                             ? 'bg-primary text-on-primary ring-4 ring-primary/20 scale-110' 
                             : isCompleted
                               ? 'bg-primary text-on-primary'
                               : 'bg-surface text-text-muted border border-border-subtle'
-                        }`}
+                        }\`}
                       >
                         {isCompleted ? <Check className="w-4 h-4 md:w-5 md:h-5" /> : s.id}
                       </div>
-                      <span className={`text-xs md:text-sm font-medium absolute -bottom-6 w-max text-center transition-colors ${
+                      <span className={\`text-xs md:text-sm font-medium absolute -bottom-6 w-max text-center transition-colors \${
                         isActive ? 'text-primary' : isCompleted ? 'text-text-main' : 'text-text-muted'
-                      }`}>
+                      }\`}>
                         {s.title}
                       </span>
                     </div>
@@ -126,3 +130,6 @@ export default function Booking() {
     </div>
   );
 }
+`;
+
+fs.writeFileSync('src/pages/public/Booking.tsx', rewrite);

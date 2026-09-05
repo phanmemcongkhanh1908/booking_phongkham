@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ReceiptTemplate, MedicalRecordTemplate } from './components/PrintTemplates';
+import DocumentViewer from './components/DocumentViewer';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+
 import { 
   Search, Save, Cloud, Link as LinkIcon, FileText, CheckCircle2, 
   Image as ImageIcon, Images, Plus, Printer, Paperclip, Calendar, 
   Trash2, ChevronRight, Stethoscope, Banknote, UserRound, Info, 
   UploadCloud, Eye, Download, X, AlertCircle, ZoomIn, ZoomOut, 
   RotateCw, CalendarPlus, FolderPlus, Clock, Phone, Mail, 
-  ClipboardList, Receipt, CalendarClock, Check, Sparkles
+  ClipboardList, Receipt, CalendarClock, Check, Sparkles,
+  Send
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -162,6 +168,9 @@ export default function Patients() {
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string; date?: string; title?: string } | null>(null);
   const [previewZoom, setPreviewZoom] = useState<number>(1);
   const [previewRotation, setPreviewRotation] = useState<number>(0);
+
+  const [documentViewerState, setDocumentViewerState] = useState<{isOpen: boolean, type: 'receipt' | 'record' | null}>({isOpen: false, type: null});
+
 
   // Billing State
   const [currentServiceCost, setCurrentServiceCost] = useState<number>(0);
@@ -778,16 +787,33 @@ export default function Patients() {
                   </span>
                 )}
                 
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => window.print()}
-                  className="text-xs h-9"
-                  title="In tóm tắt bệnh án"
-                >
-                  <Printer className="w-3.5 h-3.5 mr-1.5" />
-                  In bệnh án
-                </Button>
+                
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setDocumentViewerState({ isOpen: true, type: 'record' })}
+                    className="text-xs h-9 bg-white"
+                    title="In bệnh án"
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-1.5" />
+                    In bệnh án
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setTelegramIdInput(selectedPatient.telegramId || '');
+                      setShowTelegramModal('record');
+                    }}
+                    className="text-xs h-9 text-blue-600 border-blue-200 hover:bg-blue-50 bg-white"
+                    title="Gửi bệnh án qua Telegram"
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1.5" />
+                    Gửi Telegram
+                  </Button>
+                </div>
+
 
                 <Button 
                   size="sm"
@@ -1429,14 +1455,27 @@ export default function Patients() {
 
                     {/* Action buttons */}
                     <div className="mt-8 flex justify-end gap-3 print:hidden border-t border-border-subtle pt-4">
+                      
                       <Button 
                         variant="outline"
-                        onClick={() => window.print()} 
-                        className="text-xs gap-1.5"
+                        onClick={() => setDocumentViewerState({ isOpen: true, type: 'receipt' })} 
+                        className="text-xs gap-1.5 bg-white"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         In phiếu thu
                       </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setTelegramIdInput(selectedPatient?.telegramId || '');
+                          setShowTelegramModal('receipt');
+                        }} 
+                        className="text-xs gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50 bg-white"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Gửi Telegram
+                      </Button>
+
                       <Button 
                         onClick={() => handleSaveEMR(false)} 
                         disabled={loading}
@@ -1835,6 +1874,27 @@ export default function Patients() {
         </div>
       )}
 
+
+      {/* Document Viewer Modal */}
+      {documentViewerState.isOpen && documentViewerState.type && selectedPatient && (
+        <DocumentViewer 
+          isOpen={documentViewerState.isOpen}
+          type={documentViewerState.type}
+          patient={selectedPatient}
+          records={selectedPatient.emr || []}
+          receiptData={{
+            total: currentServiceCost,
+            paid: paidAmount,
+            newDebt: Math.max(0, debt + currentServiceCost - paidAmount),
+            oldDebt: selectedPatient.debt
+          }}
+          onClose={() => setDocumentViewerState({isOpen: false, type: null})}
+          onSendSuccess={(telegramId) => {
+            setSelectedPatient({...selectedPatient, telegramId});
+            setPatients(patients.map(p => p.id === selectedPatient.id ? {...p, telegramId} : p));
+          }}
+        />
+      )}
     </div>
   );
 }

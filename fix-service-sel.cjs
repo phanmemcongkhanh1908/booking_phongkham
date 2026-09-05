@@ -1,47 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { useBookingStore } from '../../../store/booking';
-import api from '../../../services/api';
-import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/Card';
-import { ChevronRight, Stethoscope, Sparkles } from 'lucide-react';
+const fs = require('fs');
 
-interface Service {
-  id: string;
-  name: string;
-  durationMins: number;
-  price: number;
-}
+let content = fs.readFileSync('src/pages/public/components/ServiceSelection.tsx', 'utf8');
 
-export default function ServiceSelection() {
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
-  const setService = useBookingStore(state => state.setService);
+// The original closing tags were:
+//             <div className="relative z-10 w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-teal-50 transition-colors">
+//               <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-primary transition-colors" />
+//             </div>
+//           </button>
+//         ))}
+//       </CardContent>
 
-  useEffect(() => {
-    const fetchServices = async () => {
-      try {
-        const res = await api.get('/public/services');
-        if (res.data.success) {
-          setServices(res.data.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch services", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchServices();
-  }, []);
+// The error says Unexpected closing "div" tag does not match opening "button" tag.
+content = content.replace("</div>\n          ))}\n      </CardContent>", "</button>\n        ))}\n      </CardContent>");
 
-  if (loading) {
-    return (
-      <div className="py-12 flex flex-col items-center justify-center space-y-4">
-        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-        <p className="text-slate-500 font-medium">Đang tải danh sách dịch vụ...</p>
-      </div>
-    );
-  }
-
+// Revert previous naive replace
+// Actually let's just rewrite the return part of ServiceSelection.tsx
+const rewrite = `
   return (
     <Card className="border-0 shadow-none sm:border sm:border-slate-200 sm:shadow-lg sm:shadow-slate-200/40 rounded-2xl overflow-hidden bg-white">
       <CardHeader className="text-center sm:text-left bg-gradient-to-b from-slate-50 to-white pb-6 border-b border-slate-100">
@@ -64,6 +38,7 @@ export default function ServiceSelection() {
             onClick={() => setService(svc.id, svc.name)}
             className="group text-left w-full relative flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-all duration-300 hover:-translate-y-1 hover:border-primary hover:shadow-xl hover:shadow-teal-900/5 overflow-hidden"
           >
+            {/* Subtle background glow effect on hover */}
             <div className="absolute inset-0 bg-gradient-to-br from-teal-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             
             <div className="relative z-10 flex items-center gap-4">
@@ -77,7 +52,7 @@ export default function ServiceSelection() {
                     ~{svc.durationMins} phút
                   </span>
                   <span className="text-xs font-medium text-slate-500">
-                    • {svc.price ? `${svc.price.toLocaleString()}đ` : 'Miễn phí'}
+                    • {svc.price ? \`\${svc.price.toLocaleString()}đ\` : 'Miễn phí'}
                   </span>
                 </div>
               </div>
@@ -90,4 +65,10 @@ export default function ServiceSelection() {
       </CardContent>
     </Card>
   );
+`;
+
+const match = content.match(/return \([\s\S]*?\);/);
+if (match) {
+  content = content.replace(match[0], rewrite.trim());
+  fs.writeFileSync('src/pages/public/components/ServiceSelection.tsx', content);
 }
