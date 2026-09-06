@@ -48,7 +48,8 @@ export default function Settings() {
     doctorName: '',
     address: '',
     phone: '',
-    workingHours: ''
+    workingHours: '',
+    slogan: '',
   });
   const [clinicMsg, setClinicMsg] = useState('');
 
@@ -498,25 +499,65 @@ export default function Settings() {
             {clinicMsg && <div className="text-sm text-primary bg-mint p-2 rounded">{clinicMsg}</div>}
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Tên phòng khám</label>
-              <Input type="text" value={clinicProfile.clinicName} onChange={e => setClinicProfile({...clinicProfile, clinicName: e.target.value})} />
+              <Input 
+                type="text" 
+                placeholder="VD: Nha khoa Lê Phương" 
+                value={clinicProfile.clinicName} 
+                onChange={e => setClinicProfile({...clinicProfile, clinicName: e.target.value})} 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-text-main flex items-center justify-between">
+                <span>Slogan / Khẩu hiệu phòng khám</span>
+                <span className="text-xs text-text-muted">Tùy chọn</span>
+              </label>
+              <Input 
+                type="text" 
+                placeholder="VD: Nụ cười rạng rỡ - Tương lai tươi sáng" 
+                value={clinicProfile.slogan || ''} 
+                onChange={e => setClinicProfile({...clinicProfile, slogan: e.target.value})} 
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Bác sĩ phụ trách</label>
-              <Input type="text" value={clinicProfile.doctorName} onChange={e => setClinicProfile({...clinicProfile, doctorName: e.target.value})} />
+              <Input 
+                type="text" 
+                placeholder="VD: Lê Thị Diễm Phương" 
+                value={clinicProfile.doctorName} 
+                onChange={e => setClinicProfile({...clinicProfile, doctorName: e.target.value})} 
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Địa chỉ</label>
-              <Input type="text" value={clinicProfile.address} onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} />
+              <Input 
+                type="text" 
+                placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5, TP.HCM" 
+                value={clinicProfile.address} 
+                onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} 
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Hotline</label>
-              <Input type="text" value={clinicProfile.phone} onChange={e => setClinicProfile({...clinicProfile, phone: e.target.value})} />
+              <Input 
+                type="text" 
+                placeholder="VD: 0901 234 567" 
+                value={clinicProfile.phone} 
+                onChange={e => setClinicProfile({...clinicProfile, phone: e.target.value})} 
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Giờ làm việc</label>
-              <Input type="text" placeholder="VD: 08:00 - 20:00" value={clinicProfile.workingHours} onChange={e => setClinicProfile({...clinicProfile, workingHours: e.target.value})} />
+              <Input 
+                type="text" 
+                placeholder="VD: 08:00 - 20:00 (Thứ 2 - Thứ 7)" 
+                value={clinicProfile.workingHours} 
+                onChange={e => setClinicProfile({...clinicProfile, workingHours: e.target.value})} 
+              />
             </div>
-            <Button type="submit">Lưu thông tin</Button>
+            <p className="text-[11px] text-text-muted">
+              💡 Thông tin phòng khám và slogan sẽ tự động hiển thị trang trọng trên trang đặt lịch của khách hàng để cá nhân hóa thương hiệu.
+            </p>
+            <Button type="submit" className="w-full">Lưu thông tin phòng khám</Button>
           </form>
         </CardContent>
       </Card>

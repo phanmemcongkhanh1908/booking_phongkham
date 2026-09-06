@@ -367,8 +367,21 @@ publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
 publicRouter.get("/clinic-info", async (req, res, next) => {
   try {
     const { settings } = await import("../../db/schema.js");
-    const settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-    const clinicProfile = settingRes.length > 0 ? settingRes[0].value : null;
+    let settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
+    if (settingRes.length === 0) {
+      settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
+    }
+    let clinicProfile = settingRes.length > 0 ? settingRes[0].value : null;
+    if (typeof clinicProfile === "string") {
+      try {
+        clinicProfile = JSON.parse(clinicProfile);
+      } catch (e) {
+        // ignore JSON parse error
+      }
+    }
+    if (clinicProfile && !clinicProfile.clinicName && clinicProfile.name) {
+      clinicProfile.clinicName = clinicProfile.name;
+    }
     const botUsername = await getTelegramBotUsername();
 
     res.json({
