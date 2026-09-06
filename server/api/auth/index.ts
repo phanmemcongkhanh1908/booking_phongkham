@@ -11,8 +11,9 @@ const authRouter = Router();
 authRouter.post("/login", async (req, res, next) => {
   try {
     const { email, password } = LoginSchema.parse(req.body);
+    const identifier = (email || "").trim().toLowerCase();
 
-    // Tìm user và join với role
+    // Tìm tất cả users và join với role để so sánh case-insensitive
     const userRecords = await db
       .select({
         id: users.id,
@@ -23,15 +24,20 @@ authRouter.post("/login", async (req, res, next) => {
         permissions: roles.permissions,
       })
       .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id))
-      .where(eq(users.email, email))
-      .limit(1);
+      .leftJoin(roles, eq(users.roleId, roles.id));
 
-    if (userRecords.length === 0) {
-      throw new UnauthorizedError("Email hoặc mật khẩu không chính xác");
+    // Khớp tài khoản: hỗ trợ username bất kỳ (như admin) hoặc email
+    const user = userRecords.find((u: any) => {
+      const stored = (u.email || "").trim().toLowerCase();
+      if (stored === identifier) return true;
+      // Hỗ trợ nhập "admin" đăng nhập vào tài khoản mặc định admin@dentalsmartbooking.com nếu chưa tạo tài khoản admin riêng
+      if (identifier === "admin" && stored === "admin@dentalsmartbooking.com") return true;
+      return false;
+    });
+
+    if (!user) {
+      throw new UnauthorizedError("Tài khoản hoặc mật khẩu không chính xác");
     }
-
-    const user = userRecords[0];
 
     if (!user.isActive) {
       throw new UnauthorizedError("Tài khoản đã bị khóa");
@@ -40,7 +46,7 @@ authRouter.post("/login", async (req, res, next) => {
     // Verify mật khẩu
     const isValid = await verifyPassword(password, user.passwordHash);
     if (!isValid) {
-      throw new UnauthorizedError("Email hoặc mật khẩu không chính xác");
+      throw new UnauthorizedError("Tài khoản hoặc mật khẩu không chính xác");
     }
 
     // Generate Token

@@ -16,6 +16,8 @@ export default function Settings() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  const [isUserError, setIsUserError] = useState(false);
+  const [userAccounts, setUserAccounts] = useState<any[]>([]);
   const [driveInfo, setDriveInfo] = useState<any>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
 
@@ -131,19 +133,39 @@ export default function Settings() {
         }
       }
     }).catch(console.error);
+
+    // Tải danh sách tài khoản hiện có
+    api.get('/users').then(res => {
+      if (res.data?.data) {
+        setUserAccounts(res.data.data);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMsg('');
+    setIsUserError(false);
     try {
-      await api.post('/users', { email, password });
-      setMsg('Tạo tài khoản thành công!');
+      const trimmedIdentifier = email.trim();
+      const res = await api.post('/users', { 
+        username: trimmedIdentifier,
+        email: trimmedIdentifier,
+        password 
+      });
+      setMsg(res.data?.message || `Tạo tài khoản '${trimmedIdentifier}' thành công!`);
+      setIsUserError(false);
       setEmail('');
       setPassword('');
+      // Làm mới danh sách tài khoản
+      const refreshed = await api.get('/users');
+      if (refreshed.data?.data) {
+        setUserAccounts(refreshed.data.data);
+      }
     } catch (err: any) {
-      setMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra');
+      setIsUserError(true);
+      setMsg(err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi tạo tài khoản');
     } finally {
       setLoading(false);
     }
@@ -502,23 +524,86 @@ export default function Settings() {
       {/* User Creation */}
       <Card>
         <CardHeader>
-          <CardTitle>Tạo tài khoản Admin</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Tạo tài khoản Quản trị</CardTitle>
+            <span className="text-[11px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+              Không bắt buộc @
+            </span>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form className="space-y-4" onSubmit={handleCreateUser}>
-            {msg && <div className="text-sm text-primary bg-mint p-2 rounded">{msg}</div>}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Email</label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+            {msg && (
+              <div className={`text-sm p-3 rounded-lg border flex items-center gap-2 ${
+                isUserError 
+                  ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50' 
+                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50'
+              }`}>
+                {isUserError ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{msg}</span>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-text-main flex items-center justify-between">
+                <span>Tên tài khoản / Email</span>
+                <span className="text-xs text-text-muted">Tùy ý (VD: admin, quanly)</span>
+              </label>
+              <Input 
+                type="text" 
+                placeholder="VD: admin hoặc admin@phongkham.vn" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+                autoComplete="off"
+              />
+              <p className="text-[11px] text-text-muted">
+                Admin có thể đặt tên tài khoản tùy ý (VD: <strong>admin</strong>, <strong>bacsi1</strong>) hoặc địa chỉ email. Không bắt buộc phải có ký tự @.
+              </p>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label className="text-sm font-medium text-text-main">Mật khẩu</label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+              <Input 
+                type="password" 
+                placeholder="Tối thiểu 6 ký tự (VD: admin@123)" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                required 
+                autoComplete="new-password"
+              />
             </div>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Đang xử lý...' : 'Tạo tài khoản'}
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Đang khởi tạo...
+                </>
+              ) : (
+                'Tạo tài khoản quản trị'
+              )}
             </Button>
           </form>
+
+          {userAccounts.length > 0 && (
+            <div className="pt-3 border-t border-border-subtle space-y-2">
+              <p className="text-xs font-semibold text-text-main flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                Danh sách tài khoản hệ thống ({userAccounts.length}):
+              </p>
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                {userAccounts.map((u, idx) => (
+                  <div key={u.id || idx} className="flex items-center justify-between text-xs p-2 rounded bg-bg-base border border-border-subtle">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="font-medium text-text-main">{u.email}</span>
+                    </div>
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                      {u.roleName || 'admin'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

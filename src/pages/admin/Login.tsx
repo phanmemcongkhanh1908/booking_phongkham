@@ -50,12 +50,26 @@ export default function Login() {
           <form className="space-y-4" onSubmit={handleLogin}>
             {error && <div className="text-sm text-status-cancelled bg-status-cancelled-bg p-2 rounded">{error}</div>}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Email</label>
-              <Input type="email" placeholder="admin@dentalsmartbooking.com" value={email} onChange={e => setEmail(e.target.value)} required />
+              <label className="text-sm font-medium text-text-main">Tên đăng nhập hoặc Email</label>
+              <Input 
+                type="text" 
+                placeholder="VD: admin hoặc admin@dentalsmartbooking.com" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+                autoComplete="username"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-text-main">Mật khẩu</label>
-              <Input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
+              <Input 
+                type="password" 
+                placeholder="••••••••" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                required 
+                autoComplete="current-password"
+              />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Đang xử lý...' : 'Đăng nhập'}

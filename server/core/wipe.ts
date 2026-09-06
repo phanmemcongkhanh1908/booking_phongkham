@@ -81,17 +81,17 @@ export async function wipeClinicData() {
       const userData = userDoc.data();
       const email = (userData.email || "").toLowerCase().trim();
 
-      if (email === defaultAdminEmail) {
+      if (email === defaultAdminEmail || email === "admin") {
         foundAdmin = true;
         // Reset/guarantee active status and default password
         await updateDoc(userDoc.ref, {
-          email: defaultAdminEmail,
+          email: email,
           passwordHash: defaultPasswordHash,
           roleId: adminRoleId,
           isActive: true,
           updatedAt: new Date().toISOString(),
         });
-        console.log(`[Wipe] Preserved default admin account: ${defaultAdminEmail}`);
+        console.log(`[Wipe] Preserved admin account: ${email}`);
       } else {
         await deleteDoc(userDoc.ref);
         nonAdminRemoved++;
