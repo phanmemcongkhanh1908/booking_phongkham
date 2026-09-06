@@ -179,9 +179,9 @@ adminRouter.post("/restore", requireAuth, async (req, res, next) => {
 
 adminRouter.post("/wipe", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
-    const { sql } = await import("drizzle-orm");
-    await db.execute(sql`TRUNCATE TABLE appointments, patients, services, providers, patient_recalls, waitlist, push_subscriptions, provider_services, appointment_holds CASCADE`);
-    res.json({ success: true, message: "All data wiped" });
+    const { wipeClinicData } = await import("../../core/wipe.js");
+    const result = await wipeClinicData();
+    res.json(result);
   } catch (error) {
     next(error);
   }

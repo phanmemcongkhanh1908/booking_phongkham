@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import api from '../../services/api';
-import { Send, Mail, Check, AlertCircle, RefreshCw, HelpCircle, Shield } from 'lucide-react';
+import { Send, Mail, Check, AlertCircle, RefreshCw, HelpCircle, Shield, Trash2, ShieldCheck, AlertTriangle, X, CheckCircle2 } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -52,6 +52,12 @@ export default function Settings() {
 
   const [backupData, setBackupData] = useState('');
   const [dataMsg, setDataMsg] = useState('');
+  const [isDataError, setIsDataError] = useState(false);
+
+  // Safe Wipe Data Modal States
+  const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
+  const [wipeConfirmInput, setWipeConfirmInput] = useState('');
+  const [isWiping, setIsWiping] = useState(false);
 
   const handleBackup = async () => {
     try {
@@ -65,8 +71,10 @@ export default function Settings() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      setIsDataError(false);
       setDataMsg('Backup tải xuống thành công');
     } catch (e: any) {
+      setIsDataError(true);
       setDataMsg('Lỗi khi backup: ' + (e.response?.data?.error?.message || e.message));
     }
   };
@@ -76,20 +84,36 @@ export default function Settings() {
     try {
       const data = JSON.parse(backupData);
       await api.post('/admin/restore', { data });
+      setIsDataError(false);
       setDataMsg('Restore dữ liệu thành công. Hãy tải lại trang.');
     } catch (e: any) {
+      setIsDataError(true);
       setDataMsg('Lỗi khi restore: Dữ liệu JSON không hợp lệ hoặc lỗi server.');
     }
   };
 
-  const handleWipe = async () => {
-    if (window.confirm("BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ DỮ LIỆU? HÀNH ĐỘNG NÀY KHÔNG THỂ HOÀN TÁC!")) {
-      try {
-        await api.post('/admin/wipe');
-        setDataMsg('Đã xóa sạch toàn bộ dữ liệu.');
-      } catch(e: any) {
-        setDataMsg('Lỗi khi xóa dữ liệu.');
-      }
+  const handleExecuteWipe = async () => {
+    const trimmed = wipeConfirmInput.trim().toUpperCase();
+    if (trimmed !== 'XOA DU LIEU' && trimmed !== 'WIPE') {
+      return;
+    }
+    setIsWiping(true);
+    setDataMsg('');
+    setIsDataError(false);
+
+    try {
+      const res = await api.post('/admin/wipe');
+      const successMessage = res.data?.message || 'Đã xóa sạch toàn bộ dữ liệu phòng khám thành công.';
+      setDataMsg(successMessage);
+      setIsDataError(false);
+      setIsWipeModalOpen(false);
+      setWipeConfirmInput('');
+    } catch (e: any) {
+      const errMsg = e.response?.data?.error?.message || e.response?.data?.message || e.message || 'Lỗi khi xóa dữ liệu.';
+      setDataMsg('Lỗi khi xóa dữ liệu: ' + errMsg);
+      setIsDataError(true);
+    } finally {
+      setIsWiping(false);
     }
   };
 
@@ -504,44 +528,202 @@ export default function Settings() {
           <CardTitle>Quản lý Dữ liệu</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {dataMsg && <div className="text-sm text-primary bg-mint p-2 rounded">{dataMsg}</div>}
+          {dataMsg && (
+            <div className={`text-sm p-3 rounded-lg border flex items-center gap-2 ${
+              isDataError 
+                ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50' 
+                : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50'
+            }`}>
+              {isDataError ? (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              )}
+              <span>{dataMsg}</span>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2 border p-4 rounded bg-bg-base">
-              <h3 className="font-semibold text-text-main">Backup Dữ liệu</h3>
-              <p className="text-sm text-text-muted">Tải xuống toàn bộ dữ liệu (bệnh nhân, lịch hẹn, dịch vụ, cấu hình) dưới dạng JSON.</p>
+            <div className="space-y-2 border p-4 rounded bg-bg-base flex flex-col justify-between">
+              <div>
+                <h3 className="font-semibold text-text-main">Backup Dữ liệu</h3>
+                <p className="text-sm text-text-muted">Tải xuống toàn bộ dữ liệu (bệnh nhân, lịch hẹn, dịch vụ, cấu hình) dưới dạng JSON.</p>
+              </div>
               <Button onClick={handleBackup} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Tải Backup</Button>
             </div>
 
-            <div className="space-y-2 border p-4 rounded bg-bg-base">
-              <h3 className="font-semibold text-text-main">Khôi phục (Restore)</h3>
-              <p className="text-sm text-text-muted">Tải lên file JSON backup để khôi phục dữ liệu.</p>
-              <input 
-                type="file" 
-                accept=".json"
-                className="w-full text-sm border border-border-subtle rounded file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                      setBackupData(ev.target?.result as string);
-                    };
-                    reader.readAsText(file);
-                  }
-                }}
-              />
+            <div className="space-y-2 border p-4 rounded bg-bg-base flex flex-col justify-between">
+              <div>
+                <h3 className="font-semibold text-text-main">Khôi phục (Restore)</h3>
+                <p className="text-sm text-text-muted">Tải lên file JSON backup để khôi phục dữ liệu.</p>
+                <input 
+                  type="file" 
+                  accept=".json"
+                  className="w-full text-sm border border-border-subtle rounded file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mt-2"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setBackupData(ev.target?.result as string);
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                />
+              </div>
               <Button onClick={handleRestore} variant="outline" className="w-full" disabled={!backupData}>Restore</Button>
             </div>
 
-            <div className="space-y-2 border border-status-cancelled p-4 rounded bg-status-cancelled-bg">
-              <h3 className="font-semibold text-red-800">Wipe Data</h3>
-              <p className="text-sm text-status-cancelled">Xóa SẠCH toàn bộ dữ liệu hiện có trong hệ thống.</p>
-              <Button onClick={handleWipe} variant="destructive" className="w-full">Xóa toàn bộ dữ liệu</Button>
+            <div className="space-y-2.5 border border-status-cancelled p-4 rounded bg-status-cancelled-bg flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-semibold text-red-800 dark:text-red-400 flex items-center gap-1.5">
+                    <Trash2 className="w-4 h-4" />
+                    Wipe Data
+                  </h3>
+                  <span className="text-[10px] font-semibold text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">
+                    Phòng khám
+                  </span>
+                </div>
+                <p className="text-sm text-status-cancelled mb-2">
+                  Xóa SẠCH toàn bộ dữ liệu hiện có trong hệ thống.
+                </p>
+                <div className="text-[11px] bg-white/80 dark:bg-surface-subtle p-2 rounded border border-emerald-300/80 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 space-y-0.5 mb-2">
+                  <div className="font-semibold flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Bảo tồn an toàn:
+                  </div>
+                  <p className="text-text-muted text-[11px] leading-tight">
+                    Tài khoản <strong>admin@dentalsmartbooking.com</strong> & mật khẩu mặc định <strong>admin@123</strong> không bị xóa.
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => {
+                  setWipeConfirmInput('');
+                  setIsWipeModalOpen(true);
+                }} 
+                variant="destructive" 
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-medium"
+              >
+                Xóa toàn bộ dữ liệu
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal Xác nhận Wipe Data An toàn */}
+      {isWipeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-surface rounded-xl shadow-2xl border border-border-subtle max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between border-b border-border-subtle pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-text-main">Xác nhận Wipe Data Phòng Khám</h3>
+                  <p className="text-xs text-text-muted">Chỉ xóa dữ liệu phòng khám, bảo tồn tài khoản admin</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isWiping && setIsWipeModalOpen(false)}
+                className="text-text-muted hover:text-text-main p-1 rounded-lg transition-colors cursor-pointer"
+                disabled={isWiping}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-lg text-red-800 dark:text-red-300 text-xs leading-relaxed">
+                <strong>CẢNH BÁO QUAN TRỌNG:</strong> Thao tác này sẽ xóa sạch toàn bộ hồ sơ hoạt động của phòng khám. Sau khi xóa, bạn sẽ không thể phục hồi nếu chưa tải xuống bản <strong>Backup</strong>.
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-red-50/70 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 rounded-lg">
+                  <p className="font-bold text-red-700 dark:text-red-400 mb-1.5 flex items-center gap-1">
+                    <Trash2 className="w-3.5 h-3.5" /> Dữ liệu sẽ XÓA SẠCH:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-red-600 dark:text-red-300">
+                    <li>Toàn bộ Lịch hẹn khám</li>
+                    <li>Toàn bộ Hồ sơ Bệnh nhân</li>
+                    <li>Danh sách giữ chỗ trực tuyến</li>
+                    <li>Danh sách chờ (Waitlist)</li>
+                    <li>Lịch nhắc tái khám</li>
+                    <li>Đăng ký thông báo push</li>
+                    <li>Nhật ký kiểm toán hệ thống</li>
+                  </ul>
+                </div>
+
+                <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-lg">
+                  <p className="font-bold text-emerald-700 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> BẢO VỆ TUYỆT ĐỐI:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-emerald-700 dark:text-emerald-300">
+                    <li><strong>Admin email:</strong> admin@dentalsmartbooking.com</li>
+                    <li><strong>Mật khẩu mặc định:</strong> admin@123</li>
+                    <li><strong>Quyền:</strong> Quản trị tối cao (Admin)</li>
+                    <li><strong>Khởi tạo lại:</strong> Dịch vụ chuẩn & Bác sĩ mặc định để tiếp tục hoạt động ngay</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-text-main block">
+                  Để xác nhận, vui lòng nhập chữ <span className="text-red-600 font-bold">XOA DU LIEU</span> vào ô bên dưới:
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Nhập XOA DU LIEU để xác nhận"
+                  value={wipeConfirmInput}
+                  onChange={(e) => setWipeConfirmInput(e.target.value)}
+                  disabled={isWiping}
+                  className="w-full text-sm border-red-300 focus:border-red-500 focus:ring-red-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-border-subtle">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsWipeModalOpen(false)}
+                disabled={isWiping}
+                className="text-xs"
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleExecuteWipe}
+                disabled={
+                  (wipeConfirmInput.trim().toUpperCase() !== 'XOA DU LIEU' &&
+                   wipeConfirmInput.trim().toUpperCase() !== 'WIPE') ||
+                  isWiping
+                }
+                className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isWiping ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Đang dọn dẹp dữ liệu...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Xác nhận Xóa Sạch Dữ Liệu
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Google Workspace */}
       <Card className="col-span-1 md:col-span-2">

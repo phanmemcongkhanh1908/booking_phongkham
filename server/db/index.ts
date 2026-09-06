@@ -396,6 +396,8 @@ export const db: any = {
         "push_subscriptions",
         "provider_services",
         "appointment_holds",
+        "audit_logs",
+        "resources",
       ];
       for (const col of collections) {
         const snap = await getDocs(collection(serverDb, col));
