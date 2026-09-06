@@ -1,7 +1,13 @@
 import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default_zero_cost_secret_key_for_dev_only";
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error("JWT_SECRET environment variable is missing. Refusing to start in production without a secure secret.");
+}
+const SECRET = JWT_SECRET || "default_zero_cost_secret_key_for_dev_only";
+
 const JWT_EXPIRES_IN = "24h";
 
 export interface TokenPayload {
@@ -19,9 +25,9 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
 };
 
 export const generateToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, SECRET, { expiresIn: JWT_EXPIRES_IN });
 };
 
 export const verifyToken = (token: string): TokenPayload => {
-  return jwt.verify(token, JWT_SECRET) as TokenPayload;
+  return jwt.verify(token, SECRET) as TokenPayload;
 };

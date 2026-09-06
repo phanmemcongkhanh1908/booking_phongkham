@@ -18,7 +18,7 @@ const SubscribeSchema = z.object({
   }),
 });
 
-notificationRouter.post("/subscribe", async (req, res, next) => {
+notificationRouter.post("/subscribe", requireAuth, async (req, res, next) => {
   try {
     const data = SubscribeSchema.parse(req.body);
 

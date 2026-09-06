@@ -106,11 +106,11 @@ html[data-theme="dark"] {
   --text-muted: var(--slate-500);
   --border-subtle: var(--slate-700);
   
-  --on-primary: var(--slate-900);
-  --on-danger: var(--slate-900);
-  --on-success: var(--slate-900);
-  --on-warning: var(--slate-900);
-  --on-info: var(--slate-900);
+  --on-primary: var(--white);
+  --on-danger: var(--white);
+  --on-success: var(--white);
+  --on-warning: var(--white);
+  --on-info: var(--white);
   
   --danger: var(--red-500);
   --error: var(--red-500);

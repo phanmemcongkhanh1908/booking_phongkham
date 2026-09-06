@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
-import { format, differenceInMinutes } from 'date-fns';
+import { format, differenceInMinutes, startOfWeek } from 'date-fns';
+import { APPOINTMENT_STATUSES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
 import Settings from './Settings';
 import CalendarView from './CalendarView';
 import ServicesConfig from './ServicesConfig';
 import Analytics from './Analytics';
 import Patients from './Patients';
 import QrScanner from './components/QrScanner';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X } from 'lucide-react';
 
 export default function Dashboard() {
   const logout = useAuthStore((state) => state.logout);
@@ -21,6 +22,34 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [clinicProfile, setClinicProfile] = useState<any>(null);
 
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [toasts, setToasts] = useState<any[]>([]);
+  const knownAppointmentIds = useRef<Set<string>>(new Set());
+  const isInitialLoad = useRef(true);
+
+  const addToast = (title: string, message: string, type: 'new' | 'reminder' = 'new') => {
+    const id = Date.now().toString() + Math.random().toString();
+    setToasts(prev => [...prev, { id, title, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 10000); // 10 seconds display
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const playTTS = (text: string) => {
+    if (!audioEnabledRef.current || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel(); // clear previous
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'vi-VN';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
+
   useEffect(() => {
     api.get('/admin/settings').then(res => {
       if (res.data.data && res.data.data.clinicProfile) {
@@ -30,15 +59,56 @@ export default function Dashboard() {
   }, []);
 
 
-  const fetchAppointments = async () => {
-    setLoading(true);
+  
+  const fetchAppointments = async (showLoading = true) => {
+    if (showLoading && isInitialLoad.current) setLoading(true);
     try {
-      const res = await api.get('/appointments');
+      
+      // Load current month's appointments to cover calendar view and list view
+      const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+      const end = new Date();
+      end.setMonth(end.getMonth() + 2); // get up to next month
+      
+      const res = await api.get('/appointments', {
+        params: {
+          startDate: start.toISOString().split('T')[0],
+          endDate: end.toISOString().split('T')[0]
+        }
+      });
+
       if (res.data.success) {
-        setAppointments(res.data.data);
+        const fetchedAppts = res.data.data;
+        
+        if (!isInitialLoad.current) {
+          // Check for new bookings
+          const newAppts = fetchedAppts.filter((a: any) => 
+            !knownAppointmentIds.current.has(a.id) && 
+            (a.status === 'REQUESTED' || a.status === 'PENDING' || a.status === 'CONFIRMED')
+          );
+          
+          if (newAppts.length > 0) {
+            newAppts.forEach((appt: any) => {
+              const dateStr = format(new Date(appt.startAt), 'dd/MM');
+              const timeStr = format(new Date(appt.startAt), 'HH:mm');
+              const msgText = `Có khách hàng tên ${appt.patientName} đã đặt hẹn dịch vụ ${appt.serviceName} vào lúc ${timeStr} ngày ${dateStr}.`;
+              
+              addToast('Lịch hẹn mới', msgText, 'new');
+              playTTS(msgText);
+              
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Lịch hẹn mới', { body: msgText, icon: '/pwa-192x192.png' });
+              }
+            });
+          }
+        }
+        
+        // Update known IDs
+        fetchedAppts.forEach((a: any) => knownAppointmentIds.current.add(a.id));
+        setAppointments(fetchedAppts);
+        isInitialLoad.current = false;
       }
     } catch (error) {
-      console.error("Failed to load appointments", error);
+      if (error.response?.status !== 401) { console.error("Failed to load appointments", error); }
     } finally {
       setLoading(false);
     }
@@ -51,7 +121,7 @@ export default function Dashboard() {
         setPatients(res.data.data);
       }
     } catch (error) {
-      console.error("Failed to load patients", error);
+      if (error.response?.status !== 401) { console.error("Failed to load patients", error); }
     }
   };
 
@@ -62,6 +132,18 @@ export default function Dashboard() {
 
   const notifiedApptsRef = useRef<Set<string>>(new Set());
 
+  const audioEnabledRef = useRef(audioEnabled);
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
+  
+  const appointmentsRef = useRef(appointments);
+  useEffect(() => {
+    appointmentsRef.current = appointments;
+  }, [appointments]);
+
+
+  
   // Ask for notification permissions on load
   useEffect(() => {
     if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
@@ -69,29 +151,42 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Poll for upcoming appointments every minute
+  // Poll for appointments every 15 seconds
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      fetchAppointments(false);
+    }, 15000);
+    return () => clearInterval(pollInterval);
+  }, []);
+
+  // Check for upcoming appointments every minute
   useEffect(() => {
     const checkUpcomingAppointments = () => {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-      
       const now = new Date();
-      appointments.forEach(appt => {
-        // We only care about requested or confirmed appointments that have not yet occurred
+      appointmentsRef.current.forEach(appt => {
         if (appt.status !== 'REQUESTED' && appt.status !== 'CONFIRMED') return;
         if (!appt.startAt) return;
 
         const diff = differenceInMinutes(new Date(appt.startAt), now);
         
-        // Target 15 and 30 minute thresholds (give or take a minute due to interval timing)
+        // Target 15 and 30 minute thresholds (give or take a minute)
         if (diff > 0 && ((diff <= 30 && diff >= 29) || (diff <= 15 && diff >= 14))) {
           const threshold = diff <= 15 ? 15 : 30;
           const notifKey = `${appt.id}-${threshold}`;
           
           if (!notifiedApptsRef.current.has(notifKey)) {
-            new Notification('🔔 Nhắc nhở lịch hẹn', {
-              body: `Bệnh nhân ${appt.patientName} có lịch hẹn lúc ${format(new Date(appt.startAt), 'HH:mm')} (trong ${threshold} phút nữa).`,
-              icon: '/pwa-192x192.png'
-            });
+            const timeStr = format(new Date(appt.startAt), 'HH:mm');
+            const msgText = `Sắp đến lịch hẹn của khách hàng ${appt.patientName} vào lúc ${timeStr}.`;
+            
+            addToast('Nhắc nhở lịch hẹn', msgText, 'reminder');
+            playTTS(msgText);
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('Nhắc nhở lịch hẹn', {
+                body: msgText,
+                icon: '/pwa-192x192.png'
+              });
+            }
             notifiedApptsRef.current.add(notifKey);
           }
         }
@@ -101,7 +196,7 @@ export default function Dashboard() {
     checkUpcomingAppointments();
     const interval = setInterval(checkUpcomingAppointments, 60000);
     return () => clearInterval(interval);
-  }, [appointments]);
+  }, []);
 
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
@@ -214,10 +309,31 @@ export default function Dashboard() {
               Báo cáo
             </button>
           </nav>
-          <button onClick={logout} className="text-sm font-medium text-text-muted hover:text-error flex items-center pl-2 md:pl-4 transition-colors">
-            <LogOut className="w-4 h-4 mr-1 shrink-0" />
-            Đăng xuất
-          </button>
+          <div className="flex items-center gap-3 pl-2 md:pl-4 border-l border-border-subtle">
+            <button
+              type="button"
+              onClick={() => {
+                const nextVal = !audioEnabled;
+                setAudioEnabled(nextVal);
+                if (nextVal) {
+                  playTTS('Đã kích hoạt trợ lý âm thanh Dental Smart.');
+                }
+              }}
+              className={`text-xs font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all border ${
+                audioEnabled 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs ring-2 ring-emerald-400/20' 
+                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+              }`}
+              title={audioEnabled ? "Đang bật âm thanh thông báo (Click để tắt)" : "Đang tắt âm thanh (Click để bật đọc giọng nói)"}
+            >
+              {audioEnabled ? <Volume2 className="w-4 h-4 text-emerald-600 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+              <span className="hidden sm:inline">{audioEnabled ? 'Âm thanh: Bật' : 'Âm thanh: Tắt'}</span>
+            </button>
+            <button onClick={logout} className="text-sm font-medium text-text-muted hover:text-error flex items-center transition-colors">
+              <LogOut className="w-4 h-4 mr-1 shrink-0" />
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </header>
       
@@ -298,7 +414,7 @@ export default function Dashboard() {
                     <QrCode className="w-4 h-4" />
                     Quét Check-in
                   </button>
-                  <button onClick={fetchAppointments} className="text-sm font-medium text-primary hover:underline hidden sm:block">Làm mới</button>
+                  <button onClick={() => fetchAppointments()} className="text-sm font-medium text-primary hover:underline hidden sm:block">Làm mới</button>
                   {viewMode === 'list' && (
                     <a 
                       href="/booking" 
@@ -399,6 +515,45 @@ export default function Dashboard() {
         {activeTab === 'services' && <ServicesConfig />}
         {activeTab === 'settings' && <Settings />}
       </main>
+
+      {/* Floating Toast Message System (Góc dưới bên phải màn hình) */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto p-4 rounded-2xl border shadow-2xl flex items-start gap-3 transition-all duration-300 transform animate-in slide-in-from-bottom-5 ${
+              t.type === 'new'
+                ? 'bg-gradient-to-r from-teal-900 to-slate-900 text-white border-teal-400 shadow-teal-900/30'
+                : 'bg-gradient-to-r from-amber-900 to-slate-900 text-white border-amber-400 shadow-amber-900/30'
+            }`}
+          >
+            <div className={`p-2.5 rounded-xl shrink-0 ${
+              t.type === 'new' ? 'bg-teal-700/80 text-teal-200' : 'bg-amber-700/80 text-amber-200'
+            }`}>
+              <Bell className="w-5 h-5 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  t.type === 'new' ? 'bg-teal-500/20 text-teal-300' : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  {t.type === 'new' ? 'Lịch hẹn mới' : 'Sắp đến giờ hẹn'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeToast(t.id)}
+                  className="text-white/60 hover:text-white p-1 rounded-md transition-colors"
+                  aria-label="Đóng thông báo"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <h4 className="font-bold text-sm text-white mt-1 leading-snug">{t.title}</h4>
+              <p className="text-xs text-slate-200 mt-1 leading-relaxed">{t.message}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { services, providers, settings } from "../../db/schema.js";
-import { eq } from "drizzle-orm";
-import { requireAuth } from "../../core/middleware.js";
+import { services, providers, settings, appointments, patients } from "../../db/schema.js";
+import { eq, desc } from "drizzle-orm";
+import { requireAuth, requirePermission } from "../../core/middleware.js";
 
 const adminRouter = Router();
 
@@ -112,7 +112,7 @@ adminRouter.put("/config", async (req, res, next) => {
 
 
 // Backup & Restore
-adminRouter.get("/backup", requireAuth, async (req, res, next) => {
+adminRouter.get("/backup", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
     const { patients, providers, services, appointments, settings } = await import("../../db/schema.js");
     const pts = await db.select().from(patients);
@@ -176,13 +176,11 @@ adminRouter.post("/restore", requireAuth, async (req, res, next) => {
   }
 });
 
-adminRouter.post("/wipe", requireAuth, async (req, res, next) => {
+
+adminRouter.post("/wipe", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
-    const { appointments, patients, providers, services } = await import("../../db/schema.js");
-    await db.delete(appointments);
-    await db.delete(patients);
-    await db.delete(services);
-    await db.delete(providers);
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql`TRUNCATE TABLE appointments, patients, services, providers, patient_recalls, waitlist, push_subscriptions, provider_services, appointment_holds CASCADE`);
     res.json({ success: true, message: "All data wiped" });
   } catch (error) {
     next(error);
@@ -232,21 +230,27 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
     next(error);
   }
 });
+
 adminRouter.get("/settings", requireAuth, async (req, res, next) => {
   try {
     const allSettings = await db.select().from(settings);
-    const config: Record<string, any> = {};
-    for (const s of allSettings) {
-      config[s.id] = s.value;
-    }
-    res.json({ success: true, data: config });
+    const settingsObj: any = {};
+    allSettings.forEach(s => {
+      settingsObj[s.id] = s.value;
+    });
+    
+    // Mask sensitive data
+    if (settingsObj.smtpPassword) settingsObj.smtpPassword = "••••••••";
+    if (settingsObj.telegramToken) settingsObj.telegramToken = "••••••••";
+    
+    res.json({ success: true, data: settingsObj });
   } catch (error) {
     next(error);
   }
 });
 
 // Cập nhật cài đặt hệ thống
-adminRouter.post("/settings", requireAuth, async (req, res, next) => {
+adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
     const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig } = req.body;
     
@@ -331,6 +335,30 @@ adminRouter.post("/settings/test-telegram", requireAuth, async (req, res, next) 
     res.json({ success: true, message: `Đã gửi tin nhắn Telegram kiểm tra tới Chat ID: ${targetChatId}` });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message || "Lỗi khi gửi tin nhắn Telegram" } });
+  }
+});
+
+
+adminRouter.get("/appointments", requireAuth, async (req, res, next) => {
+  try {
+    const results = await db
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        status: appointments.status,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        serviceName: services.name,
+        providerName: providers.name
+      })
+      .from(appointments)
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .orderBy(desc(appointments.startAt));
+      
+    res.json({ success: true, data: results });
+  } catch (error) {
+    next(error);
   }
 });
 

@@ -18,7 +18,7 @@ export default function NotificationManager() {
           if (res.data.success) {
             const appointments = res.data.data;
             appointments.forEach((apt: any) => {
-              if (apt.status === 'CONFIRMED' || apt.status === 'REQUESTED') {
+              if ((apt.status === 'CONFIRMED' || apt.status === 'REQUESTED') && apt.startAt) {
                 const diff = differenceInMinutes(parseISO(apt.startAt), now);
                 if (diff > 0 && diff <= 15) {
                   // Only toast if not already toasted for this specific time recently
@@ -36,7 +36,7 @@ export default function NotificationManager() {
             });
           }
         } catch (error) {
-          console.error("Failed to fetch admin notifications", error);
+          if (error.response?.status !== 401) { console.error("Failed to fetch admin notifications", error); }
         }
       } else {
         // PATIENT MODE: Check local storage
@@ -66,8 +66,14 @@ export default function NotificationManager() {
     };
 
     const formatTime = (isoString: string) => {
-      const d = parseISO(isoString);
-      return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      if (!isoString) return '';
+      try {
+        const d = parseISO(isoString);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return '';
+      }
     };
 
     // Check immediately, then every 1 minute

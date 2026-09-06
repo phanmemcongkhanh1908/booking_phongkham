@@ -44,7 +44,7 @@ patientsRouter.put("/:id", requireAuth, async (req, res, next) => {
         phone: req.body.phone,
         dob: req.body.dob,
         gender: req.body.gender,
-        debt: parseInt(req.body.debt) ?? 0,
+        debt: Number(req.body.debt) || 0,
         allergies: req.body.allergies,
         lastXRayDate: req.body.lastXRayDate,
         notes: req.body.notes,

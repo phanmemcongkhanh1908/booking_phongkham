@@ -37,7 +37,12 @@ export const requirePermission = (requiredPermission: string) => {
       }
 
       // Admin mặc định có toàn quyền (*) hoặc ("all")
-      const hasPermission = req.user.permissions.includes("*") || req.user.permissions.includes("all") || req.user.permissions.includes(requiredPermission);
+      const permissions = req.user.permissions || [];
+      const hasPermission =
+        req.user.role === "admin" ||
+        permissions.includes("*") ||
+        permissions.includes("all") ||
+        permissions.includes(requiredPermission);
       
       if (!hasPermission) {
         throw new ForbiddenError("Bạn không có quyền thực hiện hành động này");

@@ -77,8 +77,10 @@ function isSlotConflict(slotStart: Date, slotEnd: Date, occupiedSlots: OccupiedS
 export async function calculateAvailableSlots(
   providerId: string,
   serviceId: string,
-  targetDate: Date
+  targetDate: Date,
+  options: { includeUnavailable?: boolean } = {}
 ): Promise<AvailableSlot[]> {
+  const { includeUnavailable = false } = options;
   
   // 1. Lấy thông tin Bác sĩ & Dịch vụ
   const providerRecords = await db.select().from(providers).where(eq(providers.id, providerId)).limit(1);
@@ -139,8 +141,18 @@ export async function calculateAvailableSlots(
 
       // Slot không được nằm trong quá khứ
       if (isBefore(currentSlotStart, now)) {
-         currentSlotStart = addMinutes(currentSlotStart, INTERVAL_STEP);
-         continue;
+        if (includeUnavailable) {
+          resultSlots.push({
+            startAt: currentSlotStart,
+            endAt: currentSlotEnd,
+            providerId: provider.id,
+            score: -10,
+            isAvailable: false,
+            unavailableReason: "PAST",
+          });
+        }
+        currentSlotStart = addMinutes(currentSlotStart, INTERVAL_STEP);
+        continue;
       }
 
       // Kiểm tra đụng độ (Conflict)
@@ -160,12 +172,29 @@ export async function calculateAvailableSlots(
           endAt: currentSlotEnd,
           providerId: provider.id,
           score,
+          isAvailable: true,
+        });
+      } else if (includeUnavailable) {
+        const conflictOcc = occupiedSlots.find(occ => isBefore(currentSlotStart, occ.endAt) && isAfter(currentSlotEnd, occ.startAt));
+        resultSlots.push({
+          startAt: currentSlotStart,
+          endAt: currentSlotEnd,
+          providerId: provider.id,
+          score: -1,
+          isAvailable: false,
+          unavailableReason: conflictOcc?.type === "HOLD" ? "HELD" : "BOOKED",
         });
       }
 
       // Nhảy sang mốc giờ tiếp theo
       currentSlotStart = addMinutes(currentSlotStart, INTERVAL_STEP);
     }
+  }
+
+  // Sắp xếp: Nếu includeUnavailable thì ưu tiên hiển thị theo trình tự thời gian tăng dần
+  // để người dùng dễ theo dõi buổi sáng/chiều/tối
+  if (includeUnavailable) {
+    return resultSlots.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
   }
 
   // Sort theo score giảm dần, nếu bằng thì sort theo thời gian tăng dần

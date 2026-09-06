@@ -50,7 +50,7 @@ export default function Analytics() {
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <PieTooltip formatter={(val: number) => val.toLocaleString('vi-VN') + ' đ'} />
+                    <PieTooltip formatter={(val: any) => (val !== undefined && val !== null ? Number(val).toLocaleString('vi-VN') : '0') + ' đ'} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>

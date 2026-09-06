@@ -18,7 +18,7 @@ import { Input } from '../../components/ui/Input';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { uploadImageToDrive, syncPatientToSheet, findOrCreateFolder } from '../../lib/googleWorkspace';
-import config from '../../../firebase-applet-config.json';
+
 
 // Document structure
 export interface DocumentFile {
@@ -235,7 +235,7 @@ export default function Patients() {
   const handleConnectGoogle = () => {
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: config.oAuthClientId,
+        client_id: (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || '',
         scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
         callback: (tokenResponse: any) => {
           if (tokenResponse && tokenResponse.access_token) {
@@ -692,7 +692,7 @@ export default function Patients() {
                     <span className="font-semibold text-text-main text-xs truncate">{p.fullName}</span>
                     {pDebt > 0 && (
                       <span className="text-[10px] font-bold text-error bg-red-50 px-1.5 py-0.5 rounded shrink-0">
-                        Nợ {pDebt.toLocaleString()} đ
+                        Nợ {(Number(pDebt) || 0).toLocaleString('vi-VN')} đ
                       </span>
                     )}
                   </div>
@@ -740,7 +740,7 @@ export default function Patients() {
                         ? 'bg-red-50 text-error border border-red-200' 
                         : 'bg-green-50 text-green-700 border border-green-200'
                     }`}>
-                      {debt > 0 ? `Công nợ: ${debt.toLocaleString()} đ` : 'Đã thanh toán đủ'}
+                      {debt > 0 ? `Công nợ: ${(Number(debt) || 0).toLocaleString('vi-VN')} đ` : 'Đã thanh toán đủ'}
                     </span>
                     {!isSaved && (
                       <span className="text-[11px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -803,8 +803,8 @@ export default function Patients() {
                     variant="outline" 
                     size="sm"
                     onClick={() => {
-                      setTelegramIdInput(selectedPatient.telegramId || '');
-                      setShowTelegramModal('record');
+                      // setTelegramIdInput(selectedPatient.telegramId || '');
+                      // setShowTelegramModal('record');
                     }}
                     className="text-xs h-9 text-blue-600 border-blue-200 hover:bg-blue-50 bg-white"
                     title="Gửi bệnh án qua Telegram"
@@ -1359,7 +1359,7 @@ export default function Patients() {
                       {/* Old Debt */}
                       <div className="bg-bg-base p-4 rounded-lg border border-border-subtle">
                         <span className="text-text-muted font-semibold block mb-1">Công nợ kỳ trước:</span>
-                        <p className="font-extrabold text-xl text-text-main">{debt.toLocaleString()} đ</p>
+                        <p className="font-extrabold text-xl text-text-main">{(Number(debt) || 0).toLocaleString('vi-VN')} đ</p>
                       </div>
 
                       {/* Today's Fee */}
@@ -1381,7 +1381,7 @@ export default function Patients() {
                       <div className="col-span-1 md:col-span-2 p-4 rounded-lg bg-slate-50 border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                         <span className="text-text-main font-bold text-sm">Tổng cộng cần thanh toán:</span>
                         <p className="text-2xl font-black text-error">
-                          {(debt + currentServiceCost).toLocaleString()} đ
+                          {((Number(debt) || 0) + (Number(currentServiceCost) || 0)).toLocaleString('vi-VN')} đ
                         </p>
                       </div>
 
@@ -1416,9 +1416,9 @@ export default function Patients() {
                         <div className="flex flex-col justify-center bg-mint/30 p-4 rounded-lg border border-primary/20">
                           <span className="text-text-main font-bold block text-xs">Công nợ mới (còn lại sau thanh toán):</span>
                           <p className={`font-black text-xl mt-1 ${
-                            (debt + currentServiceCost - paidAmount) > 0 ? 'text-error' : 'text-green-700'
+                            ((Number(debt) || 0) + (Number(currentServiceCost) || 0) - (Number(paidAmount) || 0)) > 0 ? 'text-error' : 'text-green-700'
                           }`}>
-                            {Math.max(0, debt + currentServiceCost - paidAmount).toLocaleString()} đ
+                            {Math.max(0, (Number(debt) || 0) + (Number(currentServiceCost) || 0) - (Number(paidAmount) || 0)).toLocaleString('vi-VN')} đ
                           </p>
                         </div>
                       </div>
@@ -1427,15 +1427,15 @@ export default function Patients() {
                       <div className="hidden print:block col-span-2 space-y-2 mt-4 border-t pt-4">
                         <div className="flex justify-between py-1">
                           <span>Chi phí hôm nay:</span>
-                          <b>{currentServiceCost.toLocaleString()} đ</b>
+                          <b>{(Number(currentServiceCost) || 0).toLocaleString('vi-VN')} đ</b>
                         </div>
                         <div className="flex justify-between py-1">
                           <span>Đã thanh toán ({paymentMethod}):</span>
-                          <b>{paidAmount.toLocaleString()} đ</b>
+                          <b>{(Number(paidAmount) || 0).toLocaleString('vi-VN')} đ</b>
                         </div>
                         <div className="flex justify-between py-1 border-t text-sm">
                           <span>Công nợ còn lại:</span>
-                          <b>{Math.max(0, debt + currentServiceCost - paidAmount).toLocaleString()} đ</b>
+                          <b>{Math.max(0, (Number(debt) || 0) + (Number(currentServiceCost) || 0) - (Number(paidAmount) || 0)).toLocaleString('vi-VN')} đ</b>
                         </div>
                       </div>
 
@@ -1467,8 +1467,8 @@ export default function Patients() {
                       <Button 
                         variant="outline"
                         onClick={() => {
-                          setTelegramIdInput(selectedPatient?.telegramId || '');
-                          setShowTelegramModal('receipt');
+                          // setTelegramIdInput(selectedPatient?.telegramId || '');
+                          // setShowTelegramModal('receipt');
                         }} 
                         className="text-xs gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50 bg-white"
                       >
@@ -1883,10 +1883,10 @@ export default function Patients() {
           patient={selectedPatient}
           records={selectedPatient.emr || []}
           receiptData={{
-            total: currentServiceCost,
-            paid: paidAmount,
-            newDebt: Math.max(0, debt + currentServiceCost - paidAmount),
-            oldDebt: selectedPatient.debt
+            total: Number(currentServiceCost) || 0,
+            paid: Number(paidAmount) || 0,
+            newDebt: Math.max(0, (Number(debt) || 0) + (Number(currentServiceCost) || 0) - (Number(paidAmount) || 0)),
+            oldDebt: Number(selectedPatient.debt) || 0
           }}
           onClose={() => setDocumentViewerState({isOpen: false, type: null})}
           onSendSuccess={(telegramId) => {

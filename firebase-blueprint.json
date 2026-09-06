@@ -1,0 +1,184 @@
+{
+  "entities": {
+    "Role": {
+      "title": "Role",
+      "description": "User access control role",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "permissions": { "type": "array" }
+      },
+      "required": ["name"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System administrator and clinic staff accounts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "roleId": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["email", "passwordHash"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient records and clinical history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "notes": { "type": "string" },
+        "medicalHistory": { "type": "string" },
+        "telegramChatId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Provider": {
+      "title": "Provider",
+      "description": "Dental practitioner or specialist provider",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "specialty": { "type": "string" },
+        "workingHours": { "type": "object" },
+        "bookingEnabled": { "type": "boolean" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "Dental treatment or consultation service",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "durationMins": { "type": "number" },
+        "price": { "type": "number" },
+        "bufferBefore": { "type": "number" },
+        "bufferAfter": { "type": "number" }
+      },
+      "required": ["name", "durationMins"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Patient clinic booking and treatment schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "providerId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "startAt": { "type": "string" },
+        "endAt": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["patientId", "startAt", "endAt", "status"]
+    },
+    "AppointmentHold": {
+      "title": "AppointmentHold",
+      "description": "Temporary slot reservation during checkout flow",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionToken": { "type": "string" },
+        "providerId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "startAt": { "type": "string" },
+        "endAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["sessionToken", "startAt", "endAt", "expiresAt"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Clinic configuration and preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "value": { "type": "object" }
+      },
+      "required": ["key", "value"]
+    },
+    "PatientRecall": {
+      "title": "PatientRecall",
+      "description": "Automated periodic dental checkup reminders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["patientId", "dueDate", "status"]
+    },
+    "Waitlist": {
+      "title": "Waitlist",
+      "description": "Patients waiting for earlier available cancellation slots",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "preferredDate": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["patientId", "status"]
+    }
+  },
+  "firestore": {
+    "/roles/{roleId}": {
+      "schema": { "$ref": "#/entities/Role" },
+      "description": "System role definitions and permissions"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User accounts and authentication credentials"
+    },
+    "/patients/{patientId}": {
+      "schema": { "$ref": "#/entities/Patient" },
+      "description": "Patient records and medical notes"
+    },
+    "/providers/{providerId}": {
+      "schema": { "$ref": "#/entities/Provider" },
+      "description": "Dental specialists and their schedules"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Dental services, durations, and pricing"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Booked appointments and schedule events"
+    },
+    "/appointment_holds/{holdId}": {
+      "schema": { "$ref": "#/entities/AppointmentHold" },
+      "description": "Temporary booking slot reservations"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "Clinic settings, notifications, and profile"
+    },
+    "/patient_recalls/{recallId}": {
+      "schema": { "$ref": "#/entities/PatientRecall" },
+      "description": "Recurring recall notices for dental hygiene"
+    },
+    "/waitlist/{waitlistId}": {
+      "schema": { "$ref": "#/entities/Waitlist" },
+      "description": "Waitlist queue for slot cancellation openings"
+    }
+  }
+}

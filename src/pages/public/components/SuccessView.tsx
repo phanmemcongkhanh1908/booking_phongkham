@@ -69,6 +69,7 @@ export default function SuccessView() {
     try {
       const res = await api.post(`/public/appointments/${appointmentId}/notify`, {
         email: emailInput.trim(),
+        phone: patientPhone,
       });
       if (res.data.success) {
         setEmailSent(true);

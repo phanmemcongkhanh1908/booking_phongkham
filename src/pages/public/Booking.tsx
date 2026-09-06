@@ -24,37 +24,20 @@ export default function Booking() {
   const currentStepObj = steps.find(s => s.path === currentPath);
   const step = currentStepObj ? currentStepObj.id : 1;
 
-  // Keep URL in sync with store step
-  useEffect(() => {
-    if (store.step === 1 && currentPath !== 'dich-vu') navigate('/book/dich-vu');
-    else if (store.step === 2 && currentPath !== 'chon-gio') navigate('/book/chon-gio');
-    else if (store.step === 3 && currentPath !== 'thong-tin') navigate('/book/thong-tin');
-    else if (store.step === 4 && currentPath !== 'hoan-tat') navigate('/book/hoan-tat');
-  }, [store.step, currentPath, navigate]);
+  
+  const serviceId = useBookingStore(s => s.serviceId);
+  const selectedDate = useBookingStore(s => s.selectedDate);
 
-  // Keep store step in sync with URL
-  useEffect(() => {
-    if (currentPath === 'dich-vu' && store.step !== 1) store.setStep(1);
-    else if (currentPath === 'chon-gio' && store.step !== 2) store.setStep(2);
-    else if (currentPath === 'thong-tin' && store.step !== 3) store.setStep(3);
-    else if (currentPath === 'hoan-tat' && store.step !== 4) store.setStep(4);
-  }, [currentPath, store]);
-
-  // Sync store step to URL on mount and update store
   useEffect(() => {
     if (currentPath === 'book' || currentPath === '') {
       navigate('/book/dich-vu', { replace: true });
-    }
-  }, [currentPath, navigate]);
-
-  // Guard routing based on store state
-  useEffect(() => {
-    if (step >= 2 && !store.serviceId) {
+    } else if (step >= 2 && !serviceId) {
       navigate('/book/dich-vu', { replace: true });
-    } else if (step >= 3 && !store.selectedDate) {
+    } else if (step >= 3 && !selectedDate) {
       navigate('/book/chon-gio', { replace: true });
     }
-  }, [step, store.serviceId, store.selectedDate, navigate]);
+  }, [currentPath, step, serviceId, selectedDate, navigate]);
+
 
   return (
     <div className="min-h-screen bg-bg-base p-4 md:p-8 relative selection:bg-primary/20">

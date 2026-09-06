@@ -48,7 +48,18 @@ async function startServer() {
   app.use("/api/patients", patientsRouter);
 
   // Global Error Handler (Must be after all API routes)
+  
+  // Handle 404 for API routes
+  app.use("/api", (req, res) => {
+    res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: `Không tìm thấy API: ${req.method} ${req.originalUrl}` }});
+  });
+
   app.use(globalErrorHandler);
+
+
+const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[Server] Dental Smart Booking Engine running on port ${PORT}`);
+  });
 
   // ==========================================
   // VITE MIDDLEWARE (For React PWA)
@@ -66,10 +77,7 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Server] Dental Smart Booking Engine running on port ${PORT}`);
-  });
 }
+
 
 startServer();

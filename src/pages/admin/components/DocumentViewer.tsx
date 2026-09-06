@@ -41,9 +41,16 @@ export default function DocumentViewer({
 
   const targetRef = useRef<HTMLDivElement>(null);
 
+  const safeReceiptData = {
+    total: Number(receiptData?.total) || 0,
+    paid: Number(receiptData?.paid) || 0,
+    newDebt: Number(receiptData?.newDebt) || 0,
+    oldDebt: Number(receiptData?.oldDebt) || 0,
+  };
+
   useEffect(() => {
-    if (isOpen && patient?.telegramId) {
-      setTelegramIdInput(patient.telegramId);
+    if (isOpen) {
+      setTelegramIdInput(patient?.telegramId || '');
     }
     if (isOpen) {
       setShowTelegramUi(false);
@@ -203,20 +210,20 @@ export default function DocumentViewer({
                     <ReceiptTemplate 
                       forPrint={true} 
                       patient={patient}
-                      total={receiptData.total}
-                      paid={receiptData.paid}
-                      newDebt={receiptData.newDebt}
-                      oldDebt={receiptData.oldDebt}
+                      total={safeReceiptData.total}
+                      paid={safeReceiptData.paid}
+                      newDebt={safeReceiptData.newDebt}
+                      oldDebt={safeReceiptData.oldDebt}
                     />
                   ) : (
                     <div className="bg-white max-w-sm mx-auto">
                       <K80ReceiptTemplate 
                         forPrint={true} 
                         patient={patient}
-                        total={receiptData.total}
-                        paid={receiptData.paid}
-                        newDebt={receiptData.newDebt}
-                        oldDebt={receiptData.oldDebt}
+                        total={safeReceiptData.total}
+                        paid={safeReceiptData.paid}
+                        newDebt={safeReceiptData.newDebt}
+                        oldDebt={safeReceiptData.oldDebt}
                       />
                     </div>
                   )
@@ -298,19 +305,19 @@ export default function DocumentViewer({
             <ReceiptTemplate 
               ref={targetRef}
               patient={patient}
-              total={receiptData.total}
-              paid={receiptData.paid}
-              newDebt={receiptData.newDebt}
-              oldDebt={receiptData.oldDebt}
+              total={safeReceiptData.total}
+              paid={safeReceiptData.paid}
+              newDebt={safeReceiptData.newDebt}
+              oldDebt={safeReceiptData.oldDebt}
             />
           ) : (
             <K80ReceiptTemplate 
               ref={targetRef}
               patient={patient}
-              total={receiptData.total}
-              paid={receiptData.paid}
-              newDebt={receiptData.newDebt}
-              oldDebt={receiptData.oldDebt}
+              total={safeReceiptData.total}
+              paid={safeReceiptData.paid}
+              newDebt={safeReceiptData.newDebt}
+              oldDebt={safeReceiptData.oldDebt}
             />
           )
         ) : (
@@ -330,19 +337,19 @@ export default function DocumentViewer({
               <ReceiptTemplate 
                 forPrint={true} 
                 patient={patient}
-                total={receiptData.total}
-                paid={receiptData.paid}
-                newDebt={receiptData.newDebt}
-                oldDebt={receiptData.oldDebt}
+                total={safeReceiptData.total}
+                paid={safeReceiptData.paid}
+                newDebt={safeReceiptData.newDebt}
+                oldDebt={safeReceiptData.oldDebt}
               />
             ) : (
               <K80ReceiptTemplate 
                 forPrint={true} 
                 patient={patient}
-                total={receiptData.total}
-                paid={receiptData.paid}
-                newDebt={receiptData.newDebt}
-                oldDebt={receiptData.oldDebt}
+                total={safeReceiptData.total}
+                paid={safeReceiptData.paid}
+                newDebt={safeReceiptData.newDebt}
+                oldDebt={safeReceiptData.oldDebt}
               />
             )
           ) : (

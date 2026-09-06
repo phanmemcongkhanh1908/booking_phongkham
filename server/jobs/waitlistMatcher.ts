@@ -1,7 +1,7 @@
 import { db } from "../db/index.js";
 import { waitlist } from "../db/schema.js";
 import { sendWebPush } from "../services/notification.js";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, or, isNull } from "drizzle-orm";
 
 /**
  * ENGINE: WAITLIST MATCHER

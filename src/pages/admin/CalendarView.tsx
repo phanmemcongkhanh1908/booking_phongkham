@@ -308,8 +308,8 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-text-muted flex items-center gap-1"><DollarSign className="w-4 h-4" /> Công nợ</span>
-                  <span className={`font-medium ${selectedEvent.resource.debt > 0 ? 'text-status-cancelled' : 'text-green-600'}`}>
-                    {selectedEvent.resource.debt > 0 ? `${selectedEvent.resource.debt.toLocaleString('vi-VN')} đ` : 'Hoàn tất'}
+                  <span className={`font-medium ${(Number(selectedEvent.resource?.debt) || 0) > 0 ? 'text-status-cancelled' : 'text-green-600'}`}>
+                    {(Number(selectedEvent.resource?.debt) || 0) > 0 ? `${(Number(selectedEvent.resource?.debt) || 0).toLocaleString('vi-VN')} đ` : 'Hoàn tất'}
                   </span>
                 </div>
               </div>

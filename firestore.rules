@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // System roles
+    match /roles/{roleId} {
+      allow read, write: if true;
+    }
+
+    // User accounts & staff
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Patient records
+    match /patients/{patientId} {
+      allow read, write: if true;
+    }
+
+    // Doctors and dentists
+    match /providers/{providerId} {
+      allow read, write: if true;
+    }
+
+    // Dental services catalog
+    match /services/{serviceId} {
+      allow read, write: if true;
+    }
+
+    // Appointments & bookings
+    match /appointments/{appointmentId} {
+      allow read, write: if true;
+    }
+
+    // Temporary booking slot holds
+    match /appointment_holds/{holdId} {
+      allow read, write: if true;
+    }
+
+    // Clinic settings & configs
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Periodic dental recalls
+    match /patient_recalls/{recallId} {
+      allow read, write: if true;
+    }
+
+    // Waitlist queue
+    match /waitlist/{waitlistId} {
+      allow read, write: if true;
+    }
+
+    // Audit logs
+    match /audit_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Push notifications
+    match /push_subscriptions/{subId} {
+      allow read, write: if true;
+    }
+
+    // Provider service associations
+    match /provider_services/{psId} {
+      allow read, write: if true;
+    }
+
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

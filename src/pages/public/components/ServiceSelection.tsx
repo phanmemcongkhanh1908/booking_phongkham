@@ -3,6 +3,7 @@ import { useBookingStore } from '../../../store/booking';
 import api from '../../../services/api';
 import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/Card';
 import { ChevronRight, Stethoscope, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Service {
   id: string;
@@ -15,6 +16,7 @@ export default function ServiceSelection() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const setService = useBookingStore(state => state.setService);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -61,7 +63,7 @@ export default function ServiceSelection() {
           <button
             key={svc.id}
             type="button"
-            onClick={() => setService(svc.id, svc.name)}
+            onClick={() => { setService(svc.id, svc.name); navigate('/book/chon-gio'); }}
             className="group text-left w-full relative flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-all duration-300 hover:-translate-y-1 hover:border-primary hover:shadow-xl hover:shadow-teal-900/5 overflow-hidden"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-teal-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -77,7 +79,7 @@ export default function ServiceSelection() {
                     ~{svc.durationMins} phút
                   </span>
                   <span className="text-xs font-medium text-slate-500">
-                    • {svc.price ? `${svc.price.toLocaleString()}đ` : 'Miễn phí'}
+                    • {svc.price !== undefined && svc.price !== null && Number(svc.price) > 0 ? `${(Number(svc.price) || 0).toLocaleString('vi-VN')}đ` : 'Miễn phí'}
                   </span>
                 </div>
               </div>

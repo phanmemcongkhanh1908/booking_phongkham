@@ -171,14 +171,30 @@ export async function reloadBotConfig(token?: string, chatId?: string, username?
       });
 
       // Handle Callback Query (Admin confirmation / cancellation)
+      
       bot.on('callback_query', async (query: any) => {
         if (!query.data || !query.message) return;
+        
+        if (currentChatId && query.message.chat.id.toString() !== currentChatId.toString()) {
+           await bot?.answerCallbackQuery(query.id, { text: 'Bạn không có quyền thực hiện thao tác này.', show_alert: true });
+           return;
+        }
         
         const [action, appointmentId] = query.data.split('_');
 
         try {
           if (action === 'CONFIRM' || action === 'CANCEL') {
             const nextStatus = action === 'CONFIRM' ? 'CONFIRMED' : 'CANCEL_CLINIC';
+            
+            const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+            if (existing.length === 0) return;
+            
+            // Basic validity check (cannot confirm/cancel completed or already cancelled appts)
+            if (['COMPLETED', 'CANCELLED', 'CANCEL_CLINIC', 'CANCEL_PATIENT', 'NO_SHOW'].includes(existing[0].status)) {
+               await bot?.answerCallbackQuery(query.id, { text: 'Lịch hẹn đã kết thúc hoặc đã hủy trước đó.', show_alert: true });
+               return;
+            }
+
             
             await db.update(appointments)
               .set({ status: nextStatus, updatedAt: new Date() })

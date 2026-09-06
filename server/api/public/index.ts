@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import { calculateAvailableSlots } from "../../core/scheduling.js";
-import { parseISO, addMinutes } from "date-fns";
+import { parseISO, addMinutes, addDays, format, startOfToday } from "date-fns";
 import crypto from "crypto";
 import { db } from "../../db/index.js";
 import { appointmentHolds, appointments, patients, services, providers } from "../../db/schema.js";
 import { HoldSlotSchema, BookAppointmentSchema } from "../../../shared/schemas.js";
-import { eq, and, gte, lt, sql } from "drizzle-orm";
-import { ConflictError, BadRequestError, NotFoundError } from "../../core/errors.js";
+import { eq, and, gte, lt, gt, sql } from "drizzle-orm";
+import { ConflictError, BadRequestError, NotFoundError, ForbiddenError } from "../../core/errors.js";
 import { sendNewAppointmentAlert, getTelegramBotUsername } from "../../core/telegram.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
 import { savePatientContact } from "../../services/patientContact.js";
@@ -38,7 +38,64 @@ const AvailabilityQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải là YYYY-MM-DD"),
 });
 
-// [M01] Lấy danh sách Slot rảnh
+const AvailabilitySummaryQuerySchema = z.object({
+  providerId: z.string().uuid("ID Bác sĩ không hợp lệ").optional(),
+  serviceId: z.string().uuid("ID Dịch vụ không hợp lệ"),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải là YYYY-MM-DD").optional(),
+  days: z.coerce.number().min(1).max(60).optional().default(28),
+});
+
+// [M01] Tóm tắt 28 ngày để hiển thị thanh chọn ngày với trạng thái Còn chỗ / Hết chỗ
+publicRouter.get("/availability/summary", async (req, res, next) => {
+  try {
+    const query = AvailabilitySummaryQuerySchema.parse(req.query);
+    const start = query.startDate ? parseISO(query.startDate) : startOfToday();
+    const daysCount = query.days || 28;
+
+    let providerId = query.providerId;
+    if (!providerId) {
+      const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
+      if (activeProviders.length === 0) {
+        return res.json({ success: true, data: { summary: [], nextAvailableDate: null, nextAvailableCount: 0 } });
+      }
+      providerId = activeProviders[0].id;
+    }
+
+    const dayPromises = Array.from({ length: daysCount }).map(async (_, idx) => {
+      const targetDate = addDays(start, idx);
+      const dateStr = format(targetDate, "yyyy-MM-dd");
+      const availableSlots = await calculateAvailableSlots(
+        providerId!,
+        query.serviceId,
+        targetDate,
+        { includeUnavailable: false }
+      );
+      const count = availableSlots.length;
+      return {
+        date: dateStr,
+        dayOfWeek: targetDate.getDay(),
+        availableSlotsCount: count,
+        isFull: count === 0,
+      };
+    });
+
+    const summary = await Promise.all(dayPromises);
+    const nextAvailable = summary.find(s => !s.isFull);
+
+    res.json({
+      success: true,
+      data: {
+        summary,
+        nextAvailableDate: nextAvailable ? nextAvailable.date : null,
+        nextAvailableCount: nextAvailable ? nextAvailable.availableSlotsCount : 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// [M01] Lấy danh sách Slot rảnh & bận (để làm mờ khung giờ đã full)
 publicRouter.get("/availability", async (req, res, next) => {
   try {
     const query = AvailabilityQuerySchema.parse(req.query);
@@ -55,10 +112,13 @@ publicRouter.get("/availability", async (req, res, next) => {
       providerId = activeProviders[0].id;
     }
 
+    const includeUnavailable = req.query.includeUnavailable !== "false";
+
     const availableSlots = await calculateAvailableSlots(
       providerId,
       query.serviceId,
-      targetDate
+      targetDate,
+      { includeUnavailable }
     );
 
     res.json({
@@ -85,7 +145,7 @@ publicRouter.post("/appointments/hold", async (req, res, next) => {
         and(
           eq(appointments.providerId, data.providerId),
           lt(appointments.startAt, endAt),
-          gte(appointments.endAt, startAt),
+          gt(appointments.endAt, startAt),
           sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`
         )
       );
@@ -95,7 +155,7 @@ publicRouter.post("/appointments/hold", async (req, res, next) => {
           eq(appointmentHolds.providerId, data.providerId),
           gte(appointmentHolds.expiresAt, new Date()), // only active holds
           lt(appointmentHolds.startAt, endAt),
-          gte(appointmentHolds.endAt, startAt)
+          gt(appointmentHolds.endAt, startAt)
         )
       );
 
@@ -158,9 +218,29 @@ publicRouter.post("/appointments", async (req, res, next) => {
       let patientRecords = await tx.select().from(patients).where(eq(patients.phone, data.phone)).limit(1);
       let patientId;
 
-      const patientNotes = data.notes 
-        ? (data.email ? `${data.notes}\n[Email: ${data.email}]` : data.notes)
-        : (data.email ? `[Email: ${data.email}]` : undefined);
+      
+      let patientNotes = data.notes;
+      if (data.email) {
+        patientNotes = data.notes ? (data.notes + ' | Email: ' + data.email) : ('Email: ' + data.email);
+      }
+      
+      // Merge with existing JSON if it exists
+      if (patientRecords.length > 0 && patientRecords[0].notes) {
+        try {
+          const parsed = JSON.parse(patientRecords[0].notes);
+          if (patientNotes) {
+            parsed.text = (parsed.text ? parsed.text + '\n' : '') + patientNotes;
+          }
+          patientNotes = JSON.stringify(parsed);
+        } catch (e) {
+           // Not JSON, just append
+           patientNotes = patientRecords[0].notes + (patientNotes ? '\n' + patientNotes : '');
+        }
+      } else if (patientNotes) {
+         // Create new JSON format
+         patientNotes = JSON.stringify({ text: patientNotes, diagnosis: '', treatmentPlan: '', documents: [] });
+      }
+
 
       if (patientRecords.length > 0) {
         patientId = patientRecords[0].id;
@@ -243,10 +323,15 @@ publicRouter.post("/appointments", async (req, res, next) => {
 });
 
 // Endpoint cho phép bệnh nhân đăng ký nhận email / liên kết telegram hoặc gửi lại thông báo
+
 publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
-    const { email, telegramId } = req.body;
+    const { email, telegramId, phone } = req.body;
+
+    if (!phone) {
+      throw new BadRequestError("Vui lòng cung cấp số điện thoại để xác thực");
+    }
 
     const aptList = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
     if (aptList.length === 0) throw new NotFoundError("Không tìm thấy lịch hẹn");
@@ -255,6 +340,12 @@ publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
     const pList = await db.select().from(patients).where(eq(patients.id, apt.patientId)).limit(1);
     if (pList.length === 0) throw new NotFoundError("Không tìm thấy thông tin bệnh nhân");
     const patient = pList[0];
+    
+    // Verify phone number to prevent IDOR
+    if (patient.phone !== phone) {
+      throw new ForbiddenError("Xác thực số điện thoại không hợp lệ");
+    }
+
 
     if (email || telegramId) {
       await savePatientContact(patient.id, patient.phone, { email, telegramId });
@@ -287,6 +378,39 @@ publicRouter.get("/clinic-info", async (req, res, next) => {
         telegramBotUsername: botUsername,
       }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+publicRouter.get("/appointments/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const results = await db
+      .select({
+        id: appointments.id,
+        status: appointments.status,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        serviceName: services.name,
+        providerName: providers.name,
+        patientName: patients.fullName,
+        patientPhone: patients.phone
+      })
+      .from(appointments)
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .where(eq(appointments.id, id))
+      .limit(1);
+
+    if (results.length === 0) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
+    }
+
+    res.json({ success: true, data: results[0] });
   } catch (error) {
     next(error);
   }

@@ -7,9 +7,10 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { ArrowLeft, Clock, AlertTriangle, Send, Mail, CheckCircle2, Bell, CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
 export default function PatientForm() {
-  
+  const navigate = useNavigate();
   const { sessionToken, slotStartTime, setStep, holdExpiresAt } = useBookingStore();
 
   const [formData, setFormData] = useState({
@@ -38,6 +39,7 @@ export default function PatientForm() {
       if (remaining <= 0) {
         toast.error("Đã hết thời gian giữ chỗ. Vui lòng chọn lại ngày giờ.");
         setStep(2);
+        navigate('/book/chon-gio');
       }
     };
 
@@ -136,8 +138,10 @@ export default function PatientForm() {
             formData.telegramId.trim() || null,
             appointmentData.telegramBotUsername || null
           );
+          navigate('/book/hoan-tat');
         } else {
           setStep(4);
+          navigate('/book/hoan-tat');
         }
       }
     } catch (err: any) {
@@ -159,7 +163,12 @@ export default function PatientForm() {
   return (
     <Card className="border-0 shadow-none sm:border sm:border-slate-200 sm:shadow-lg sm:shadow-slate-200/40 rounded-2xl overflow-hidden bg-white">
       <CardHeader className="flex flex-row items-center gap-4 text-center sm:text-left bg-gradient-to-b from-slate-50 to-white pb-6 border-b border-slate-100 p-4 md:p-6">
-        <Button variant="ghost" size="icon" onClick={() => setStep(2)} className="shrink-0 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors h-10 w-10">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => { setStep(2); navigate('/book/chon-gio'); }} 
+          className="shrink-0 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors h-10 w-10"
+        >
           <ArrowLeft size={20} />
         </Button>
         <div className="flex-1">
@@ -170,7 +179,7 @@ export default function PatientForm() {
                 <CalendarIcon className="w-3.5 h-3.5" />
                 {format(new Date(slotStartTime), 'HH:mm - dd/MM/yyyy')}
               </span>
-              <div className={`flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-md transition-colors \${isWarning ? 'bg-red-50 text-red-600 animate-pulse border border-red-100' : 'bg-teal-50 text-teal-700 border border-teal-100'}`}>
+              <div className={`flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-md transition-colors ${isWarning ? 'bg-red-50 text-red-600 animate-pulse border border-red-100' : 'bg-teal-50 text-teal-700 border border-teal-100'}`}>
                 {isWarning ? <AlertTriangle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
                 Giữ chỗ: {minutes}:{seconds < 10 ? '0' : ''}{seconds}
               </div>
@@ -179,8 +188,8 @@ export default function PatientForm() {
         </div>
       </CardHeader>
       
-      <CardContent className="p-4 md:p-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
+      <CardContent className="p-4 md:p-6 pb-20 sm:pb-6">
+        <form id="patient-booking-form" onSubmit={handleSubmit} className="space-y-5">
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-100 p-4 flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -239,7 +248,7 @@ export default function PatientForm() {
               onClick={() => setShowAdvancedNotify(!showAdvancedNotify)}
               className="text-sm font-medium text-slate-600 hover:text-primary transition-colors flex items-center gap-2 focus:outline-none"
             >
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors \${showAdvancedNotify ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${showAdvancedNotify ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}>
                 <Send className="w-3 h-3" />
               </div>
               {showAdvancedNotify ? "Ẩn tùy chọn Telegram" : "Nhận thông báo qua Telegram (Tùy chọn)"}
@@ -305,6 +314,35 @@ export default function PatientForm() {
           </div>
         </form>
       </CardContent>
+
+      {/* Sticky Action Bar on Mobile */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-tight">Thời gian khám</span>
+          <span className="text-xs font-bold text-slate-800">
+            {slotStartTime ? format(new Date(slotStartTime), 'HH:mm - dd/MM') : 'Đang chọn'}
+          </span>
+          <span className={`text-[10px] font-semibold flex items-center gap-1 ${isWarning ? 'text-red-600 animate-pulse' : 'text-teal-700'}`}>
+            <Clock className="w-3 h-3" /> Giữ chỗ: {minutes}:{seconds < 10 ? '0' : ''}{seconds}
+          </span>
+        </div>
+
+        <Button
+          type="submit"
+          form="patient-booking-form"
+          disabled={submitting}
+          className="h-11 px-5 bg-primary hover:bg-primary/90 text-white font-bold text-sm rounded-xl shadow-md flex items-center gap-1.5"
+        >
+          {submitting ? (
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <>
+              <span>Xác nhận</span>
+              <CheckCircle2 className="w-4 h-4" />
+            </>
+          )}
+        </Button>
+      </div>
     </Card>
   );
 }

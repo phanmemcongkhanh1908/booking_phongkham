@@ -17,7 +17,12 @@ const getNoteText = (notes: any) => {
   }
 };
 
-export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total: number, paid: number, newDebt: number, oldDebt: number, forPrint?: boolean }>(({ patient, total, paid, newDebt, oldDebt, forPrint = false }, ref) => {
+export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false }, ref) => {
+  const safeOldDebt = Number(oldDebt) || 0;
+  const safeTotal = Number(total) || 0;
+  const safePaid = Number(paid) || 0;
+  const safeNewDebt = Number(newDebt) || 0;
+
   return (
     <div 
       ref={ref} 
@@ -76,11 +81,11 @@ export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total:
         <tbody>
           <tr className="border-b border-dashed border-slate-200">
             <td className="py-2.5 px-3 text-slate-600">Nợ kỳ trước</td>
-            <td className="py-2.5 px-3 text-right font-medium text-slate-700">{oldDebt.toLocaleString('vi-VN')}</td>
+            <td className="py-2.5 px-3 text-right font-medium text-slate-700">{safeOldDebt.toLocaleString('vi-VN')}</td>
           </tr>
           <tr className="border-b border-slate-200 bg-slate-50/50">
             <td className="py-2.5 px-3 text-slate-800 font-semibold">Chi phí phát sinh buổi khám</td>
-            <td className="py-2.5 px-3 text-right font-bold text-slate-800">{total.toLocaleString('vi-VN')}</td>
+            <td className="py-2.5 px-3 text-right font-bold text-slate-800">{safeTotal.toLocaleString('vi-VN')}</td>
           </tr>
         </tbody>
       </table>
@@ -90,15 +95,15 @@ export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total:
         <div className="w-2/3 space-y-2">
           <div className="flex justify-between border-b border-slate-100 pb-1.5">
             <span className="text-slate-500 font-medium">Tổng cộng cần thanh toán:</span>
-            <span className="font-bold text-slate-800">{(oldDebt + total).toLocaleString('vi-VN')}</span>
+            <span className="font-bold text-slate-800">{(safeOldDebt + safeTotal).toLocaleString('vi-VN')}</span>
           </div>
           <div className="flex justify-between border-b border-teal-100 pb-1.5 text-teal-700">
             <span className="font-bold">Khách thanh toán hôm nay:</span>
-            <span className="font-bold text-[14px]">{paid.toLocaleString('vi-VN')}</span>
+            <span className="font-bold text-[14px]">{safePaid.toLocaleString('vi-VN')}</span>
           </div>
           <div className="flex justify-between bg-slate-100 p-2 rounded-md border border-slate-200 mt-1">
             <span className="text-slate-700 font-bold">Công nợ còn lại:</span>
-            <span className="font-bold text-red-600 text-[13px]">{newDebt.toLocaleString('vi-VN')}</span>
+            <span className="font-bold text-red-600 text-[13px]">{safeNewDebt.toLocaleString('vi-VN')}</span>
           </div>
         </div>
       </div>
@@ -202,10 +207,10 @@ export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, 
                 <span className="text-slate-500 font-bold block mb-1.5">Phương hướng / Kế hoạch xử lý:</span>
                 <p className="text-slate-800 whitespace-pre-wrap leading-relaxed pl-3 border-l-2 border-teal-200">{record.treatmentPlan || 'Chưa cập nhật'}</p>
               </div>
-              {record.cost > 0 && (
+              {Number(record.cost) > 0 && (
                 <div className="pt-2">
                    <span className="text-slate-500 font-bold block mb-1.5">Chi phí điều trị:</span>
-                   <p className="text-slate-800 font-medium pl-3 border-l-2 border-teal-200">{record.cost.toLocaleString('vi-VN')} VNĐ</p>
+                   <p className="text-slate-800 font-medium pl-3 border-l-2 border-teal-200">{(Number(record.cost) || 0).toLocaleString('vi-VN')} VNĐ</p>
                 </div>
               )}
             </div>
@@ -237,7 +242,12 @@ export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, 
 });
 
 
-export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total: number, paid: number, newDebt: number, oldDebt: number, forPrint?: boolean }>(({ patient, total, paid, newDebt, oldDebt, forPrint = false }, ref) => {
+export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false }, ref) => {
+  const safeOldDebt = Number(oldDebt) || 0;
+  const safeTotal = Number(total) || 0;
+  const safePaid = Number(paid) || 0;
+  const safeNewDebt = Number(newDebt) || 0;
+
   return (
     <div 
       ref={ref} 
@@ -279,11 +289,11 @@ export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, tot
         </div>
         <div className="flex justify-between mb-1">
           <span>Nợ kỳ trước</span>
-          <span>{oldDebt.toLocaleString('vi-VN')}</span>
+          <span>{safeOldDebt.toLocaleString('vi-VN')}</span>
         </div>
         <div className="flex justify-between font-bold">
           <span>Chi phí hôm nay</span>
-          <span>{total.toLocaleString('vi-VN')}</span>
+          <span>{safeTotal.toLocaleString('vi-VN')}</span>
         </div>
       </div>
 
@@ -291,15 +301,15 @@ export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, tot
       <div className="mb-4 text-[11px] space-y-1">
         <div className="flex justify-between">
           <span className="font-semibold">Cần thanh toán:</span>
-          <span>{(oldDebt + total).toLocaleString('vi-VN')}</span>
+          <span>{(safeOldDebt + safeTotal).toLocaleString('vi-VN')}</span>
         </div>
         <div className="flex justify-between text-[12px] font-bold mt-1">
           <span>Đã thanh toán:</span>
-          <span>{paid.toLocaleString('vi-VN')}</span>
+          <span>{safePaid.toLocaleString('vi-VN')}</span>
         </div>
         <div className="flex justify-between mt-1 pt-1 border-t border-black border-dashed font-bold">
           <span>Công nợ còn lại:</span>
-          <span>{newDebt.toLocaleString('vi-VN')}</span>
+          <span>{safeNewDebt.toLocaleString('vi-VN')}</span>
         </div>
       </div>
 

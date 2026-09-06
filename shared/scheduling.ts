@@ -31,4 +31,6 @@ export interface AvailableSlot {
   endAt: Date;
   providerId: string;
   score?: number;
+  isAvailable?: boolean;
+  unavailableReason?: "BOOKED" | "HELD" | "PAST";
 }
