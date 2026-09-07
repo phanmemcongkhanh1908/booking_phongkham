@@ -16,8 +16,10 @@ const publicRouter = Router();
 
 publicRouter.get("/services", async (req, res, next) => {
   try {
-    const allServices = await db.select().from(services).where(eq(services.isActive, true));
-    res.json({ success: true, data: allServices });
+    const allServices = await db.select().from(services);
+    // Filter active services in memory to gracefully handle older records where isActive might be missing
+    const activeServices = allServices.filter((s: any) => s.isActive !== false);
+    res.json({ success: true, data: activeServices });
   } catch (error) {
     next(error);
   }

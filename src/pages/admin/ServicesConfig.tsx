@@ -109,7 +109,7 @@ export default function ServicesConfig() {
       <Card className="col-span-1 md:col-span-2 lg:col-span-1">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Danh sách Dịch vụ</CardTitle>
-          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false }); setShowServiceForm(true); }}>
+          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false, isActive: true }); setShowServiceForm(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Thêm dịch vụ
           </Button>
         </CardHeader>
@@ -136,7 +136,11 @@ export default function ServicesConfig() {
                   <label className="text-xs font-medium text-text-muted">Giá dịch vụ (VNĐ)</label>
                   <Input type="number" placeholder="Ví dụ: 500000" value={editingService.price || ''} onChange={e => setEditingService({...editingService, price: e.target.value})} />
                 </div>
-                <div className="flex items-center gap-6 pt-2">
+                <div className="flex flex-wrap items-center gap-6 pt-2">
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input type="checkbox" checked={editingService.isActive !== false} onChange={e => setEditingService({...editingService, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
+                    <span>Đang hoạt động</span>
+                  </label>
                   <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
                     <input type="checkbox" checked={editingService.showPrice || false} onChange={e => setEditingService({...editingService, showPrice: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
                     <span>Hiển thị giá</span>
@@ -156,12 +160,15 @@ export default function ServicesConfig() {
 
           <div className="space-y-3">
             {services.map(svc => (
-              <div key={svc.id} className="flex justify-between items-center p-3 border border-border-subtle rounded hover:bg-bg-base transition-colors">
+              <div key={svc.id} className={`flex justify-between items-center p-3 border border-border-subtle rounded transition-colors ${svc.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="font-medium text-sm text-text-main">{svc.name}</h4>
-                    {svc.isHot && (
+                    <h4 className={`font-medium text-sm ${svc.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{svc.name}</h4>
+                    {svc.isHot && svc.isActive !== false && (
                       <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-sm">HOT</span>
+                    )}
+                    {svc.isActive === false && (
+                      <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">Ngừng hoạt động</span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-text-muted mt-1">
