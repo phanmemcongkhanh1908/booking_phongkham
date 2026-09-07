@@ -1,5 +1,4 @@
-import { serverDb } from "../lib/firebase-server.js";
-import { collection, getDocs, doc, deleteDoc, setDoc, updateDoc } from "firebase/firestore";
+import { db, loadStore, persistStore } from "../db/index.js";
 import { hashPassword } from "./security.js";
 import { bootstrapSystem } from "./bootstrap.js";
 
@@ -22,17 +21,13 @@ export async function wipeClinicData() {
   ];
 
   const wipedCounts: Record<string, number> = {};
+  const store = loadStore();
 
   // 1. Wipe all operational and patient clinic collections
   for (const colName of clinicCollections) {
     try {
-      const colRef = collection(serverDb, colName);
-      const snap = await getDocs(colRef);
-      let count = 0;
-      for (const itemDoc of snap.docs) {
-        await deleteDoc(itemDoc.ref);
-        count++;
-      }
+      const count = Object.keys(store[colName] || {}).length;
+      store[colName] = {};
       wipedCounts[colName] = count;
       console.log(`[Wipe] Cleared ${count} records from '${colName}'.`);
     } catch (err: any) {
@@ -45,25 +40,26 @@ export async function wipeClinicData() {
   const defaultAdminEmail = "admin@dentalsmartbooking.com";
   const defaultAdminPassword = "admin@123";
 
-  // Ensure 'admin' role exists in roles collection
   let adminRoleId = "role-admin";
   try {
-    const rolesSnap = await getDocs(collection(serverDb, "roles"));
-    const existingAdminRole = rolesSnap.docs.find(
-      (d) => (d.data().name || "").toLowerCase() === "admin"
+    if (!store["roles"]) store["roles"] = {};
+    const rolesList = Object.values(store["roles"]);
+    const existingAdminRole: any = rolesList.find(
+      (d: any) => (d.name || "").toLowerCase() === "admin"
     );
     if (existingAdminRole) {
       adminRoleId = existingAdminRole.id;
-      await updateDoc(existingAdminRole.ref, {
+      store["roles"][adminRoleId] = {
+        ...existingAdminRole,
         name: "admin",
         permissions: ["all"],
-      });
+      };
     } else {
-      await setDoc(doc(serverDb, "roles", adminRoleId), {
+      store["roles"][adminRoleId] = {
         id: adminRoleId,
         name: "admin",
         permissions: ["all"],
-      });
+      };
     }
     console.log(`[Wipe] Preserved 'admin' role with id '${adminRoleId}'.`);
   } catch (err: any) {
@@ -73,35 +69,34 @@ export async function wipeClinicData() {
   // Remove any non-admin users; ensure default admin user is intact
   let nonAdminRemoved = 0;
   try {
-    const usersSnap = await getDocs(collection(serverDb, "users"));
+    if (!store["users"]) store["users"] = {};
     const defaultPasswordHash = await hashPassword(defaultAdminPassword);
     let foundAdmin = false;
 
-    for (const userDoc of usersSnap.docs) {
-      const userData = userDoc.data();
-      const email = (userData.email || "").toLowerCase().trim();
+    const userEntries = Object.entries(store["users"]);
+    for (const [userId, userData] of userEntries) {
+      const email = ((userData as any).email || "").toLowerCase().trim();
 
       if (email === defaultAdminEmail || email === "admin") {
         foundAdmin = true;
-        // Reset/guarantee active status and default password
-        await updateDoc(userDoc.ref, {
+        store["users"][userId] = {
+          ...(userData as any),
           email: email,
           passwordHash: defaultPasswordHash,
           roleId: adminRoleId,
           isActive: true,
           updatedAt: new Date().toISOString(),
-        });
+        };
         console.log(`[Wipe] Preserved admin account: ${email}`);
       } else {
-        await deleteDoc(userDoc.ref);
+        delete store["users"][userId];
         nonAdminRemoved++;
       }
     }
 
-    // If admin user did not exist, create it immediately
     if (!foundAdmin) {
       const adminUserId = "admin-primary-account";
-      await setDoc(doc(serverDb, "users", adminUserId), {
+      store["users"][adminUserId] = {
         id: adminUserId,
         email: defaultAdminEmail,
         passwordHash: defaultPasswordHash,
@@ -109,13 +104,15 @@ export async function wipeClinicData() {
         isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+      };
       console.log(`[Wipe] Re-created default admin account: ${defaultAdminEmail}`);
     }
     wipedCounts["nonAdminUsers"] = nonAdminRemoved;
   } catch (err: any) {
     console.warn("[Wipe] Error safeguarding admin user:", err.message);
   }
+
+  persistStore();
 
   // 3. Re-run bootstrapSystem to seed fresh default services, default provider, and clinic profile
   try {

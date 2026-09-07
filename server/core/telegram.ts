@@ -1,7 +1,7 @@
 import { db } from "../db/index.js";
 import { appointments, patients, services, providers, settings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import { format } from "date-fns";
+import { safeFormatDate } from "../utils/dateFormat.js";
 import TelegramBot from "node-telegram-bot-api";
 
 let bot: any = null;
@@ -113,7 +113,7 @@ export async function reloadBotConfig(token?: string, chatId?: string, username?
               const { savePatientContact } = await import("../services/patientContact.js");
               await savePatientContact(apt.patientId, apt.patientPhone || "", { telegramId: chatIdStr });
 
-              const timeStr = format(apt.startAt, "HH:mm - EEEE, dd/MM/yyyy");
+              const timeStr = safeFormatDate(apt.startAt, "HH:mm - EEEE, dd/MM/yyyy");
               const welcomeMsg = 
                 `🎉 *XÁC THỰC TELEGRAM THÀNH CÔNG!*\n\n` +
                 `Xin chào *${apt.patientName}*, bạn đã kết nối nhận thông báo từ phòng khám nha khoa Dental Smart.\n\n` +
@@ -259,7 +259,7 @@ export const sendNewAppointmentAlert = async (appointmentId: string) => {
       + `📞 SĐT: ${apt.patientPhone}\n`
       + `🦷 Dịch vụ: ${apt.serviceName}\n`
       + `👨‍⚕️ Bác sĩ: ${apt.providerName}\n`
-      + `⏰ Thời gian: ${format(apt.startAt, "HH:mm dd/MM/yyyy")}\n\n`
+      + `⏰ Thời gian: ${safeFormatDate(apt.startAt, "HH:mm dd/MM/yyyy")}\n\n`
       + `Vui lòng xác nhận hoặc hủy lịch hẹn này.`;
 
     const inlineKeyboard = {
@@ -291,7 +291,7 @@ export const sendPatientReminder = async (telegramId: string, appointmentData: a
       + `${clinicName} xin nhắc lịch hẹn của quý khách:\n\n`
       + `🦷 *Dịch vụ:* ${appointmentData.serviceName}\n`
       + `👨‍⚕️ *Bác sĩ:* ${appointmentData.providerName}\n`
-      + `⏰ *Thời gian:* ${format(appointmentData.startAt, "HH:mm dd/MM/yyyy")}\n\n`
+      + `⏰ *Thời gian:* ${safeFormatDate(appointmentData.startAt, "HH:mm dd/MM/yyyy")}\n\n`
       + `Rất mong quý khách sắp xếp thời gian đến đúng giờ. Nếu cần hỗ trợ, vui lòng liên hệ ${hotline}.\n`
       + `Trân trọng!`;
 

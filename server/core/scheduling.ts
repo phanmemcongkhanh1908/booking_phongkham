@@ -175,14 +175,18 @@ export async function calculateAvailableSlots(
           isAvailable: true,
         });
       } else if (includeUnavailable) {
-        const conflictOcc = occupiedSlots.find(occ => isBefore(currentSlotStart, occ.endAt) && isAfter(currentSlotEnd, occ.startAt));
+        const matchingOccs = occupiedSlots.filter(occ => isBefore(currentSlotStart, occ.endAt) && isAfter(currentSlotEnd, occ.startAt));
+        const hasBooked = matchingOccs.some(o => o.type === "APPOINTMENT");
+        const hasHold = matchingOccs.some(o => o.type === "HOLD");
+        const unavailableReason = hasBooked ? "BOOKED" : (hasHold ? "HELD" : "BOOKED");
+
         resultSlots.push({
           startAt: currentSlotStart,
           endAt: currentSlotEnd,
           providerId: provider.id,
           score: -1,
           isAvailable: false,
-          unavailableReason: conflictOcc?.type === "HOLD" ? "HELD" : "BOOKED",
+          unavailableReason,
         });
       }
 

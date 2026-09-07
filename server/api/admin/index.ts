@@ -194,36 +194,65 @@ import { sql } from "drizzle-orm";
 // Lấy dữ liệu thống kê
 adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
   try {
-    // 1. Phân tích Dịch vụ mũi nhọn (Doanh thu & Số lượng theo dịch vụ)
-    const serviceStats = await db.execute(sql`
-      SELECT 
-        s.name, 
-        COUNT(a.id) as count, 
-        SUM(s.price) as revenue
-      FROM appointments a
-      JOIN services s ON a.service_id = s.id
-      WHERE a.status = 'COMPLETED'
-      GROUP BY s.name
-    `);
+    // Phân tích Dịch vụ mũi nhọn & Tỉ lệ lấp đầy
+    const allAppointments = await db.select().from(appointments);
+    const allServices = await db.select().from(services);
+    
+    const serviceMap: any = {};
+    allServices.forEach((s: any) => {
+      serviceMap[s.id] = s;
+    });
 
-    // 2. Tỉ lệ lấp đầy & Hủy (No-show) theo ngày trong 7 ngày qua
-    const occupancyStats = await db.execute(sql`
-      SELECT 
-        DATE(a.start_at) as date,
-        COUNT(CASE WHEN a.status = 'COMPLETED' THEN 1 END) as completed,
-        COUNT(CASE WHEN a.status = 'NO_SHOW' OR a.status = 'CANCEL_PATIENT' THEN 1 END) as cancelled,
-        COUNT(a.id) as total
-      FROM appointments a
-      WHERE a.start_at >= CURRENT_DATE - INTERVAL '7 days'
-      GROUP BY DATE(a.start_at)
-      ORDER BY DATE(a.start_at)
-    `);
+    const serviceStatsMap: any = {};
+    
+    // Tỉ lệ lấp đầy & Hủy theo ngày trong 7 ngày qua
+    const occupancyStatsMap: any = {};
+    const today = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      occupancyStatsMap[dateStr] = { date: dateStr, completed: 0, cancelled: 0, total: 0, revenue: 0 };
+    }
+    
+    allAppointments.forEach((a: any) => {
+      // Dịch vụ mũi nhọn
+      if (a.status === 'COMPLETED' && a.serviceId) {
+        if (!serviceStatsMap[a.serviceId]) {
+          serviceStatsMap[a.serviceId] = {
+            name: serviceMap[a.serviceId]?.name || 'Khác',
+            count: 0,
+            revenue: 0
+          };
+        }
+        serviceStatsMap[a.serviceId].count += 1;
+        serviceStatsMap[a.serviceId].revenue += Number(serviceMap[a.serviceId]?.price || 0);
+      }
+      
+      // Lấp đầy, Hủy & Doanh thu
+      if (a.startAt) {
+         const dateStr = new Date(a.startAt).toISOString().split('T')[0];
+         if (occupancyStatsMap[dateStr]) {
+            occupancyStatsMap[dateStr].total += 1;
+            if (a.status === 'COMPLETED') {
+              occupancyStatsMap[dateStr].completed += 1;
+              if (a.serviceId) {
+                occupancyStatsMap[dateStr].revenue += Number(serviceMap[a.serviceId]?.price || 0);
+              }
+            }
+            if (a.status === 'NO_SHOW' || a.status === 'CANCEL_PATIENT' || a.status === 'CANCEL_CLINIC') {
+              occupancyStatsMap[dateStr].cancelled += 1;
+            }
+         }
+      }
+    });
 
     res.json({
       success: true,
       data: {
-        serviceStats: serviceStats.rows || serviceStats,
-        occupancyStats: occupancyStats.rows || occupancyStats
+        serviceStats: Object.values(serviceStatsMap),
+        occupancyStats: Object.values(occupancyStatsMap)
       }
     });
   } catch (error) {
@@ -252,7 +281,7 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 // Cập nhật cài đặt hệ thống
 adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
-    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig } = req.body;
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig } = req.body;
     
     // Save to DB
     if (telegramToken !== undefined) {
@@ -279,6 +308,11 @@ adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, r
       await db.insert(settings)
         .values({ id: 'emailConfig', value: emailConfig })
         .onConflictDoUpdate({ target: settings.id, set: { value: emailConfig } });
+    }
+    if (bookingFormConfig !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'bookingFormConfig', value: bookingFormConfig })
+        .onConflictDoUpdate({ target: settings.id, set: { value: bookingFormConfig } });
     }
 
     // Trigger reload bot

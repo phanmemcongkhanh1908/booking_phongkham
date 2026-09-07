@@ -16,7 +16,7 @@ const publicRouter = Router();
 
 publicRouter.get("/services", async (req, res, next) => {
   try {
-    const allServices = await db.select().from(services);
+    const allServices = await db.select().from(services).where(eq(services.isActive, true));
     res.json({ success: true, data: allServices });
   } catch (error) {
     next(error);
@@ -261,6 +261,8 @@ publicRouter.post("/appointments", async (req, res, next) => {
           gender: data.gender,
           telegramId: data.telegramId || undefined,
           notes: patientNotes,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         }).returning();
         patientId = newPatient[0].id;
       }
@@ -274,13 +276,16 @@ publicRouter.post("/appointments", async (req, res, next) => {
       const service = serviceRecords[0];
       const finalStatus = service.autoConfirm ? "CONFIRMED" : "REQUESTED";
 
+      const aptStartAt = hold.startAt instanceof Date ? hold.startAt : new Date(hold.startAt);
+      const aptEndAt = hold.endAt instanceof Date ? hold.endAt : new Date(hold.endAt);
+
       // 4. Create the Appointment
       const newAppointment = await tx.insert(appointments).values({
         patientId,
         providerId: hold.providerId,
         serviceId: hold.serviceId,
-        startAt: hold.startAt,
-        endAt: hold.endAt,
+        startAt: aptStartAt,
+        endAt: aptEndAt,
         status: finalStatus,
         notes: data.notes,
         source: "ONLINE"
@@ -382,12 +387,23 @@ publicRouter.get("/clinic-info", async (req, res, next) => {
     if (clinicProfile && !clinicProfile.clinicName && clinicProfile.name) {
       clinicProfile.clinicName = clinicProfile.name;
     }
+
+    // Load booking form configuration
+    let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);
+    let bookingFormConfig = formConfigRes.length > 0 ? formConfigRes[0].value : null;
+    if (typeof bookingFormConfig === "string") {
+      try {
+        bookingFormConfig = JSON.parse(bookingFormConfig);
+      } catch (e) {}
+    }
+
     const botUsername = await getTelegramBotUsername();
 
     res.json({
       success: true,
       data: {
         clinicProfile,
+        bookingFormConfig,
         telegramBotUsername: botUsername,
       }
     });

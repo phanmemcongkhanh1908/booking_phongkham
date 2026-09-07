@@ -1,7 +1,8 @@
 import { db } from "../db/index.js";
 import { patientRecalls, services } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import { addDays, format } from "date-fns";
+import { addDays } from "date-fns";
+import { parseToDate, safeFormatDate } from "../utils/dateFormat.js";
 
 /**
  * ENGINE: RECALL GENERATOR
@@ -18,17 +19,19 @@ export async function generateRecall(appointment: any) {
     
     // Nếu dịch vụ có yêu cầu tái khám (ví dụ: Cạo vôi răng = 180 ngày)
     if (service.recallIntervalDays && service.recallIntervalDays > 0) {
-      const dueDate = addDays(new Date(appointment.endAt), service.recallIntervalDays);
+      const endAtDate = parseToDate(appointment.endAt) || new Date();
+      const dueDate = addDays(endAtDate, service.recallIntervalDays);
+      const dueDateStr = safeFormatDate(dueDate, "yyyy-MM-dd");
       
       // Tạo bản ghi Recall
       await db.insert(patientRecalls).values({
         patientId: appointment.patientId,
         serviceId: appointment.serviceId,
-        dueDate: format(dueDate, "yyyy-MM-dd"), // Lưu dạng YYYY-MM-DD string cho date field
+        dueDate: dueDateStr, // Lưu dạng YYYY-MM-DD string cho date field
         status: "DUE"
       });
       
-      console.log(`[Recall] Đã tạo lịch tái khám cho BN ${appointment.patientId} vào ${format(dueDate, "yyyy-MM-dd")}`);
+      console.log(`[Recall] Đã tạo lịch tái khám cho BN ${appointment.patientId} vào ${dueDateStr}`);
     }
   } catch (error) {
     console.error("[Recall] Lỗi khi tạo recall:", error);

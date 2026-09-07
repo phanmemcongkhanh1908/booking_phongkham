@@ -208,21 +208,22 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
   };
 
   return (
-    <div className="h-[700px] bg-surface p-2 sm:p-4 rounded-card shadow-soft border border-border-subtle relative calendar-wrapper flex flex-col">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-text-main hidden sm:block">Lịch trình nha khoa</h2>
+    <div className="h-[580px] sm:h-[700px] bg-surface p-2 sm:p-4 rounded-2xl sm:rounded-card shadow-soft border border-border-subtle relative calendar-wrapper flex flex-col">
+      <div className="flex justify-between items-center mb-3 sm:mb-4">
+        <h2 className="text-base sm:text-lg font-bold text-text-main">Lịch trình nha khoa</h2>
       </div>
       <style>{`
-        .calendar-wrapper .rbc-header { padding: 12px 0; font-weight: 600; color: #475569; text-transform: uppercase; font-size: 0.8rem; border-bottom: 2px solid #e2e8f0; }
+        .calendar-wrapper .rbc-header { padding: 8px 0; font-weight: 700; color: #475569; text-transform: uppercase; font-size: 0.75rem; border-bottom: 2px solid #e2e8f0; }
         .calendar-wrapper .rbc-today { background-color: #f8fafc; }
-        .calendar-wrapper .rbc-event { padding: 4px 6px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+        .calendar-wrapper .rbc-event { padding: 3px 5px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
         .calendar-wrapper .rbc-time-view { border: none; border-top: 1px solid #e2e8f0; }
         .calendar-wrapper .rbc-time-header { border-bottom: 1px solid #e2e8f0; }
         .calendar-wrapper .rbc-addons-dnd .rbc-addons-dnd-resizable { z-index: 10; }
-        .calendar-wrapper .rbc-toolbar { flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+        .calendar-wrapper .rbc-toolbar { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .calendar-wrapper .rbc-btn-group button { font-size: 0.8rem; padding: 4px 8px; }
       `}</style>
       <div className="flex-1 overflow-x-auto">
-        <div className="min-w-[768px] h-full">
+        <div className={`${view === Views.DAY || view === Views.AGENDA ? 'w-full min-w-full' : 'min-w-[650px] sm:min-w-[768px]'} h-full`}>
           <DnDCalendar
             localizer={localizer}
             events={events}
@@ -257,87 +258,88 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
       </div>
 
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-800/40 backdrop-blur-sm p-4">
-          <div className="bg-surface rounded-card shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center p-4 border-b border-border-subtle bg-bg-base">
-              <h3 className="font-semibold text-text-main flex items-center gap-2">
-                <CalendarPlus className="w-5 h-5 text-primary" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-3.5 sm:p-4 border-b border-border-subtle bg-bg-base shrink-0">
+              <h3 className="font-bold text-text-main flex items-center gap-2 text-sm sm:text-base">
+                <CalendarPlus className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                 Chi tiết lịch hẹn
               </h3>
               <div className="flex items-center gap-1">
                 <button 
                   onClick={() => handleDeleteApt(selectedEvent.id)} 
-                  className="p-1.5 text-status-cancelled hover:bg-status-cancelled-bg rounded-md transition-colors"
+                  className="p-1.5 text-status-cancelled hover:bg-status-cancelled-bg rounded-lg transition-colors"
                   title="Xóa lịch hẹn"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                <button onClick={() => {setSelectedEvent(null); setShowNextAptForm(false);}} className="text-text-muted/60 hover:text-text-muted p-1.5">
+                <button onClick={() => {setSelectedEvent(null); setShowNextAptForm(false);}} className="text-text-muted/60 hover:text-text-main p-1.5">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
             
-            <div className="p-6 space-y-4">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-mint text-primary flex items-center justify-center shrink-0">
-                  <User className="w-5 h-5" />
+            <div className="p-4 sm:p-6 space-y-3.5 sm:space-y-4 overflow-y-auto">
+              <div className="flex items-start gap-3 sm:gap-4">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-teal-50 text-primary flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
 
-                <div className="flex-1">
-                  <h4 className="font-medium text-text-main flex items-center gap-2">
-                    {selectedEvent.resource.patientName}
-                    <a href={`tel:${selectedEvent.resource.patientPhone}`} className="p-1.5 bg-mint text-primary rounded-full hover:bg-mint" title="Gọi cho bệnh nhân">
-                      <PhoneCall className="w-4 h-4" />
-                    </a>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-text-main flex items-center gap-2 text-sm sm:text-base truncate">
+                    <span className="truncate">{selectedEvent.resource.patientName}</span>
+                    {selectedEvent.resource.patientPhone && (
+                      <a href={`tel:${selectedEvent.resource.patientPhone}`} className="p-1.5 bg-teal-50 text-primary rounded-full hover:bg-teal-100 shrink-0" title="Gọi cho bệnh nhân">
+                        <PhoneCall className="w-3.5 h-3.5" />
+                      </a>
+                    )}
                   </h4>
-                  <p className="text-sm text-text-muted">{selectedEvent.resource.patientPhone}</p>
+                  <p className="text-xs sm:text-sm text-text-muted">{selectedEvent.resource.patientPhone}</p>
                 </div>
-
               </div>
 
               {/* Mini EMR */}
-              <div className="bg-bg-base rounded-lg p-3 space-y-2 border border-border-subtle">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-text-muted flex items-center gap-1"><FileText className="w-4 h-4" /> Bệnh án</span>
-                  <span className="font-medium text-text-main">{selectedEvent.resource.allergies || 'Không có dị ứng'}</span>
+              <div className="bg-bg-base rounded-xl p-3 space-y-2 border border-border-subtle text-xs sm:text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Bệnh án</span>
+                  <span className="font-semibold text-text-main truncate max-w-[180px] text-right">{selectedEvent.resource.allergies || 'Không có dị ứng'}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-text-muted flex items-center gap-1"><CheckCircle className="w-4 h-4" /> X-Quang gần nhất</span>
-                  <span className="font-medium text-text-main">{selectedEvent.resource.lastXRayDate ? format(new Date(selectedEvent.resource.lastXRayDate), 'dd/MM/yyyy') : 'Chưa chụp'}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5" /> X-Quang gần nhất</span>
+                  <span className="font-semibold text-text-main">{selectedEvent.resource.lastXRayDate ? format(new Date(selectedEvent.resource.lastXRayDate), 'dd/MM/yyyy') : 'Chưa chụp'}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-text-muted flex items-center gap-1"><DollarSign className="w-4 h-4" /> Công nợ</span>
-                  <span className={`font-medium ${(Number(selectedEvent.resource?.debt) || 0) > 0 ? 'text-status-cancelled' : 'text-green-600'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5" /> Công nợ</span>
+                  <span className={`font-bold ${(Number(selectedEvent.resource?.debt) || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {(Number(selectedEvent.resource?.debt) || 0) > 0 ? `${(Number(selectedEvent.resource?.debt) || 0).toLocaleString('vi-VN')} đ` : 'Hoàn tất'}
                   </span>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border-subtle">
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border-subtle">
                 <div>
-                  <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Dịch vụ</p>
-                  <p className="text-sm font-medium text-text-main">{selectedEvent.resource.serviceName}</p>
+                  <p className="text-[11px] font-bold text-text-muted uppercase tracking-wider mb-0.5">Dịch vụ</p>
+                  <p className="text-xs sm:text-sm font-semibold text-text-main truncate">{selectedEvent.resource.serviceName}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Thời gian</p>
-                  <p className="text-sm font-medium text-text-main flex items-center gap-1">
-                    <Clock className="w-4 h-4 text-text-muted/60" />
+                  <p className="text-[11px] font-bold text-text-muted uppercase tracking-wider mb-0.5">Thời gian</p>
+                  <p className="text-xs sm:text-sm font-semibold text-text-main flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-text-muted/60 shrink-0" />
                     {format(selectedEvent.start, 'HH:mm')} - {format(selectedEvent.end, 'HH:mm')}
                   </p>
                 </div>
               </div>
 
               {!showNextAptForm ? (
-                <div className="pt-4 flex gap-2">
+                <div className="pt-3 flex flex-wrap gap-2">
                   <Button 
-                    className="flex-1 bg-surface text-primary border border-primary hover:bg-mint"
+                    className="flex-1 text-xs sm:text-sm py-2 bg-surface text-primary border border-primary hover:bg-teal-50"
                     onClick={() => handleRemind(selectedEvent.id)}
                   >
-                    <Send className="w-4 h-4 mr-1" /> Nhắc hẹn (Bot)
+                    <Send className="w-3.5 h-3.5 mr-1 shrink-0" /> Nhắc hẹn (Bot)
                   </Button>
                   <Button 
-                    className="flex-1 bg-surface text-primary border border-primary hover:bg-mint"
+                    className="flex-1 text-xs sm:text-sm py-2 bg-surface text-primary border border-primary hover:bg-teal-50"
                     onClick={() => setShowNextAptForm(true)}
                   >
                     Tái khám
@@ -345,7 +347,7 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
 
                   {selectedEvent.resource.status === 'REQUESTED' && (
                     <Button 
-                      className="flex-1 bg-status-completed opacity-90 hover:opacity-100 text-white"
+                      className="w-full sm:w-auto flex-1 text-xs sm:text-sm py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                       onClick={() => { handleUpdateStatus(selectedEvent.id, 'CONFIRMED'); setSelectedEvent(null); }}
                     >
                       Xác nhận hẹn
@@ -353,31 +355,31 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                   )}
                 </div>
               ) : (
-                <div className="pt-4 border-t border-border-subtle space-y-4">
-                  <h4 className="text-sm font-medium text-text-main">Lên lịch hẹn tiếp theo</h4>
+                <div className="pt-3 border-t border-border-subtle space-y-3">
+                  <h4 className="text-xs sm:text-sm font-bold text-text-main">Lên lịch hẹn tiếp theo</h4>
                   <div>
-                    <label className="text-xs font-medium text-text-muted mb-1 block">Dịch vụ</label>
+                    <label className="text-xs font-semibold text-text-muted mb-1 block">Dịch vụ</label>
                     <select 
-                      className="w-full text-sm border-border-subtle rounded-md shadow-soft focus:border-primary focus:ring-primary"
+                      className="w-full text-xs sm:text-sm border-border-subtle rounded-xl shadow-2xs focus:border-primary focus:ring-primary p-2"
                       value={nextService}
                       onChange={e => setNextService(e.target.value)}
                     >
                       {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-2.5">
                     <div>
-                      <label className="text-xs font-medium text-text-muted mb-1 block">Ngày</label>
-                      <Input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className="h-9 text-sm" />
+                      <label className="text-xs font-semibold text-text-muted mb-1 block">Ngày</label>
+                      <Input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className="h-9 text-xs sm:text-sm" />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-text-muted mb-1 block">Giờ</label>
-                      <Input type="time" value={nextTime} onChange={e => setNextTime(e.target.value)} className="h-9 text-sm" />
+                      <label className="text-xs font-semibold text-text-muted mb-1 block">Giờ</label>
+                      <Input type="time" value={nextTime} onChange={e => setNextTime(e.target.value)} className="h-9 text-xs sm:text-sm" />
                     </div>
                   </div>
                   <div className="flex gap-2 pt-2">
-                    <Button variant="outline" className="flex-1" onClick={() => setShowNextAptForm(false)}>Hủy</Button>
-                    <Button className="flex-1" onClick={handleBookNext}>Lưu lịch hẹn</Button>
+                    <Button variant="outline" className="flex-1 text-xs sm:text-sm py-2" onClick={() => setShowNextAptForm(false)}>Hủy</Button>
+                    <Button className="flex-1 text-xs sm:text-sm py-2" onClick={handleBookNext}>Lưu lịch hẹn</Button>
                   </div>
                 </div>
               )}

@@ -21,15 +21,16 @@ interface BookingSummaryCardProps {
 }
 
 export default function BookingSummaryCard({ currentStep }: BookingSummaryCardProps) {
-  const { 
-    serviceName, 
-    servicePrice, 
-    serviceDuration, 
-    slotStartTime, 
-    providerName, 
-    clinicProfile,
-    holdExpiresAt 
-  } = useBookingStore();
+  const serviceName = useBookingStore(s => s.serviceName);
+  const servicePrice = useBookingStore(s => s.servicePrice);
+  const serviceDuration = useBookingStore(s => s.serviceDuration);
+  const slotStartTime = useBookingStore(s => s.slotStartTime);
+  const providerName = useBookingStore(s => s.providerName);
+  const clinicProfile = useBookingStore(s => s.clinicProfile);
+  const holdExpiresAt = useBookingStore(s => s.holdExpiresAt);
+  const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
+
+  const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;
 
   const clinicName = clinicProfile?.clinicName || 'Dental Smart Clinic';
   const doctorName = providerName || clinicProfile?.doctorName || 'Bác sĩ chuyên khoa';
@@ -37,10 +38,10 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
   const address = clinicProfile?.address;
   const slogan = clinicProfile?.slogan;
 
-  // Calculate hold time remaining if on step 3
+  // Calculate hold time remaining if on step 3 or 4
   const [timeLeft, setTimeLeft] = React.useState<number>(0);
   React.useEffect(() => {
-    if (!holdExpiresAt || currentStep !== 3) return;
+    if (!holdExpiresAt || currentStep < 3) return;
     const calc = () => Math.max(0, Math.floor((holdExpiresAt - Date.now()) / 1000));
     setTimeLeft(calc());
     const t = setInterval(() => setTimeLeft(calc()), 1000);
@@ -83,8 +84,8 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
             </div>
           </div>
 
-          {/* Real-time Hold Timer on step 3 */}
-          {currentStep === 3 && holdExpiresAt && (
+          {/* Real-time Hold Timer on step 3 and 4 (Controlled by Admin Config) */}
+          {showHoldCountdown && currentStep >= 3 && holdExpiresAt && (
             <div className="mt-3.5 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-teal-200 font-medium">
                 <Lock className="w-3.5 h-3.5" />

@@ -7,6 +7,7 @@ import { requireAuth, requirePermission } from "../../core/middleware.js";
 import { AppointmentQuerySchema, UpdateStatusSchema } from "../../../shared/appointment.js";
 import { NotFoundError, BadRequestError } from "../../core/errors.js";
 import { startOfDay, endOfDay, parseISO, format } from "date-fns";
+import { safeFormatDate } from "../../utils/dateFormat.js";
 import { sendWebPush } from "../../services/notification.js";
 import { triggerWaitlistMatching } from "../../jobs/waitlistMatcher.js";
 import { generateRecall } from "../../jobs/recallGenerator.js";
@@ -170,9 +171,10 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
 
     // Notification Engine, Waitlist & Recall Triggers
     if (nextStatus === "CONFIRMED") {
+      const timeStr = safeFormatDate(appointment.startAt, "HH:mm dd/MM/yyyy");
       await sendWebPush(appointment.patientId, {
         title: "Lịch hẹn đã được xác nhận",
-        body: `Lịch hẹn của bạn vào lúc ${format(appointment.startAt, "HH:mm dd/MM/yyyy")} đã được xác nhận.`,
+        body: `Lịch hẹn của bạn vào lúc ${timeStr} đã được xác nhận.`,
       });
       // Tự động gửi thông báo qua Telegram và Email cho bệnh nhân
       notifyPatientAppointment(appointment.id, "CONFIRMED").catch(console.error);
@@ -181,9 +183,10 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
       generateRecall(appointment).catch(console.error);
     } else if (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT") {
       if (nextStatus === "CANCEL_CLINIC") {
-         await sendWebPush(appointment.patientId, {
+        const timeStr = safeFormatDate(appointment.startAt, "HH:mm dd/MM/yyyy");
+        await sendWebPush(appointment.patientId, {
           title: "Lịch hẹn đã bị hủy",
-          body: `Lịch hẹn của bạn vào lúc ${format(appointment.startAt, "HH:mm dd/MM/yyyy")} đã bị hủy bởi phòng khám.`,
+          body: `Lịch hẹn của bạn vào lúc ${timeStr} đã bị hủy bởi phòng khám.`,
         });
       }
       // Tự động thông báo hủy qua Telegram / Email cho bệnh nhân

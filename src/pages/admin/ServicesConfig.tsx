@@ -197,9 +197,9 @@ export default function ServicesConfig() {
               {daysOfWeek.map(day => {
                 const isActive = config.workingHours[day.key] && config.workingHours[day.key].length > 0;
                 return (
-                  <div key={day.key} className="flex items-center space-x-4">
-                    <div className="w-24">
-                      <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                  <div key={day.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 p-2.5 rounded-xl bg-bg-base/60 sm:bg-transparent border border-border-subtle sm:border-0">
+                    <div className="w-full sm:w-28 flex items-center justify-between sm:justify-start">
+                      <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer font-medium">
                         <input 
                           type="checkbox" 
                           checked={isActive} 
@@ -208,25 +208,28 @@ export default function ServicesConfig() {
                         />
                         <span>{day.label}</span>
                       </label>
+                      <span className="sm:hidden text-xs text-text-muted">
+                        {isActive ? 'Mở cửa' : 'Nghỉ'}
+                      </span>
                     </div>
                     {isActive ? (
                       <div className="flex flex-1 items-center space-x-2">
                         <Input 
                           type="time" 
-                          className="h-8 text-sm" 
+                          className="h-8 text-xs sm:text-sm flex-1" 
                           value={config.workingHours[day.key][0]?.start || '08:00'} 
                           onChange={e => handleUpdateShift(day.key, 0, 'start', e.target.value)} 
                         />
                         <span className="text-text-muted/60">-</span>
                         <Input 
                           type="time" 
-                          className="h-8 text-sm" 
+                          className="h-8 text-xs sm:text-sm flex-1" 
                           value={config.workingHours[day.key][0]?.end || '17:00'} 
                           onChange={e => handleUpdateShift(day.key, 0, 'end', e.target.value)} 
                         />
                       </div>
                     ) : (
-                      <span className="text-sm text-text-muted/60 italic">Nghỉ</span>
+                      <span className="hidden sm:inline text-sm text-text-muted/60 italic">Nghỉ</span>
                     )}
                   </div>
                 );

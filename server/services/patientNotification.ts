@@ -1,7 +1,7 @@
 import { db } from "../db/index.js";
 import { appointments, patients, services, providers, settings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import { format } from "date-fns";
+import { safeFormatDate } from "../utils/dateFormat.js";
 import { sendPatientAppointmentEmail, AppointmentNotificationData } from "./email.js";
 import { getPatientContact } from "./patientContact.js";
 import { sendWebPush } from "./notification.js";
@@ -111,7 +111,7 @@ export async function notifyPatientAppointment(
       try {
         const bot = getTelegramBotInstance();
         if (bot) {
-          const timeStr = format(apt.startAt, "HH:mm - EEEE, dd/MM/yyyy");
+          const timeStr = safeFormatDate(apt.startAt, "HH:mm - EEEE, dd/MM/yyyy");
           let tgHeader = "";
           if (event === "CONFIRMED") {
             tgHeader = "✅ *LỊCH HẸN ĐÃ ĐƯỢC XÁC NHẬN THÀNH CÔNG*";
@@ -156,7 +156,8 @@ export async function notifyPatientAppointment(
           ? "Đã tiếp nhận yêu cầu đặt lịch"
           : "Lịch hẹn đã bị hủy";
         
-        const pushBody = `Khám ${apt.serviceName} vào lúc ${format(apt.startAt, "HH:mm dd/MM/yyyy")}`;
+        const timeStr = safeFormatDate(apt.startAt, "HH:mm dd/MM/yyyy");
+        const pushBody = `Khám ${apt.serviceName} vào lúc ${timeStr}`;
 
         await sendWebPush(apt.patientId, {
           title: pushTitle,

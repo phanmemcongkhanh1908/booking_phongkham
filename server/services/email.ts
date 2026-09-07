@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { settings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
+import { safeFormatDate } from "../utils/dateFormat.js";
 
 export interface EmailConfig {
   enabled: boolean;
@@ -140,7 +141,7 @@ export async function sendPatientAppointmentEmail(
   const clinicName = data.clinicName || "Phòng khám Nha Khoa Smart Dental";
   const clinicPhone = data.clinicPhone || "1900 xxxx";
   const clinicAddress = data.clinicAddress || "Tại phòng khám";
-  const formattedTime = format(data.startAt, "HH:mm - EEEE, 'ngày' dd/MM/yyyy");
+  const formattedTime = safeFormatDate(data.startAt, "HH:mm - EEEE, 'ngày' dd/MM/yyyy");
 
   let subject = "";
   let bannerColor = "#0EA5A4";

@@ -52,8 +52,8 @@
 
 :root {
   /* Semantic - Light */
-  --primary: var(--teal-600);
-  --primary-dark: var(--teal-700);
+  --primary: var(--teal-700);
+  --primary-dark: var(--teal-900);
   --secondary: var(--blue-600);
   --bg-base: var(--slate-50);
   --surface: var(--white);

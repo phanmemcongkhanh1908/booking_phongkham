@@ -3,7 +3,44 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import api from '../../services/api';
-import { Send, Mail, Check, AlertCircle, RefreshCw, HelpCircle, Shield, Trash2, ShieldCheck, AlertTriangle, X, CheckCircle2 } from 'lucide-react';
+import { 
+  Send, 
+  Mail, 
+  Check, 
+  AlertCircle, 
+  RefreshCw, 
+  HelpCircle, 
+  Shield, 
+  Trash2, 
+  ShieldCheck, 
+  AlertTriangle, 
+  X, 
+  CheckCircle2,
+  HeartHandshake,
+  MessageSquarePlus,
+  Eye,
+  EyeOff,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Timer,
+  Lock,
+  Cloud,
+  HardDrive,
+  FileSpreadsheet,
+  ExternalLink,
+  LogOut,
+  Database,
+  ArrowRight,
+  ShieldAlert
+} from 'lucide-react';
+import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { 
+  findOrCreateClinicSpreadsheet, 
+  syncAppointmentsToSheet, 
+  fetchDriveQuota, 
+  formatBytes 
+} from '../../lib/googleWorkspace';
 
 declare global {
   interface Window {
@@ -12,6 +49,19 @@ declare global {
 }
 
 export default function Settings() {
+  const { 
+    isConnected: isGoogleConnected, 
+    accessToken: googleToken, 
+    user: googleUser, 
+    connect: connectGoogleStore, 
+    disconnect: disconnectGoogleStore,
+    spreadsheetId,
+    spreadsheetUrl,
+    setSpreadsheetInfo,
+    lastSyncAt,
+    setLastSyncAt
+  } = useGoogleAuthStore();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,7 +69,10 @@ export default function Settings() {
   const [isUserError, setIsUserError] = useState(false);
   const [userAccounts, setUserAccounts] = useState<any[]>([]);
   const [driveInfo, setDriveInfo] = useState<any>(null);
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
+  const [googleStatusMsg, setGoogleStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [manualSheetInput, setManualSheetInput] = useState('');
 
   // Telegram Config
   const [telegramToken, setTelegramToken] = useState('');
@@ -52,6 +105,65 @@ export default function Settings() {
     slogan: '',
   });
   const [clinicMsg, setClinicMsg] = useState('');
+
+  // Cấu hình Trang Hồ Sơ Tiếp Đón Chu Đáo
+  const DEFAULT_TAGS = [
+    'Đang đau nhức / Ê buốt',
+    'Sợ đau / Nhạy cảm',
+    'Muốn được tư vấn kỹ',
+    'Khám răng định kỳ',
+    'Cần xuất hóa đơn'
+  ];
+  const [bookingFormConfig, setBookingFormConfig] = useState({
+    showNotificationChannels: true,
+    showHoldCountdown: true,
+    quickNotesTags: DEFAULT_TAGS,
+  });
+  const [newTagInput, setNewTagInput] = useState('');
+  const [bookingFormMsg, setBookingFormMsg] = useState('');
+  const [bookingFormLoading, setBookingFormLoading] = useState(false);
+
+  const handleSaveBookingForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBookingFormLoading(true);
+    setBookingFormMsg('');
+    try {
+      await api.post('/admin/settings', { bookingFormConfig });
+      setBookingFormMsg('✅ Lưu cấu hình trang Hồ Sơ Tiếp Đón thành công!');
+      setTimeout(() => setBookingFormMsg(''), 4000);
+    } catch (err: any) {
+      setBookingFormMsg('❌ ' + (err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu'));
+    } finally {
+      setBookingFormLoading(false);
+    }
+  };
+
+  const handleAddTag = () => {
+    const trimmed = newTagInput.trim();
+    if (!trimmed) return;
+    if (bookingFormConfig.quickNotesTags.includes(trimmed)) {
+      return;
+    }
+    setBookingFormConfig(prev => ({
+      ...prev,
+      quickNotesTags: [...prev.quickNotesTags, trimmed]
+    }));
+    setNewTagInput('');
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setBookingFormConfig(prev => ({
+      ...prev,
+      quickNotesTags: prev.quickNotesTags.filter(t => t !== tagToRemove)
+    }));
+  };
+
+  const handleResetDefaultTags = () => {
+    setBookingFormConfig(prev => ({
+      ...prev,
+      quickNotesTags: [...DEFAULT_TAGS]
+    }));
+  };
 
   const [backupData, setBackupData] = useState('');
   const [dataMsg, setDataMsg] = useState('');
@@ -122,11 +234,19 @@ export default function Settings() {
 
   useEffect(() => {
     api.get('/admin/settings').then(res => {
-      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig } = res.data.data || {};
+      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig } = res.data.data || {};
       if (telegramToken) setTelegramToken(telegramToken);
       if (telegramChatId) setTelegramChatId(telegramChatId);
       if (telegramBotUsername) setTelegramBotUsername(telegramBotUsername);
       if (clinicProfile) setClinicProfile(clinicProfile);
+      if (dbBookingFormConfig) {
+        setBookingFormConfig(prev => ({
+          ...prev,
+          showNotificationChannels: dbBookingFormConfig.showNotificationChannels !== false,
+          showHoldCountdown: dbBookingFormConfig.showHoldCountdown !== false,
+          quickNotesTags: Array.isArray(dbBookingFormConfig.quickNotesTags) ? dbBookingFormConfig.quickNotesTags : DEFAULT_TAGS,
+        }));
+      }
       if (dbEmailConfig) {
         setEmailConfig(prev => ({ ...prev, ...dbEmailConfig }));
         if (dbEmailConfig.user && !testRecipient) {
@@ -172,46 +292,109 @@ export default function Settings() {
     }
   };
 
-  const handleConnectGoogle = () => {
-    const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      alert("Lỗi: Chưa cấu hình VITE_GOOGLE_CLIENT_ID trên hệ thống (Render/Environment). Vui lòng thêm biến môi trường này và build lại ứng dụng.");
+  useEffect(() => {
+    if (googleToken) {
+      fetchDriveQuota(googleToken).then(data => {
+        if (data) setDriveInfo(data);
+      });
+    }
+  }, [googleToken]);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    setGoogleStatusMsg(null);
+    try {
+      const { accessToken } = await connectGoogleStore();
+      const quota = await fetchDriveQuota(accessToken);
+      if (quota) setDriveInfo(quota);
+
+      // Try finding or creating the clinic's Google Sheet automatically
+      try {
+        const sheetInfo = await findOrCreateClinicSpreadsheet(accessToken, 'Dental Smart');
+        setSpreadsheetInfo(sheetInfo.spreadsheetId, sheetInfo.spreadsheetUrl);
+        setGoogleStatusMsg({
+          type: 'success',
+          text: `Đã kết nối Google và liên kết bảng tính: Dental Smart - Lịch hẹn & Hồ sơ phòng khám`
+        });
+      } catch (sheetErr) {
+        console.warn('Auto spreadsheet init:', sheetErr);
+        setGoogleStatusMsg({
+          type: 'success',
+          text: `Đã kết nối tài khoản Google thành công!`
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setGoogleStatusMsg({
+        type: 'error',
+        text: err.message || 'Không thể kết nối tài khoản Google. Vui lòng thử lại.'
+      });
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (window.confirm('Bạn có chắc chắn muốn ngắt kết nối tài khoản Google khỏi hệ thống phòng khám?')) {
+      await disconnectGoogleStore();
+      setDriveInfo(null);
+      setGoogleStatusMsg({
+        type: 'success',
+        text: 'Đã ngắt kết nối tài khoản Google.'
+      });
+    }
+  };
+
+  const handleSyncAllAppointments = async () => {
+    if (!googleToken) {
+      setGoogleStatusMsg({
+        type: 'error',
+        text: 'Vui lòng kết nối tài khoản Google trước khi đồng bộ.'
+      });
       return;
     }
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets',
-      callback: (response: any) => {
-        if (response.access_token) {
-          setGoogleToken(response.access_token);
-          fetchDriveQuota(response.access_token);
-        }
-      },
-    });
-    client.requestAccessToken();
-  };
 
-  const fetchDriveQuota = async (token: string) => {
+    setIsSyncingAppointments(true);
+    setGoogleStatusMsg(null);
     try {
-      const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      let targetSheetId = spreadsheetId;
+      if (!targetSheetId) {
+        const sheetInfo = await findOrCreateClinicSpreadsheet(googleToken, 'Dental Smart');
+        targetSheetId = sheetInfo.spreadsheetId;
+        setSpreadsheetInfo(sheetInfo.spreadsheetId, sheetInfo.spreadsheetUrl);
+      }
+
+      const res = await api.get('/appointments');
+      const allAppts = res.data?.data || [];
+      const syncResult = await syncAppointmentsToSheet(allAppts, googleToken, targetSheetId);
+
+      const timeStr = new Date().toLocaleTimeString('vi-VN');
+      setLastSyncAt(timeStr);
+      setGoogleStatusMsg({
+        type: 'success',
+        text: `Đã đồng bộ thành công toàn bộ ${syncResult.count} lịch hẹn sang Google Sheets lúc ${timeStr}!`
       });
-      const data = await res.json();
-      setDriveInfo(data.storageQuota);
-    } catch (error) {
-      console.error('Lỗi khi lấy thông tin Google Drive:', error);
+    } catch (e: any) {
+      console.error('Lỗi đồng bộ lịch hẹn:', e);
+      setGoogleStatusMsg({
+        type: 'error',
+        text: 'Lỗi đồng bộ lịch hẹn: ' + (e.message || 'Vui lòng kiểm tra quyền truy cập Google Sheets.')
+      });
+    } finally {
+      setIsSyncingAppointments(false);
     }
   };
 
-  const formatBytes = (bytes: string) => {
-    const num = parseInt(bytes, 10);
-    if (isNaN(num)) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(num) / Math.log(k));
-    return parseFloat((num / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const handleSaveManualSheet = () => {
+    if (!manualSheetInput.trim()) return;
+    const cleanId = manualSheetInput.trim();
+    const url = `https://docs.google.com/spreadsheets/d/${cleanId}/edit`;
+    setSpreadsheetInfo(cleanId, url);
+    setManualSheetInput('');
+    setGoogleStatusMsg({
+      type: 'success',
+      text: `Đã lưu cấu hình Google Spreadsheet ID: ${cleanId}`
+    });
   };
 
   const handleSaveTelegram = async (e: React.FormEvent) => {
@@ -562,6 +745,294 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Cấu hình Trang Hồ Sơ Tiếp Đón Chu Đáo (Bước 3) */}
+      <Card className="col-span-1 md:col-span-2 border-teal-200/80 shadow-sm">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100">
+                <HeartHandshake className="w-5 h-5 text-teal-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base sm:text-lg">Cấu hình Trang "Hồ Sơ Tiếp Đón Chu Đáo" (Bước 3)</CardTitle>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Tùy biến các trường thông tin và mục chọn nhanh trên giao diện đặt hẹn của bệnh nhân
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-3 py-1 rounded-full border border-teal-200/80 self-start sm:self-auto">
+              Trang đặt lịch Online
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {bookingFormMsg && (
+            <div className={`p-3.5 rounded-xl text-xs font-semibold border ${
+              bookingFormMsg.startsWith('✅')
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-red-50 text-red-700 border-red-200'
+            }`}>
+              {bookingFormMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveBookingForm} className="space-y-6">
+            {/* Mục 1: Ẩn / Hiện Kênh nhận vé khám & nhắc hẹn thông minh */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-teal-600" />
+                    <span className="text-sm font-bold text-slate-800">
+                      Kênh nhận vé khám & nhắc hẹn thông minh (Email & Telegram)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                    Khi bật, bệnh nhân có thể nhập email nhận vé điện tử (E-Ticket) và kết nối nhận thông báo nhắc lịch tự động qua Telegram. Nếu tắt, phần này sẽ được ẩn hoàn toàn để form ngắn gọn nhất.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setBookingFormConfig(prev => ({ ...prev, showNotificationChannels: !prev.showNotificationChannels }))}
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    bookingFormConfig.showNotificationChannels ? 'bg-teal-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      bookingFormConfig.showNotificationChannels ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-md border ${
+                  bookingFormConfig.showNotificationChannels
+                    ? 'bg-teal-50 text-teal-800 border-teal-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
+                  {bookingFormConfig.showNotificationChannels ? (
+                    <>
+                      <Eye className="w-3.5 h-3.5 text-teal-600" />
+                      Đang HIỆN trên form khách hàng
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                      Đang ẨN trên form khách hàng
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Mục 2: Ẩn / Hiện thông tin thời gian giữ chỗ riêng (5 phút đếm ngược) */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Timer className="w-4 h-4 text-teal-600" />
+                    <span className="text-sm font-bold text-slate-800">
+                      Thông tin thời gian giữ chỗ riêng (5 phút đếm ngược)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                    Khi bật, hệ thống sẽ hiển thị đồng hồ đếm ngược 5 phút giữ chỗ ở tiêu đề Hồ sơ tiếp đón và trên Phiếu đặt hẹn để bệnh nhân yên tâm ca khám được giữ riêng. Khi tắt, các nhãn đếm ngược này sẽ được ẩn để biểu mẫu mang lại cảm giác thư thái, không gây áp lực thời gian.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setBookingFormConfig(prev => ({ ...prev, showHoldCountdown: !prev.showHoldCountdown }))}
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    bookingFormConfig.showHoldCountdown ? 'bg-teal-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      bookingFormConfig.showHoldCountdown ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-md border ${
+                  bookingFormConfig.showHoldCountdown
+                    ? 'bg-teal-50 text-teal-800 border-teal-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
+                  {bookingFormConfig.showHoldCountdown ? (
+                    <>
+                      <Eye className="w-3.5 h-3.5 text-teal-600" />
+                      Đang HIỆN đồng hồ đếm ngược 5 phút
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                      Đang ẨN đồng hồ đếm ngược 5 phút
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Mục 3: Cấu hình các mục chọn nhanh Tình trạng & Lời nhắn */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <MessageSquarePlus className="w-4 h-4 text-teal-600" />
+                    <span className="text-sm font-bold text-slate-800">
+                      Mục chọn nhanh: Tình trạng răng miệng & Lời nhắn gửi bác sĩ
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Bệnh nhân có thể bấm chọn nhanh các mục này (chọn nhiều) để tự động thêm vào ghi chú tiếp đón
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetDefaultTags}
+                  className="text-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                  Mặc định ban đầu
+                </Button>
+              </div>
+
+              {/* Danh sách Tags hiện tại */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  Danh sách mục chọn nhanh hiện có ({bookingFormConfig.quickNotesTags.length} mục):
+                </label>
+                <div className="flex flex-wrap gap-2 min-h-[42px] p-3 bg-white rounded-xl border border-slate-200">
+                  {bookingFormConfig.quickNotesTags.length === 0 ? (
+                    <span className="text-xs text-slate-400 italic py-1">
+                      Chưa có mục nào. Hãy nhập nội dung bên dưới và bấm "Thêm mục".
+                    </span>
+                  ) : (
+                    bookingFormConfig.quickNotesTags.map(tag => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs group"
+                      >
+                        <span>{tag}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          title={`Xóa mục "${tag}"`}
+                          className="w-4 h-4 rounded-full inline-flex items-center justify-center text-teal-600 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Form thêm tag mới */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-700">Thêm mục chọn nhanh mới:</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="VD: Đang mang thai, Sợ tiêm, Khám cùng người thân, Răng nhạy cảm..."
+                    value={newTagInput}
+                    onChange={e => setNewTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                    }}
+                    className="flex-1 text-xs sm:text-sm"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddTag}
+                    variant="outline"
+                    className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-teal-700 border-teal-300 hover:bg-teal-50 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-teal-600" />
+                    Thêm mục
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Preview Box */}
+            <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50/30 p-4 sm:p-5 space-y-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 uppercase tracking-wider">
+                <Sparkles className="w-4 h-4 text-teal-600" />
+                Mô phỏng hiển thị trên trang bệnh nhân (Live Preview):
+              </div>
+              
+              <div className="rounded-xl bg-white p-4 border border-slate-200/90 shadow-xs space-y-4 text-xs">
+                {/* Notification Channels Preview */}
+                {bookingFormConfig.showNotificationChannels ? (
+                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex items-center justify-between">
+                    <span className="font-semibold text-teal-900 flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-teal-600" />
+                      Kênh nhận vé khám & nhắc hẹn thông minh (Email & Telegram): ĐANG HIỂN THỊ
+                    </span>
+                    <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded border border-teal-200">
+                      Bệnh nhân có thể nhập
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-500 italic">
+                    (Mục nhận vé khám & Telegram đã được ẩn khỏi form)
+                  </div>
+                )}
+
+                {/* Hold Countdown Timer Preview */}
+                {bookingFormConfig.showHoldCountdown ? (
+                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex items-center justify-between">
+                    <span className="font-semibold text-teal-900 flex items-center gap-2">
+                      <Timer className="w-3.5 h-3.5 text-teal-600" />
+                      Thời gian giữ chỗ riêng 5 phút: ĐANG HIỂN THỊ
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+                      <Lock className="w-3 h-3" />
+                      Giữ chỗ riêng: 4:51
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-500 italic flex items-center gap-2">
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>(Đồng hồ đếm ngược 5 phút giữ chỗ đã được ẩn khỏi tiêu đề & phiếu tóm tắt)</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <MessageSquarePlus className="w-3.5 h-3.5 text-teal-600" />
+                    Mục chọn nhanh tình trạng & lời nhắn ({bookingFormConfig.quickNotesTags.length}):
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {bookingFormConfig.quickNotesTags.map(tag => (
+                      <span key={tag} className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        + {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Button type="submit" disabled={bookingFormLoading} className="w-full sm:w-auto font-bold px-8 cursor-pointer">
+              {bookingFormLoading ? 'Đang lưu cấu hình...' : 'Lưu cấu hình Hồ Sơ Tiếp Đón'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
       {/* User Creation */}
       <Card>
         <CardHeader>
@@ -851,43 +1322,270 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Google Workspace */}
-      <Card className="col-span-1 md:col-span-2">
-        <CardHeader>
-          <CardTitle>Tích hợp Google Workspace</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-text-muted">
-            Kết nối tài khoản Google để lưu trữ file vào Drive và đồng bộ lịch sử đặt hẹn sang Google Sheets.
-          </p>
-          {!googleToken ? (
-            <Button onClick={handleConnectGoogle} variant="outline" className="w-full sm:w-auto">
-              Kết nối Google Account
-            </Button>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-3 bg-green-50 text-green-700 rounded text-sm font-medium border border-green-200 flex items-center gap-2">
-                <Check className="w-4 h-4" /> Đã kết nối thành công!
+      {/* Google Workspace Integration & Backup */}
+      <Card className="col-span-1 md:col-span-2 border-slate-200 overflow-hidden shadow-sm">
+        <CardHeader className="bg-slate-50/70 border-b border-slate-200/80 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-xs ${
+                isGoogleConnected ? 'bg-emerald-600' : 'bg-amber-500'
+              }`}>
+                {isGoogleConnected ? <Cloud className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
               </div>
-              
-              {driveInfo && (
-                <div className="p-4 bg-bg-base border border-border-subtle rounded space-y-2">
-                  <h4 className="font-semibold text-sm text-text-main">Dung lượng Google Drive</h4>
-                  <div className="w-full bg-slate-200 rounded-full h-2.5">
-                    <div 
-                      className="bg-primary h-2.5 rounded-full" 
-                      style={{ width: `${(parseInt(driveInfo.usage) / parseInt(driveInfo.limit)) * 100}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-text-muted flex justify-between">
-                    <span>Đã dùng: {formatBytes(driveInfo.usage)}</span>
-                    <span>Tổng: {formatBytes(driveInfo.limit)}</span>
-                  </p>
-                  {(parseInt(driveInfo.usage) / parseInt(driveInfo.limit)) > 0.9 && (
-                    <p className="text-xs text-status-cancelled font-medium">⚠️ Cảnh báo: Dung lượng sắp đầy!</p>
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  Tích hợp Google Workspace & Sao lưu dự phòng
+                  {isGoogleConnected ? (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Đang bảo vệ kép
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      Chưa kích hoạt
+                    </span>
                   )}
+                </CardTitle>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Lưu trữ hồ sơ X-quang vào Google Drive và đồng bộ toàn bộ lịch hẹn sang Google Sheets
+                </p>
+              </div>
+            </div>
+
+            {isGoogleConnected && (
+              <button
+                type="button"
+                onClick={handleDisconnectGoogle}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors shadow-2xs self-start sm:self-center"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Ngắt kết nối Google</span>
+              </button>
+            )}
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-5 sm:p-6 space-y-6">
+          {/* Neon & Google Dual Protection Banner */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-800">
+              <Database className="w-4 h-4 text-blue-600" />
+              <span>Cơ chế bảo toàn dữ liệu phòng khám:</span>
+            </div>
+            <p>
+              Hệ thống hiện vận hành với cơ sở dữ liệu chính quy trên đám mây <strong className="text-slate-900">Neon</strong>. 
+              Việc kết nối thêm tài khoản <strong className="text-slate-900">Google cá nhân</strong> của phòng khám tạo nên lớp bảo vệ ngoại vi độc lập: lịch hẹn được lưu thành các hàng trực quan trong Google Sheets (dễ dàng xuất báo cáo Excel bất cứ lúc nào), còn tài liệu, phim chụp răng, ảnh X-quang được lưu trực tiếp trên Google Drive không lo giới hạn dung lượng máy chủ.
+            </p>
+          </div>
+
+          {/* Feedback message */}
+          {googleStatusMsg && (
+            <div className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+              googleStatusMsg.type === 'success' 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                : 'bg-rose-50 border-rose-200 text-rose-700'
+            }`}>
+              {googleStatusMsg.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+              <span>{googleStatusMsg.text}</span>
+            </div>
+          )}
+
+          {!isGoogleConnected ? (
+            <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-6 sm:p-8 text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+                <Cloud className="w-8 h-8" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h4 className="text-base font-bold text-slate-900">Chưa liên kết tài khoản Google</h4>
+                <p className="text-xs text-slate-600">
+                  Nhấn nút bên dưới để đăng nhập tài khoản Google của bạn. Hệ thống sẽ tự động tạo bảng tính Google Sheets và thư mục Google Drive chuyên dụng cho Dental Smart.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <Button 
+                  onClick={handleConnectGoogle} 
+                  disabled={isConnectingGoogle}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md gap-2"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>{isConnectingGoogle ? 'Đang mở đăng nhập Google...' : 'Kết nối Google Drive & Sheets ngay'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto pt-4 text-left">
+                <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-start gap-2.5">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <strong className="block text-slate-800 font-semibold">Bảng tính Google Sheets</strong>
+                    <span className="text-slate-500">Đồng bộ lịch hẹn & hồ sơ bệnh nhân theo thời gian thực</span>
+                  </div>
                 </div>
-              )}
+                <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-start gap-2.5">
+                  <HardDrive className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <strong className="block text-slate-800 font-semibold">Ổ lưu trữ Google Drive</strong>
+                    <span className="text-slate-500">Lưu ảnh phim X-quang, hóa đơn và bệnh án an toàn</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Account Profile Card */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 gap-4">
+                <div className="flex items-center gap-3">
+                  {googleUser?.photoURL ? (
+                    <img 
+                      src={googleUser.photoURL} 
+                      alt="Google avatar" 
+                      className="w-12 h-12 rounded-full border-2 border-white shadow-xs" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                      {googleUser?.displayName ? googleUser.displayName.charAt(0).toUpperCase() : 'G'}
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      {googleUser?.displayName || 'Tài khoản Google phòng khám'}
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200/90 text-emerald-900">
+                        Đã xác thực
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-600">{googleUser?.email}</p>
+                    {lastSyncAt && (
+                      <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                        Đã đồng bộ lịch hẹn gần nhất lúc: {lastSyncAt}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleSyncAllAppointments}
+                    disabled={isSyncingAppointments}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAppointments ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingAppointments ? 'Đang đồng bộ...' : 'Đồng bộ toàn bộ lịch hẹn'}</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* 2 Columns: Google Sheets & Google Drive */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Google Sheets Card */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Google Sheets Lịch hẹn & Bệnh án
+                      </h4>
+                    </div>
+                    {spreadsheetUrl && (
+                      <a
+                        href={spreadsheetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+                      >
+                        <span>Mở Bảng tính</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-600">
+                    Bảng tính chứa hai trang tính chuyên biệt: <code className="text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded">Lịch hẹn</code> và <code className="text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded">Hồ sơ bệnh nhân</code>.
+                  </p>
+
+                  <div className="pt-1 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-slate-500">
+                      <span>Mã bảng tính (ID):</span>
+                      <span className="font-mono text-[11px] text-slate-700 truncate max-w-[200px]" title={spreadsheetId || ''}>
+                        {spreadsheetId || 'Chưa liên kết'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <Input
+                        placeholder="Nhập ID Spreadsheet nếu muốn thay đổi..."
+                        value={manualSheetInput}
+                        onChange={(e) => setManualSheetInput(e.target.value)}
+                        className="text-xs h-8"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSaveManualSheet}
+                        disabled={!manualSheetInput.trim()}
+                        className="text-xs h-8 shrink-0"
+                      >
+                        Lưu ID
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Google Drive Card */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+                        <HardDrive className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Google Drive Lưu trữ File
+                      </h4>
+                    </div>
+                    <a
+                      href="https://drive.google.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                    >
+                      <span>Mở Drive</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  {driveInfo ? (
+                    <div className="space-y-2">
+                      <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200/80">
+                        <div 
+                          className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" 
+                          style={{ width: `${Math.min(100, Math.max(2, (parseInt(driveInfo.usage || '0') / Math.max(1, parseInt(driveInfo.limit || '1'))) * 100))}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-slate-500 flex justify-between font-medium">
+                        <span>Đã dùng: {formatBytes(driveInfo.usage || '0')}</span>
+                        <span>Tổng dung lượng: {formatBytes(driveInfo.limit || '0')}</span>
+                      </div>
+                      {parseInt(driveInfo.limit || '0') > 0 && (parseInt(driveInfo.usage || '0') / parseInt(driveInfo.limit || '1')) > 0.9 && (
+                        <p className="text-xs text-rose-600 font-semibold flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Dung lượng Google Drive sắp đầy!
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      Tự động tải lên phim X-quang, hồ sơ bệnh án và file đính kèm trực tiếp vào thư mục an toàn của phòng khám trên Google Drive.
+                    </p>
+                  )}
+
+                  <div className="pt-1">
+                    <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-1 rounded-md border border-slate-200/70 inline-block">
+                      Thư mục lưu trữ: 📁 Dental Smart Clinic Files
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

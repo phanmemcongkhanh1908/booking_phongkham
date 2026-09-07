@@ -11,13 +11,14 @@ import {
   UploadCloud, Eye, Download, X, AlertCircle, ZoomIn, ZoomOut, 
   RotateCw, CalendarPlus, FolderPlus, Clock, Phone, Mail, 
   ClipboardList, Receipt, CalendarClock, Check, Sparkles,
-  Send
+  Send, ExternalLink, ChevronLeft
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
-import { uploadImageToDrive, syncPatientToSheet, findOrCreateFolder } from '../../lib/googleWorkspace';
+import { uploadImageToDrive, syncPatientToSheet, findOrCreateFolder, findOrCreateClinicSpreadsheet } from '../../lib/googleWorkspace';
+import { useGoogleAuthStore } from '../../store/googleAuthStore';
 
 
 // Document structure
@@ -130,8 +131,15 @@ export default function Patients() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'debt' | 'has_docs'>('all');
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const { 
+    accessToken: googleAccessToken, 
+    connect: connectGoogleStore, 
+    spreadsheetId, 
+    spreadsheetUrl, 
+    setSpreadsheetInfo 
+  } = useGoogleAuthStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'finance' | 'appointments'>('overview');
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   
   // EMR Form State
   const [debt, setDebt] = useState<number>(0);
@@ -141,7 +149,6 @@ export default function Patients() {
   const [treatmentPlan, setTreatmentPlan] = useState<string>('');
   const [notesText, setNotesText] = useState<string>('');
   const [documents, setDocuments] = useState<DocumentGroup[]>([]);
-  const [spreadsheetId, setSpreadsheetId] = useState<string>('');
   const [isSaved, setIsSaved] = useState(true);
 
   // Upload state
@@ -188,8 +195,10 @@ export default function Patients() {
     fetchPatients();
     fetchAppointments();
     const savedSheetId = localStorage.getItem('emr_spreadsheet_id');
-    if (savedSheetId) setSpreadsheetId(savedSheetId);
-  }, []);
+    if (savedSheetId && !spreadsheetId) {
+      setSpreadsheetInfo(savedSheetId, `https://docs.google.com/spreadsheets/d/${savedSheetId}/edit`);
+    }
+  }, [spreadsheetId, setSpreadsheetInfo]);
 
   const fetchPatients = async () => {
     try {
@@ -230,24 +239,24 @@ export default function Patients() {
     setPaymentMethod('Tiền mặt');
     setIsSaved(true);
     setActiveTab('overview');
+    setMobileView('detail');
   };
 
-  const handleConnectGoogle = () => {
+  const handleConnectGoogle = async () => {
     try {
-      const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || '',
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
-        callback: (tokenResponse: any) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            setGoogleAccessToken(tokenResponse.access_token);
-            toast.success("Kết nối Google Drive & Sheets thành công!");
-          }
-        },
-      });
-      client.requestAccessToken();
-    } catch (error) {
+      const { accessToken } = await connectGoogleStore();
+      toast.success("Kết nối Google Drive & Sheets thành công!");
+      if (!spreadsheetId) {
+        try {
+          const sheetInfo = await findOrCreateClinicSpreadsheet(accessToken, 'Dental Smart');
+          setSpreadsheetInfo(sheetInfo.spreadsheetId, sheetInfo.spreadsheetUrl);
+        } catch (e) {
+          console.warn('Auto create clinic spreadsheet warning:', e);
+        }
+      }
+    } catch (error: any) {
       console.error(error);
-      toast.error("Không thể khởi tạo Google OAuth. Ứng dụng sẽ tự động lưu trữ tài liệu trực tiếp.");
+      toast.error("Không thể kết nối Google: " + (error.message || 'Lỗi không xác định'));
     }
   };
 
@@ -279,20 +288,28 @@ export default function Patients() {
       setCurrentServiceCost(0);
       setPaidAmount(0);
       
-      if (googleAccessToken && spreadsheetId && !silent) {
+      if (googleAccessToken && !silent) {
         try {
-          await syncPatientToSheet({
-            id: selectedPatient.id,
-            fullName: selectedPatient.fullName,
-            phone: selectedPatient.phone,
-            debt: newDebt,
-            allergies,
-            lastXRayDate: lastXRayDate || 'Không có',
-          }, googleAccessToken, spreadsheetId);
-          toast.success("Đã đồng bộ lên Google Sheets!");
+          let targetSheetId = spreadsheetId;
+          if (!targetSheetId) {
+            const sheetInfo = await findOrCreateClinicSpreadsheet(googleAccessToken, 'Dental Smart');
+            targetSheetId = sheetInfo.spreadsheetId;
+            setSpreadsheetInfo(sheetInfo.spreadsheetId, sheetInfo.spreadsheetUrl);
+          }
+          if (targetSheetId) {
+            await syncPatientToSheet({
+              id: selectedPatient.id,
+              fullName: selectedPatient.fullName,
+              phone: selectedPatient.phone,
+              debt: newDebt,
+              allergies,
+              lastXRayDate: lastXRayDate || 'Không có',
+            }, googleAccessToken, targetSheetId);
+            toast.success("Đã đồng bộ hồ sơ lên Google Sheets!");
+          }
         } catch (syncError) {
           console.error(syncError);
-          toast.error("Lỗi đồng bộ Sheets");
+          toast.error("Lỗi đồng bộ Google Sheets");
         }
       }
     } catch (error) {
@@ -598,7 +615,7 @@ export default function Patients() {
     <div className="flex flex-col lg:flex-row h-auto lg:h-[calc(100vh-105px)] bg-surface rounded-card overflow-hidden print:h-auto border border-border-subtle shadow-soft">
       
       {/* 1. SIDEBAR: Patient List */}
-      <aside className="w-full lg:w-84 border-b lg:border-b-0 lg:border-r border-border-subtle bg-bg-base flex flex-col print:hidden shrink-0">
+      <aside className={`w-full lg:w-84 border-b lg:border-b-0 lg:border-r border-border-subtle bg-bg-base flex flex-col print:hidden shrink-0 ${mobileView === 'detail' && selectedPatient ? 'hidden lg:flex' : 'flex'}`}>
         
         {/* Sidebar Header */}
         <div className="p-4 border-b border-border-subtle bg-surface">
@@ -723,9 +740,22 @@ export default function Patients() {
       </aside>
 
       {/* 2. MAIN WORKSPACE: Patient EMR Details */}
-      <main className="flex-1 flex flex-col bg-surface min-w-0 overflow-hidden print:w-full">
+      <main className={`flex-1 flex flex-col bg-surface min-w-0 overflow-hidden print:w-full ${mobileView === 'list' && selectedPatient ? 'hidden lg:flex' : 'flex'}`}>
         {selectedPatient ? (
           <>
+            {/* Mobile Back to List Bar */}
+            <div className="lg:hidden px-4 pt-3.5 pb-1 bg-surface border-b border-border-subtle flex items-center justify-between print:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileView('list')}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary bg-mint hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Danh bạ bệnh nhân</span>
+              </button>
+              <span className="text-xs text-text-muted font-medium">Hồ sơ bệnh án</span>
+            </div>
+
             {/* Patient Overview Header Bar */}
             <div className="p-4 lg:px-6 lg:py-4 border-b border-border-subtle bg-surface flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:border-none">
               <div className="flex items-center gap-3.5">
@@ -1016,22 +1046,34 @@ export default function Patients() {
                     <div className="flex gap-2">
                       <Input 
                         placeholder="Nhập ID trang tính (Spreadsheet ID)..." 
-                        value={spreadsheetId}
+                        value={spreadsheetId || ''}
                         onChange={e => {
-                          setSpreadsheetId(e.target.value);
-                          localStorage.setItem('emr_spreadsheet_id', e.target.value);
+                          const val = e.target.value.trim();
+                          setSpreadsheetInfo(val, val ? `https://docs.google.com/spreadsheets/d/${val}/edit` : '');
+                          localStorage.setItem('emr_spreadsheet_id', val);
                         }}
                         className="text-xs bg-bg-base"
                       />
                       <Button 
                         variant="outline" 
                         size="sm"
-                        disabled={!googleAccessToken || !spreadsheetId}
+                        disabled={!googleAccessToken}
                         onClick={() => handleSaveEMR(false)}
                         className="shrink-0 text-xs"
                       >
                         Đồng bộ ngay
                       </Button>
+                      {spreadsheetUrl && (
+                        <a
+                          href={spreadsheetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-emerald-700 hover:bg-slate-50 transition-colors shrink-0"
+                          title="Mở Google Sheets"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
 

@@ -19,8 +19,6 @@ import { bootstrapSystem } from "./server/core/bootstrap.js";
 dotenv.config();
 
 async function startServer() {
-  await bootstrapSystem(); // Automatically create admin account if it doesn't exist
-
   const app = express();
   const PORT = 3000;
 
@@ -56,11 +54,6 @@ async function startServer() {
 
   app.use(globalErrorHandler);
 
-
-const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Server] Dental Smart Booking Engine running on port ${PORT}`);
-  });
-
   // ==========================================
   // VITE MIDDLEWARE (For React PWA)
   // ==========================================
@@ -77,6 +70,16 @@ const server = app.listen(PORT, "0.0.0.0", () => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  app.listen(PORT, "0.0.0.0", async () => {
+    console.log(`[Server] Dental Smart Booking Engine running on http://localhost:${PORT}`);
+    try {
+      await bootstrapSystem();
+      console.log("[Server] System bootstrapping completed.");
+    } catch (err: any) {
+      console.warn("[Server] Bootstrap non-critical warning:", err.message);
+    }
+  });
 }
 
 

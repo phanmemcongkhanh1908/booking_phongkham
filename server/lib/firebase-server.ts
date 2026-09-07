@@ -5,12 +5,13 @@ import firebaseConfig from '../../firebase-applet-config.json' with { type: 'jso
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 let firestoreInstance;
+const dbId = (firebaseConfig as any).firestoreDatabaseId;
 try {
-  firestoreInstance = initializeFirestore(firebaseApp, {
-    ignoreUndefinedProperties: true
-  }, firebaseConfig.firestoreDatabaseId);
+  firestoreInstance = dbId
+    ? initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true }, dbId)
+    : initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true });
 } catch {
-  firestoreInstance = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+  firestoreInstance = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
 }
 
 export const serverDb = firestoreInstance;

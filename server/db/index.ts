@@ -1,13 +1,58 @@
-import { serverDb } from "../lib/firebase-server.js";
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
+import fs from "fs";
+import path from "path";
 
-export const eq = (field, value) => ({ type: "eq", field, value });
-export const and = (...args) => ({ type: "and", args });
-export const or = (...args) => ({ type: "or", args });
-export const desc = (field) => ({ type: "desc", field });
-export const asc = (field) => ({ type: "asc", field });
-export const sql = (strings, ...values) => ({ type: "sql", strings, values });
+const DB_FILE = path.join(process.cwd(), "server", "data", "store.json");
+
+// In-memory cache of collections backed by persistent store.json
+let memoryStore: Record<string, Record<string, any>> = {};
+let isStoreLoaded = false;
+let saveTimeout: any = null;
+
+export function loadStore() {
+  if (isStoreLoaded) return memoryStore;
+  try {
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, "utf-8");
+      memoryStore = JSON.parse(raw);
+    } else {
+      memoryStore = {};
+    }
+  } catch (err) {
+    console.warn("[LocalStore] Warning loading store.json:", err);
+    memoryStore = {};
+  }
+  isStoreLoaded = true;
+  return memoryStore;
+}
+
+export function persistStore() {
+  try {
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(memoryStore, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[LocalStore] Failed to persist store.json:", err);
+  }
+}
+
+function scheduleSave() {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(persistStore, 50);
+}
+
+export const eq = (field: any, value: any) => ({ type: "eq", field, value });
+export const and = (...args: any[]) => ({ type: "and", args });
+export const or = (...args: any[]) => ({ type: "or", args });
+export const desc = (field: any) => ({ type: "desc", field });
+export const asc = (field: any) => ({ type: "asc", field });
+export const sql = (strings: any, ...values: any[]) => ({ type: "sql", strings, values });
 export const count = () => ({ type: "count" });
 
 function resolveField(docData, fieldDef, joinsData = {}) {
@@ -33,15 +78,16 @@ function normalizeVal(v) {
   return v;
 }
 
-function convertTimestamps(obj) {
+function convertTimestamps(obj: any): any {
   if (!obj || typeof obj !== "object") return obj;
+  if (obj instanceof Date) return obj;
   if (typeof obj.toDate === "function") {
     return obj.toDate();
   }
   if (Array.isArray(obj)) {
     return obj.map(convertTimestamps);
   }
-  const res = {};
+  const res: any = {};
   for (const [k, v] of Object.entries(obj)) {
     res[k] = convertTimestamps(v);
   }
@@ -247,17 +293,18 @@ class QueryBuilder {
     if (!tableName) return [];
 
     if (this.action === "select") {
-      const snap = await getDocs(collection(serverDb, tableName));
-      const docsData = snap.docs.map((d) => ({ ...convertTimestamps(d.data()), id: d.id, _tableName: tableName }));
+      loadStore();
+      const tableData = memoryStore[tableName] || {};
+      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
 
       let results = [];
       for (const docData of docsData) {
-        const joinsData = {};
+        const joinsData: any = {};
         let skip = false;
 
         for (const join of this.joins) {
-          const joinSnap = await getDocs(collection(serverDb, join.table));
-          const joinDocs = joinSnap.docs.map((d) => ({ ...convertTimestamps(d.data()), id: d.id, _tableName: join.table }));
+          const joinData = memoryStore[join.table] || {};
+          const joinDocs = Object.values(joinData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: join.table }));
 
           const matched = joinDocs.find((jd) =>
             evaluateSingleCondition(docData, join.condition, { [join.table]: jd })
@@ -280,7 +327,7 @@ class QueryBuilder {
         }
 
         if (this._selectFields) {
-          const mapped = {};
+          const mapped: any = {};
           for (const [key, fieldDef] of Object.entries(this._selectFields)) {
             mapped[key] = resolveField(docData, fieldDef, joinsData);
           }
@@ -323,50 +370,67 @@ class QueryBuilder {
     }
 
     if (this.action === "insert") {
+      loadStore();
+      if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const isArray = Array.isArray(this.data);
       const items = isArray ? this.data : [this.data];
       const results = [];
       for (const item of items) {
         const id = item.id || String(uuidv4());
         let docData = { ...item, id };
+        if (!docData.createdAt && tableName !== "settings") {
+          docData.createdAt = new Date().toISOString();
+        }
+        if (!docData.updatedAt && tableName !== "settings") {
+          docData.updatedAt = new Date().toISOString();
+        }
         if (this._onConflictUpdate && this._onConflictUpdate.set) {
           docData = { ...docData, ...this._onConflictUpdate.set };
         }
         const cleaned = removeUndefined(docData);
-        await setDoc(doc(serverDb, tableName, id), cleaned, { merge: true });
+        memoryStore[tableName][id] = cleaned;
         results.push(cleaned);
       }
+      scheduleSave();
       return results;
     }
 
     if (this.action === "update") {
-      const snap = await getDocs(collection(serverDb, tableName));
-      const docsData = snap.docs.map((d) => ({ ...convertTimestamps(d.data()), id: d.id, _tableName: tableName }));
+      loadStore();
+      if (!memoryStore[tableName]) memoryStore[tableName] = {};
+      const tableData = memoryStore[tableName];
+      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
 
       const updated = [];
       const cleanedUpdate = removeUndefined(this.data);
       for (const docData of docsData) {
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
-          await updateDoc(doc(serverDb, tableName, docData.id), cleanedUpdate);
-          updated.push({ ...docData, ...cleanedUpdate });
+          const newDoc = { ...docData, ...cleanedUpdate };
+          delete newDoc._tableName;
+          memoryStore[tableName][docData.id] = newDoc;
+          updated.push(newDoc);
         }
       }
+      scheduleSave();
       return updated;
     }
 
     if (this.action === "delete") {
-      const snap = await getDocs(collection(serverDb, tableName));
-      const docsData = snap.docs.map((d) => ({ ...convertTimestamps(d.data()), id: d.id, _tableName: tableName }));
+      loadStore();
+      if (!memoryStore[tableName]) memoryStore[tableName] = {};
+      const tableData = memoryStore[tableName];
+      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
 
       const deleted = [];
       for (const docData of docsData) {
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
-          await deleteDoc(doc(serverDb, tableName, docData.id));
+          delete memoryStore[tableName][docData.id];
           deleted.push(docData);
         }
       }
+      scheduleSave();
       return deleted;
     }
   }
@@ -384,8 +448,9 @@ export const db: any = {
     if (
       sqlQuery &&
       sqlQuery.strings &&
-      sqlQuery.strings.some((s) => typeof s === "string" && s.toUpperCase().includes("TRUNCATE"))
+      sqlQuery.strings.some((s: any) => typeof s === "string" && s.toUpperCase().includes("TRUNCATE"))
     ) {
+      loadStore();
       const collections = [
         "appointments",
         "patients",
@@ -400,11 +465,11 @@ export const db: any = {
         "resources",
       ];
       for (const col of collections) {
-        const snap = await getDocs(collection(serverDb, col));
-        for (const d of snap.docs) {
-          await deleteDoc(d.ref);
+        if (memoryStore[col]) {
+          memoryStore[col] = {};
         }
       }
+      scheduleSave();
     }
     return [];
   },
