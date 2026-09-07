@@ -8,21 +8,27 @@ import { Trash2, Edit2, Plus, Clock, Settings2 } from 'lucide-react';
 
 export default function ServicesConfig() {
   const [services, setServices] = useState<any[]>([]);
+  const [providers, setProviders] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({ workingHours: {}, intervalStep: 30 });
   const [loading, setLoading] = useState(true);
 
   // Form states
   const [editingService, setEditingService] = useState<any>(null);
   const [showServiceForm, setShowServiceForm] = useState(false);
+  
+  const [editingProvider, setEditingProvider] = useState<any>(null);
+  const [showProviderForm, setShowProviderForm] = useState(false);
 
   const fetchServicesAndConfig = async () => {
     setLoading(true);
     try {
-      const [resSvc, resCfg] = await Promise.all([
+      const [resSvc, resPrv, resCfg] = await Promise.all([
         api.get('/admin/services'),
+        api.get('/admin/providers'),
         api.get('/admin/config')
       ]);
       setServices(resSvc.data.data || []);
+      setProviders(resPrv.data.data || []);
       setConfig(resCfg.data.data || { workingHours: {}, intervalStep: 30 });
     } catch (err) {
       toast.error('Lỗi khi tải dữ liệu');
@@ -61,6 +67,35 @@ export default function ServicesConfig() {
       fetchServicesAndConfig();
     } catch (err) {
       toast.error('Lỗi khi xóa dịch vụ');
+    }
+  };
+
+  const handleSaveProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingProvider.id) {
+        await api.put(`/admin/providers/${editingProvider.id}`, editingProvider);
+        toast.success('Cập nhật bác sĩ thành công');
+      } else {
+        await api.post('/admin/providers', editingProvider);
+        toast.success('Thêm bác sĩ thành công');
+      }
+      setShowProviderForm(false);
+      setEditingProvider(null);
+      fetchServicesAndConfig();
+    } catch (err) {
+      toast.error('Lỗi khi lưu thông tin bác sĩ');
+    }
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    if (!window.confirm('Bạn có chắc muốn xóa bác sĩ này?')) return;
+    try {
+      await api.delete(`/admin/providers/${id}`);
+      toast.success('Đã xóa bác sĩ');
+      fetchServicesAndConfig();
+    } catch (err) {
+      toast.error('Lỗi khi xóa bác sĩ');
     }
   };
 
@@ -195,6 +230,77 @@ export default function ServicesConfig() {
               </div>
             ))}
             {services.length === 0 && <p className="text-sm text-text-muted">Chưa có dịch vụ nào.</p>}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Cấu hình Bác sĩ */}
+      <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Danh sách Bác sĩ</CardTitle>
+          <Button size="sm" onClick={() => { setEditingProvider({ name: '', specialty: '', isDefault: false, isActive: true, bookingEnabled: true }); setShowProviderForm(true); }}>
+            <Plus className="w-4 h-4 mr-1" /> Thêm bác sĩ
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {showProviderForm && editingProvider && (
+            <div className="mb-6 p-4 border border-border-subtle rounded-lg bg-bg-base relative">
+              <h4 className="font-semibold mb-4 text-sm">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
+              <form onSubmit={handleSaveProvider} className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-text-muted">Tên bác sĩ</label>
+                  <Input required placeholder="VD: BS. Nguyễn Văn A" value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-text-muted">Chuyên khoa</label>
+                  <Input placeholder="VD: Chuyên khoa Răng Hàm Mặt" value={editingProvider.specialty || ''} onChange={e => setEditingProvider({...editingProvider, specialty: e.target.value})} />
+                </div>
+                <div className="flex flex-wrap items-center gap-6 pt-2">
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input type="checkbox" checked={editingProvider.isActive !== false} onChange={e => setEditingProvider({...editingProvider, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
+                    <span>Đang hoạt động</span>
+                  </label>
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input type="checkbox" checked={editingProvider.isDefault || false} onChange={e => setEditingProvider({...editingProvider, isDefault: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
+                    <span>Bác sĩ mặc định</span>
+                  </label>
+                </div>
+                <div className="flex justify-end space-x-2 pt-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setShowProviderForm(false)}>Hủy</Button>
+                  <Button type="submit" size="sm">Lưu</Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {providers.map(prv => (
+              <div key={prv.id} className={`flex justify-between items-center p-3 border border-border-subtle rounded transition-colors ${prv.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className={`font-medium text-sm ${prv.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{prv.name}</h4>
+                    {prv.isDefault && prv.isActive !== false && (
+                      <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm">Mặc định</span>
+                    )}
+                    {prv.isActive === false && (
+                      <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">Ngừng hoạt động</span>
+                    )}
+                  </div>
+                  {prv.specialty && (
+                    <div className="text-xs text-text-muted mt-1">{prv.specialty}</div>
+                  )}
+                </div>
+                <div className="flex space-x-2">
+                  <button onClick={() => { setEditingProvider(prv); setShowProviderForm(true); }} className="p-1 text-text-muted/60 hover:text-primary transition-colors">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDeleteProvider(prv.id)} className="p-1 text-text-muted/60 hover:text-status-cancelled transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {providers.length === 0 && <p className="text-sm text-text-muted">Chưa có bác sĩ nào.</p>}
           </div>
         </CardContent>
       </Card>

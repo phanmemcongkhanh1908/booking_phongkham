@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../../store/auth';
+import { usePermissions } from '../../hooks/usePermissions';
 import api from '../../services/api';
 import { format, differenceInMinutes, startOfWeek } from 'date-fns';
 import { APPOINTMENT_STATUSES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
@@ -9,19 +10,33 @@ import ServicesConfig from './ServicesConfig';
 import Analytics from './Analytics';
 import Patients from './Patients';
 import QrScanner from './components/QrScanner';
+import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet } from 'lucide-react';
 
 export default function Dashboard() {
   const logout = useAuthStore((state) => state.logout);
+  const { hasPermission } = usePermissions();
   const { isConnected, init: initGoogleAuth } = useGoogleAuthStore();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics'>('appointments');
+  // Set default active tab based on permissions
+  const defaultTab = hasPermission('appointment.view') 
+    ? 'appointments' 
+    : hasPermission('patient.view') 
+      ? 'patients' 
+      : hasPermission('service.manage') 
+        ? 'services' 
+        : hasPermission('report.view') 
+          ? 'analytics' 
+          : 'settings';
+
+  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics'>(defaultTab as any);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
   const [clinicProfile, setClinicProfile] = useState<any>(null);
@@ -46,11 +61,61 @@ export default function Dashboard() {
   const playTTS = (text: string) => {
     if (!audioEnabledRef.current || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); // clear previous
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'vi-VN';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
+
+    // Play a short pleasant chime using Web Audio API
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        
+        // Create a positive notification melody (C Major Arpeggio: C5, E5, G5, C6)
+        const playNote = (freq: number, startTime: number, duration: number) => {
+          const osc = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
+          
+          gainNode.gain.setValueAtTime(0, ctx.currentTime + startTime);
+          gainNode.gain.linearRampToValueAtTime(0.2, ctx.currentTime + startTime + 0.05); // Attack
+          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration); // Decay
+          
+          osc.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          
+          osc.start(ctx.currentTime + startTime);
+          osc.stop(ctx.currentTime + startTime + duration);
+        };
+
+        // Play the notes in sequence
+        playNote(523.25, 0, 0.8);     // C5
+        playNote(659.25, 0.12, 0.8);  // E5
+        playNote(783.99, 0.24, 0.8);  // G5
+        playNote(1046.50, 0.36, 1.2); // C6 (sustained a bit longer)
+      }
+    } catch (err) {
+      console.warn("Could not play chime", err);
+    }
+
+    // Wait for the chime to mostly finish before speaking
+    setTimeout(() => {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'vi-VN';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      
+      // Attempt to select a specific high-quality Vietnamese voice if available
+      const voices = window.speechSynthesis.getVoices();
+      const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang.includes('vi'));
+      if (viVoice) {
+        utterance.voice = viVoice;
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    }, 1100);
   };
 
 
@@ -318,61 +383,71 @@ export default function Dashboard() {
 
           {/* Desktop Navigation (md and up) */}
           <nav className="hidden md:flex items-center space-x-1 lg:space-x-2">
-            <button 
-              onClick={() => setActiveTab('appointments')}
-              className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                activeTab === 'appointments' 
-                  ? 'bg-primary/10 text-primary font-bold' 
-                  : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4 mr-1.5 shrink-0" />
-              Lịch hẹn
-            </button>
-            <button 
-              onClick={() => setActiveTab('patients')}
-              className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                activeTab === 'patients' 
-                  ? 'bg-primary/10 text-primary font-bold' 
-                  : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4 mr-1.5 shrink-0" />
-              Hồ sơ Bệnh án
-            </button>
-            <button 
-              onClick={() => setActiveTab('services')}
-              className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                activeTab === 'services' 
-                  ? 'bg-primary/10 text-primary font-bold' 
-                  : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-              }`}
-            >
-              <LayoutList className="w-4 h-4 mr-1.5 shrink-0" />
-              Dịch vụ & Lịch
-            </button>
-            <button 
-              onClick={() => setActiveTab('analytics')}
-              className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                activeTab === 'analytics' 
-                  ? 'bg-primary/10 text-primary font-bold' 
-                  : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 mr-1.5 shrink-0" />
-              Báo cáo
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                activeTab === 'settings' 
-                  ? 'bg-primary/10 text-primary font-bold' 
-                  : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-              }`}
-            >
-              <SettingsIcon className="w-4 h-4 mr-1.5 shrink-0" />
-              Tài khoản
-            </button>
+            {hasPermission('appointment.view') && (
+              <button 
+                onClick={() => setActiveTab('appointments')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'appointments' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <Calendar className="w-4 h-4 mr-1.5 shrink-0" />
+                Lịch hẹn
+              </button>
+            )}
+            {hasPermission('patient.view') && (
+              <button 
+                onClick={() => setActiveTab('patients')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'patients' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <Users className="w-4 h-4 mr-1.5 shrink-0" />
+                Hồ sơ Bệnh án
+              </button>
+            )}
+            {hasPermission('service.manage') && (
+              <button 
+                onClick={() => setActiveTab('services')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'services' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <LayoutList className="w-4 h-4 mr-1.5 shrink-0" />
+                Dịch vụ & Lịch
+              </button>
+            )}
+            {hasPermission('report.view') && (
+              <button 
+                onClick={() => setActiveTab('analytics')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'analytics' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 mr-1.5 shrink-0" />
+                Báo cáo
+              </button>
+            )}
+            {hasPermission('setting.manage') && (
+              <button 
+                onClick={() => setActiveTab('settings')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'settings' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <SettingsIcon className="w-4 h-4 mr-1.5 shrink-0" />
+                Tài khoản
+              </button>
+            )}
           </nav>
 
           {/* Right Action Utilities */}
@@ -443,64 +518,74 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tier 2: Dedicated Horizontal Tab Bar on Mobile & Tablet (< md) */}
+          {/* Tier 2: Dedicated Horizontal Tab Bar on Mobile & Tablet (< md) */}
         <div className="md:hidden relative border-t border-slate-200/60 bg-slate-50/70">
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none px-3.5 py-2 pr-8">
-            <button 
-              onClick={() => setActiveTab('appointments')}
-            className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-              activeTab === 'appointments' 
-                ? 'bg-primary text-white shadow-2xs' 
-                : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-            Lịch hẹn
-          </button>
-          <button 
-            onClick={() => setActiveTab('patients')}
-            className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-              activeTab === 'patients' 
-                ? 'bg-primary text-white shadow-2xs' 
-                : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-            Hồ sơ Bệnh án
-          </button>
-          <button 
-            onClick={() => setActiveTab('services')}
-            className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-              activeTab === 'services' 
-                ? 'bg-primary text-white shadow-2xs' 
-                : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-            }`}
-          >
-            <LayoutList className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-            Dịch vụ & Lịch
-          </button>
-          <button 
-            onClick={() => setActiveTab('analytics')}
-            className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-              activeTab === 'analytics' 
-                ? 'bg-primary text-white shadow-2xs' 
-                : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-            Báo cáo
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-              activeTab === 'settings' 
-                ? 'bg-primary text-white shadow-2xs' 
-                : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-            }`}
-          >
-            <SettingsIcon className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-            Tài khoản
-          </button>
+            {hasPermission('appointment.view') && (
+              <button 
+                onClick={() => setActiveTab('appointments')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'appointments' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Lịch hẹn
+              </button>
+            )}
+            {hasPermission('patient.view') && (
+              <button 
+                onClick={() => setActiveTab('patients')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'patients' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Hồ sơ Bệnh án
+              </button>
+            )}
+            {hasPermission('service.manage') && (
+              <button 
+                onClick={() => setActiveTab('services')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'services' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <LayoutList className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Dịch vụ & Lịch
+              </button>
+            )}
+            {hasPermission('report.view') && (
+              <button 
+                onClick={() => setActiveTab('analytics')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'analytics' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Báo cáo
+              </button>
+            )}
+            {hasPermission('setting.manage') && (
+              <button 
+                onClick={() => setActiveTab('settings')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'settings' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <SettingsIcon className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Tài khoản
+              </button>
+            )}
           </div>
           {/* Scroll Indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-8 flex items-center justify-end pr-1.5 bg-gradient-to-l from-slate-50/90 to-transparent pointer-events-none">
@@ -637,6 +722,13 @@ export default function Dashboard() {
 
                 <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
                   <button 
+                    onClick={() => setShowExportModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors shadow-2xs"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">Xuất file</span>
+                  </button>
+                  <button 
                     onClick={() => setShowScanner(true)}
                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-2xs"
                   >
@@ -663,6 +755,10 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+
+              {showExportModal && (
+                <ExportAppointmentsModal onClose={() => setShowExportModal(false)} />
+              )}
 
               {viewMode === 'calendar' ? (
                 <div className="p-2.5 sm:p-4">

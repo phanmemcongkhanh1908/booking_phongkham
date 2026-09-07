@@ -65,12 +65,82 @@ adminRouter.delete("/services/:id", async (req, res, next) => {
   }
 });
 
+// PROVIDERS CRUD
+adminRouter.get("/providers", async (req, res, next) => {
+  try {
+    const allProviders = await db.select().from(providers).orderBy(providers.name);
+    res.json({ success: true, data: allProviders });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/providers", async (req, res, next) => {
+  try {
+    // If this provider is marked as default, unset others first (simulated in memory via update loop if needed, but here we just update all)
+    if (req.body.isDefault) {
+       const allProviders = await db.select().from(providers);
+       for (const p of allProviders) {
+         if (p.isDefault) {
+           await db.update(providers).set({ isDefault: false }).where(eq(providers.id, p.id));
+         }
+       }
+    }
+
+    const newProvider = await db.insert(providers).values({
+      name: req.body.name,
+      specialty: req.body.specialty,
+      workingHours: req.body.workingHours || {},
+      bookingEnabled: req.body.bookingEnabled !== false,
+      isActive: req.body.isActive !== false,
+      isDefault: Boolean(req.body.isDefault),
+    }).returning();
+    res.json({ success: true, data: newProvider[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.put("/providers/:id", async (req, res, next) => {
+  try {
+    if (req.body.isDefault) {
+       const allProviders = await db.select().from(providers);
+       for (const p of allProviders) {
+         if (p.isDefault && p.id !== req.params.id) {
+           await db.update(providers).set({ isDefault: false }).where(eq(providers.id, p.id));
+         }
+       }
+    }
+
+    const updated = await db.update(providers).set({
+      name: req.body.name,
+      specialty: req.body.specialty,
+      workingHours: req.body.workingHours || {},
+      bookingEnabled: req.body.bookingEnabled !== false,
+      isActive: req.body.isActive !== false,
+      isDefault: Boolean(req.body.isDefault),
+    }).where(eq(providers.id, req.params.id)).returning();
+    res.json({ success: true, data: updated[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.delete("/providers/:id", async (req, res, next) => {
+  try {
+    await db.delete(providers).where(eq(providers.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // CONFIG (Working Hours & Interval)
 adminRouter.get("/config", async (req, res, next) => {
   try {
-    // We assume the first provider represents the clinic working hours for this demo
-    const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
-    const workingHours = activeProviders.length > 0 ? activeProviders[0].workingHours : {};
+    const allProviders = await db.select().from(providers).where(eq(providers.isActive, true));
+    const defaultProvider = allProviders.find((p: any) => p.isDefault) || allProviders[0];
+    const workingHours = defaultProvider ? defaultProvider.workingHours : {};
     
     // Fallback settings if settings table is not available
     let intervalStep = 30;
@@ -92,11 +162,13 @@ adminRouter.get("/config", async (req, res, next) => {
 adminRouter.put("/config", async (req, res, next) => {
   try {
     const { workingHours, intervalStep } = req.body;
-    const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
-    if (activeProviders.length > 0) {
+    const allProviders = await db.select().from(providers).where(eq(providers.isActive, true));
+    const defaultProvider = allProviders.find((p: any) => p.isDefault) || allProviders[0];
+    
+    if (defaultProvider) {
       await db.update(providers)
         .set({ workingHours })
-        .where(eq(providers.id, activeProviders[0].id));
+        .where(eq(providers.id, defaultProvider.id));
     }
 
     try {
@@ -223,6 +295,11 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
       occupancyStatsMap[dateStr] = { date: dateStr, completed: 0, cancelled: 0, total: 0, revenue: 0 };
     }
     
+    // Thống kê lịch hẹn theo ngày, tuần và tỷ lệ khách hàng quay lại
+    const appointmentsByDay: Record<string, number> = {};
+    const appointmentsByWeek: Record<string, number> = {};
+    const patientVisits: Record<string, number> = {};
+
     allAppointments.forEach((a: any) => {
       // Dịch vụ mũi nhọn
       if (a.status === 'COMPLETED' && a.serviceId) {
@@ -239,7 +316,9 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
       
       // Lấp đầy, Hủy & Doanh thu
       if (a.startAt) {
-         const dateStr = new Date(a.startAt).toISOString().split('T')[0];
+         const date = new Date(a.startAt);
+         const dateStr = date.toISOString().split('T')[0];
+         
          if (occupancyStatsMap[dateStr]) {
             occupancyStatsMap[dateStr].total += 1;
             if (a.status === 'COMPLETED') {
@@ -252,14 +331,53 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
               occupancyStatsMap[dateStr].cancelled += 1;
             }
          }
+
+         // Đếm theo ngày (cho toàn thời gian)
+         appointmentsByDay[dateStr] = (appointmentsByDay[dateStr] || 0) + 1;
+
+         // Đếm theo tuần (VD: "2026-W36")
+         // Hàm lấy số tuần đơn giản
+         const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+         const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+         const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+         const weekStr = `${date.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+         appointmentsByWeek[weekStr] = (appointmentsByWeek[weekStr] || 0) + 1;
+      }
+
+      // Đếm số lần khám của bệnh nhân (để tính tỉ lệ quay lại)
+      if (a.status === 'COMPLETED' && a.patientId) {
+        patientVisits[a.patientId] = (patientVisits[a.patientId] || 0) + 1;
       }
     });
+
+    // Tính tỷ lệ khách hàng quay lại
+    const totalPatientsWithCompletedAppt = Object.keys(patientVisits).length;
+    const returningPatients = Object.values(patientVisits).filter((count: number) => count > 1).length;
+    const returningRate = totalPatientsWithCompletedAppt > 0 
+      ? Math.round((returningPatients / totalPatientsWithCompletedAppt) * 100) 
+      : 0;
+
+    // Sắp xếp ngày và tuần để gửi về FE (lấy 14 ngày gần nhất, 10 tuần gần nhất)
+    const sortedDays = Object.entries(appointmentsByDay)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-14)
+      .map(([date, count]) => ({ date, count }));
+
+    const sortedWeeks = Object.entries(appointmentsByWeek)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-10)
+      .map(([week, count]) => ({ week, count }));
 
     res.json({
       success: true,
       data: {
         serviceStats: Object.values(serviceStatsMap),
-        occupancyStats: Object.values(occupancyStatsMap)
+        occupancyStats: Object.values(occupancyStatsMap),
+        appointmentsByDay: sortedDays,
+        appointmentsByWeek: sortedWeeks,
+        returningRate,
+        totalPatients: totalPatientsWithCompletedAppt,
+        returningPatients
       }
     });
   } catch (error) {

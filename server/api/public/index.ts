@@ -56,11 +56,12 @@ publicRouter.get("/availability/summary", async (req, res, next) => {
 
     let providerId = query.providerId;
     if (!providerId) {
-      const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
-      if (activeProviders.length === 0) {
+      const allActiveProviders = await db.select().from(providers).where(eq(providers.isActive, true));
+      if (allActiveProviders.length === 0) {
         return res.json({ success: true, data: { summary: [], nextAvailableDate: null, nextAvailableCount: 0 } });
       }
-      providerId = activeProviders[0].id;
+      const defaultProvider = allActiveProviders.find((p: any) => p.isDefault) || allActiveProviders[0];
+      providerId = defaultProvider.id;
     }
 
     const dayPromises = Array.from({ length: daysCount }).map(async (_, idx) => {
@@ -106,12 +107,13 @@ publicRouter.get("/availability", async (req, res, next) => {
     let providerId = query.providerId;
 
     if (!providerId) {
-      // Pick the first active provider
-      const activeProviders = await db.select().from(providers).where(eq(providers.isActive, true)).limit(1);
-      if (activeProviders.length === 0) {
+      // Pick the default or first active provider
+      const allActiveProviders = await db.select().from(providers).where(eq(providers.isActive, true));
+      if (allActiveProviders.length === 0) {
         throw new NotFoundError("Không có bác sĩ nào đang hoạt động");
       }
-      providerId = activeProviders[0].id;
+      const defaultProvider = allActiveProviders.find((p: any) => p.isDefault) || allActiveProviders[0];
+      providerId = defaultProvider.id;
     }
 
     const includeUnavailable = req.query.includeUnavailable !== "false";

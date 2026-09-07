@@ -21,7 +21,8 @@ authRouter.post("/login", async (req, res, next) => {
         passwordHash: users.passwordHash,
         isActive: users.isActive,
         roleName: roles.name,
-        permissions: roles.permissions,
+        rolePermissions: roles.permissions,
+        userPermissions: users.permissions,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id));
@@ -49,11 +50,16 @@ authRouter.post("/login", async (req, res, next) => {
       throw new UnauthorizedError("Tài khoản hoặc mật khẩu không chính xác");
     }
 
+    const mergedPermissions = Array.from(new Set([
+      ...(user.rolePermissions || []),
+      ...(user.userPermissions || [])
+    ]));
+
     // Generate Token
     const token = generateToken({
       userId: user.id,
       role: user.roleName || "guest",
-      permissions: (user.permissions as string[]) || [],
+      permissions: mergedPermissions,
     });
 
     res.json({
@@ -64,7 +70,7 @@ authRouter.post("/login", async (req, res, next) => {
           id: user.id,
           email: user.email,
           role: user.roleName,
-          permissions: user.permissions,
+          permissions: mergedPermissions,
         },
       },
     });

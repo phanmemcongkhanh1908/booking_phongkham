@@ -64,10 +64,21 @@ export default function Settings() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [isUserError, setIsUserError] = useState(false);
   const [userAccounts, setUserAccounts] = useState<any[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['*']); // Default all for root admin feeling, or we can make it empty initially
+
+  const AVAILABLE_PERMISSIONS = [
+    { id: '*', label: 'Toàn quyền (Quản trị viên)' },
+    { id: 'appointment.view', label: 'Quản lý lịch hẹn' },
+    { id: 'patient.view', label: 'Quản lý bệnh nhân' },
+    { id: 'service.manage', label: 'Quản lý dịch vụ & bác sĩ' },
+    { id: 'report.view', label: 'Xem thống kê báo cáo' },
+    { id: 'setting.manage', label: 'Cấu hình hệ thống' },
+  ];
   const [driveInfo, setDriveInfo] = useState<any>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
@@ -273,12 +284,14 @@ export default function Settings() {
       const res = await api.post('/users', { 
         username: trimmedIdentifier,
         email: trimmedIdentifier,
-        password 
+        password,
+        permissions: selectedPermissions
       });
       setMsg(res.data?.message || `Tạo tài khoản '${trimmedIdentifier}' thành công!`);
       setIsUserError(false);
       setEmail('');
       setPassword('');
+      setSelectedPermissions(['*']); // Reset
       // Làm mới danh sách tài khoản
       const refreshed = await api.get('/users');
       if (refreshed.data?.data) {
@@ -289,6 +302,18 @@ export default function Settings() {
       setMsg(err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi tạo tài khoản');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa tài khoản này không? Hành động này không thể hoàn tác.')) return;
+    try {
+      await api.delete(`/users/${userId}`);
+      setUserAccounts(prev => prev.filter(u => u.id !== userId));
+      setMsg('Đã xóa tài khoản thành công');
+      setIsUserError(false);
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi xóa tài khoản');
     }
   };
 
@@ -1074,15 +1099,58 @@ export default function Settings() {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-text-main">Mật khẩu</label>
-              <Input 
-                type="password" 
-                placeholder="Tối thiểu 6 ký tự (VD: admin@123)" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                required 
-                autoComplete="new-password"
-              />
+              <div className="relative">
+                <Input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="Tối thiểu 6 ký tự (VD: admin@123)" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  required 
+                  autoComplete="new-password"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main focus:outline-none transition-colors"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-text-main">Phân quyền chức năng</label>
+              <div className="space-y-2 max-h-[160px] overflow-y-auto p-2 bg-slate-50 border border-border-subtle rounded-xl">
+                {AVAILABLE_PERMISSIONS.map(p => (
+                  <label key={p.id} className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 text-primary focus:ring-primary h-4 w-4"
+                      checked={selectedPermissions.includes('*') || selectedPermissions.includes(p.id)}
+                      disabled={p.id !== '*' && selectedPermissions.includes('*')}
+                      onChange={(e) => {
+                        if (p.id === '*') {
+                          setSelectedPermissions(e.target.checked ? ['*'] : []);
+                        } else {
+                          setSelectedPermissions(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(id => id !== '*'), p.id] 
+                              : prev.filter(id => id !== p.id)
+                          );
+                        }
+                      }}
+                    />
+                    <span className="text-sm text-text-main">{p.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? (
                 <>
@@ -1102,17 +1170,30 @@ export default function Settings() {
                 Danh sách tài khoản hệ thống ({userAccounts.length}):
               </p>
               <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                {userAccounts.map((u, idx) => (
-                  <div key={u.id || idx} className="flex items-center justify-between text-xs p-2 rounded bg-bg-base border border-border-subtle">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                      <span className="font-medium text-text-main">{u.email}</span>
+                {userAccounts.map((u, idx) => {
+                  const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
+                  return (
+                    <div key={u.id || idx} className="flex items-center justify-between text-xs p-2 rounded bg-bg-base border border-border-subtle group">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span className="font-medium text-text-main">{u.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium max-w-[120px] truncate" title={hasAll ? "Toàn quyền" : u.permissions?.join(', ')}>
+                          {hasAll ? 'Toàn quyền' : (u.permissions?.length ? `${u.permissions.length} quyền` : (u.roleName || 'guest'))}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(u.id)}
+                          className="text-slate-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                          title="Xóa tài khoản"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
-                      {u.roleName || 'admin'}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
