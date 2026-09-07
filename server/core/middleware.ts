@@ -14,12 +14,19 @@ declare global {
 
 export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   try {
+    let token: string | undefined;
+    
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (req.query.token && typeof req.query.token === "string") {
+      token = req.query.token;
+    }
+
+    if (!token) {
       throw new UnauthorizedError("Vui lòng đăng nhập để tiếp tục");
     }
 
-    const token = authHeader.split(" ")[1];
     const payload = verifyToken(token);
     
     req.user = payload;

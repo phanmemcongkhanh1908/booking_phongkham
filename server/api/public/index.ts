@@ -314,6 +314,48 @@ publicRouter.post("/appointments", async (req, res, next) => {
     const notificationEvent = bookingResult.status === "CONFIRMED" ? "CONFIRMED" : "CREATED";
     notifyPatientAppointment(bookingResult.id, notificationEvent).catch(console.error);
 
+    // Emit real-time BOOKING_CREATED event for the Admin Dashboard
+    try {
+      const { realtimeNotification } = await import("../../services/realtimeNotification.js");
+      const { generateVietnameseAnnouncement } = await import("../../services/tts/announcement.js");
+      const { generateAudio } = await import("../../services/tts/index.js");
+
+      const fullApt = await db
+        .select({
+          id: appointments.id,
+          status: appointments.status,
+          startAt: appointments.startAt,
+          endAt: appointments.endAt,
+          serviceName: services.name,
+          providerName: providers.name,
+          patientName: patients.fullName,
+          patientPhone: patients.phone
+        })
+        .from(appointments)
+        .leftJoin(services, eq(appointments.serviceId, services.id))
+        .leftJoin(providers, eq(appointments.providerId, providers.id))
+        .leftJoin(patients, eq(appointments.patientId, patients.id))
+        .where(eq(appointments.id, bookingResult.id))
+        .limit(1);
+
+      if (fullApt.length > 0) {
+        const payload = fullApt[0] as any;
+        try {
+          const text = generateVietnameseAnnouncement(payload);
+          const audioUrl = await generateAudio(text);
+          if (audioUrl) {
+            payload.audioUrl = audioUrl;
+          }
+        } catch (ttsErr) {
+          console.error("Failed to generate TTS audio:", ttsErr);
+        }
+        
+        realtimeNotification.emitBookingCreated(payload);
+      }
+    } catch (e) {
+      console.error("Failed to emit real-time event:", e);
+    }
+
     const botUsername = await getTelegramBotUsername();
 
     res.json({

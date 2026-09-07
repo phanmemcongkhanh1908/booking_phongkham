@@ -3,7 +3,8 @@ import { db } from "../../db/index.js";
 import { pushSubscriptions } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { requireAuth } from "../../core/middleware.js";
+import { requireAuth, requirePermission } from "../../core/middleware.js";
+import { realtimeNotification } from "../../services/realtimeNotification.js";
 
 const notificationRouter = Router();
 
@@ -43,6 +44,11 @@ notificationRouter.post("/subscribe", requireAuth, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// SSE endpoint for admin real-time notifications
+notificationRouter.get("/stream", requireAuth, requirePermission("appointment.view"), (req, res) => {
+  realtimeNotification.addClient(req, res);
 });
 
 export default notificationRouter;

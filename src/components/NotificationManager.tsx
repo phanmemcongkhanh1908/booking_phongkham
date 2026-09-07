@@ -3,14 +3,17 @@ import toast, { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '../store/auth';
 import { differenceInMinutes, parseISO } from 'date-fns';
 import api from '../services/api';
+import { useRealtimeBooking } from '../hooks/useRealtimeBooking';
 
 export default function NotificationManager() {
   const token = useAuthStore(state => state.token);
+  
+  // Attach SSE for real-time booking notifications & TTS
+  useRealtimeBooking();
 
   useEffect(() => {
     const checkUpcomingAppointments = async () => {
       const now = new Date();
-
       if (token) {
         // ADMIN MODE: Fetch today's appointments
         try {
@@ -21,8 +24,6 @@ export default function NotificationManager() {
               if ((apt.status === 'CONFIRMED' || apt.status === 'REQUESTED') && apt.startAt) {
                 const diff = differenceInMinutes(parseISO(apt.startAt), now);
                 if (diff > 0 && diff <= 15) {
-                  // Only toast if not already toasted for this specific time recently
-                  // In a real app we'd track shown notifications, here we use a simple sessionStorage flag
                   const notifKey = `notif_admin_${apt.id}`;
                   if (!sessionStorage.getItem(notifKey)) {
                     toast(`Sắp tới giờ hẹn: Khách ${apt.patientName} lúc ${formatTime(apt.startAt)}`, {
@@ -35,7 +36,7 @@ export default function NotificationManager() {
               }
             });
           }
-        } catch (error) {
+        } catch (error: any) {
           if (error.response?.status !== 401) { console.error("Failed to fetch admin notifications", error); }
         }
       } else {
@@ -45,7 +46,7 @@ export default function NotificationManager() {
           const myAppts = JSON.parse(myApptsStr);
           myAppts.forEach((apt: any) => {
             const diff = differenceInMinutes(parseISO(apt.startAt), now);
-            if (diff > 0 && diff <= 60) { // Notify patient 1 hour and 15 mins before
+            if (diff > 0 && diff <= 60) {
               const notifKey = `notif_patient_${apt.id}_${diff <= 15 ? '15m' : '1h'}`;
               if (!sessionStorage.getItem(notifKey)) {
                 toast.success(`Bạn có lịch hẹn khám nha khoa sắp tới lúc ${formatTime(apt.startAt)}!`, {
@@ -79,7 +80,6 @@ export default function NotificationManager() {
     // Check immediately, then every 1 minute
     checkUpcomingAppointments();
     const interval = setInterval(checkUpcomingAppointments, 60000);
-
     return () => clearInterval(interval);
   }, [token]);
 

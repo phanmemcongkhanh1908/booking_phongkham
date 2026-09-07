@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kiểm tra giọng đọc máy tính (Fallback)</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 600px; margin: 0 auto; color: #333; }
+    h1 { font-size: 20px; color: #111; }
+    .box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 20px; background: #f9f9f9; }
+    button { background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #4338ca; }
+    ul { padding-left: 20px; }
+    .status-ok { color: #16a34a; font-weight: bold; }
+    .status-warn { color: #ca8a04; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Công cụ kiểm tra giọng đọc trình duyệt</h1>
+  <p>Đây là công cụ chẩn đoán khả năng phát âm tiếng Việt <b>nội bộ</b> của trình duyệt trên máy tính này. Chỉ áp dụng khi máy chủ hệ thống chưa được định cấu hình gói giọng cao cấp.</p>
+  
+  <div class="box">
+    <h3>Tình trạng hệ thống của bạn:</h3>
+    <div id="status">Đang tải...</div>
+    <ul id="voice-list"></ul>
+  </div>
+
+  <button onclick="testVoice()">Nghe thử giọng mặc định (Dự phòng)</button>
+
+  <script>
+    function loadVoices() {
+      const voices = window.speechSynthesis.getVoices();
+      const list = document.getElementById('voice-list');
+      const status = document.getElementById('status');
+      
+      if (voices.length === 0) {
+        status.innerHTML = "Chưa lấy được danh sách giọng (chờ trình duyệt tải...)";
+        return;
+      }
+      
+      const viVoices = voices.filter(v => v.lang.toLowerCase().includes('vi'));
+      
+      if (viVoices.length > 0) {
+        status.innerHTML = `<span class="status-ok">✔ Tuyệt vời! Tìm thấy ${viVoices.length} giọng tiếng Việt.</span>`;
+        list.innerHTML = viVoices.map(v => `<li>${v.name} (${v.lang}) ${v.default ? '- <i>Mặc định</i>' : ''}</li>`).join('');
+      } else {
+        status.innerHTML = `<span class="status-warn">⚠ Không tìm thấy giọng tiếng Việt.</span><br/>Trình duyệt sẽ dựa vào bộ ngôn ngữ của Windows/OS. Vui lòng vào Cài đặt của Windows > Time & Language > Speech, sau đó cài gói "Vietnamese". Khởi động lại trình duyệt sau khi cài.`;
+        list.innerHTML = "";
+      }
+    }
+
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    setTimeout(loadVoices, 500); // init call
+
+    function testVoice() {
+      const text = "Chào bạn. Đây là giọng đọc tiếng Việt được phát trực tiếp từ trình duyệt của máy tính.";
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'vi-VN';
+      
+      const voices = window.speechSynthesis.getVoices();
+      let target = voices.find(v => v.name.includes('Google Tiếng Việt')) ||
+                   voices.find(v => v.name.includes('HoaiMy') || v.name.includes('Microsoft An')) ||
+                   voices.find(v => v.lang.toLowerCase().replace('_', '-') === 'vi-vn');
+      
+      if (target) {
+        u.voice = target;
+        u.lang = target.lang;
+      }
+      
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+  </script>
+</body>
+</html>

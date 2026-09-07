@@ -12,6 +12,7 @@ import recallRouter from "./server/api/recalls/index.js";
 import analyticsRouter from "./server/api/analytics/index.js";
 import usersRouter from "./server/api/users/index.js";
 import adminRouter from "./server/api/admin/index.js";
+import ttsRouter from "./server/api/tts/index.js";
 import patientsRouter from "./server/api/patients/index.js";
 import "./server/core/telegram.js"; // Initialize Telegram bot
 import { bootstrapSystem } from "./server/core/bootstrap.js";
@@ -41,6 +42,7 @@ async function startServer() {
   app.use("/api/public", publicRouter);
   app.use("/api/appointments", appointmentRouter);
   app.use("/api/notifications", notificationRouter);
+  app.use("/api/tts", ttsRouter);
   app.use("/api/recalls", recallRouter);
   app.use("/api/analytics", analyticsRouter);
   app.use("/api/patients", patientsRouter);

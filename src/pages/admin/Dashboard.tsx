@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../../store/auth';
+import { useVoiceStore } from '../../store/voiceStore';
+import { ServerSpeechEngine } from '../../services/speech/ServerSpeechEngine';
 import { usePermissions } from '../../hooks/usePermissions';
 import api from '../../services/api';
 import { format, differenceInMinutes, startOfWeek } from 'date-fns';
@@ -40,9 +42,9 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
   const [clinicProfile, setClinicProfile] = useState<any>(null);
+  const { enabled: audioEnabled, setEnabled: setAudioEnabled } = useVoiceStore();
 
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const [toasts, setToasts] = useState<any[]>([]);
+    const [toasts, setToasts] = useState<any[]>([]);
   const knownAppointmentIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
 
@@ -58,93 +60,7 @@ export default function Dashboard() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const playTTS = (text: string, force: boolean = false) => {
-    if (!force && !audioEnabledRef.current) return;
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel(); // clear previous
-
-    // Play a short pleasant chime using Web Audio API
-    try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
-        const ctx = new AudioContextClass();
-        
-        // Create a positive notification melody (C Major Arpeggio: C5, E5, G5, C6)
-        const playNote = (freq: number, startTime: number, duration: number) => {
-          const osc = ctx.createOscillator();
-          const gainNode = ctx.createGain();
-          
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
-          
-          gainNode.gain.setValueAtTime(0, ctx.currentTime + startTime);
-          gainNode.gain.linearRampToValueAtTime(0.2, ctx.currentTime + startTime + 0.05); // Attack
-          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration); // Decay
-          
-          osc.connect(gainNode);
-          gainNode.connect(ctx.destination);
-          
-          osc.start(ctx.currentTime + startTime);
-          osc.stop(ctx.currentTime + startTime + duration);
-        };
-
-        // Play the notes in sequence
-        playNote(523.25, 0, 0.8);     // C5
-        playNote(659.25, 0.12, 0.8);  // E5
-        playNote(783.99, 0.24, 0.8);  // G5
-        playNote(1046.50, 0.36, 1.2); // C6 (sustained a bit longer)
-        
-        // Clean up audio context
-        setTimeout(() => {
-          if (ctx.state !== 'closed') ctx.close();
-        }, 2000);
-      }
-    } catch (err) {
-      console.warn("Could not play chime", err);
-    }
-
-    // Wait for the chime to mostly finish before speaking
-    setTimeout(() => {
-      if (!('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'vi-VN';
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      
-      // Attempt to select a specific high-quality Vietnamese voice if available
-      const setVoiceAndSpeak = () => {
-        const voices = window.speechSynthesis.getVoices();
-        
-        // Find best Vietnamese voice
-        const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang === 'vi_VN') ||
-                        voices.find(v => v.lang.toLowerCase().startsWith('vi')) ||
-                        voices.find(v => v.name.toLowerCase().includes('vietnamese'));
-          
-        if (viVoice) {
-          utterance.voice = viVoice;
-          window.speechSynthesis.speak(utterance);
-        } else {
-          // If no specific Vietnamese voice is found, we STILL enforce the vi-VN lang tag
-          // Some browsers will use a cloud voice automatically if the local device lacks one
-          utterance.lang = 'vi-VN';
-          window.speechSynthesis.speak(utterance);
-        }
-      };
-
-      // In some browsers (like Chrome), getVoices() is loaded asynchronously.
-      if (window.speechSynthesis.getVoices().length === 0) {
-        window.speechSynthesis.onvoiceschanged = () => {
-          setVoiceAndSpeak();
-          // Reset listener to avoid memory leaks
-          window.speechSynthesis.onvoiceschanged = null;
-        };
-      } else {
-        setVoiceAndSpeak();
-      }
-    }, 1100);
-  };
+  ;
 
 
   useEffect(() => {
@@ -192,7 +108,7 @@ export default function Dashboard() {
               const msgText = `Có khách hàng tên ${appt.patientName} đã đặt hẹn dịch vụ ${appt.serviceName} vào lúc ${timeStr} ngày ${dateStr}.`;
               
               addToast('Lịch hẹn mới', msgText, 'new');
-              playTTS(msgText);
+              import('../../services/speech/TTSQueueManager').then(m => m.TTSQueueManager.enqueue('msg_'+Date.now(), msgText));
               
               if ('Notification' in window && Notification.permission === 'granted') {
                 new Notification('Lịch hẹn mới', { body: msgText, icon: '/pwa-192x192.png' });
@@ -231,11 +147,7 @@ export default function Dashboard() {
 
   const notifiedApptsRef = useRef<Set<string>>(new Set());
 
-  const audioEnabledRef = useRef(audioEnabled);
-  useEffect(() => {
-    audioEnabledRef.current = audioEnabled;
-  }, [audioEnabled]);
-  
+    
   const appointmentsRef = useRef(appointments);
   useEffect(() => {
     appointmentsRef.current = appointments;
@@ -278,7 +190,7 @@ export default function Dashboard() {
             const msgText = `Sắp đến lịch hẹn của khách hàng ${appt.patientName} vào lúc ${timeStr}.`;
             
             addToast('Nhắc nhở lịch hẹn', msgText, 'reminder');
-            playTTS(msgText);
+            import('../../services/speech/TTSQueueManager').then(m => m.TTSQueueManager.enqueue('msg_'+Date.now(), msgText));
 
             if ('Notification' in window && Notification.permission === 'granted') {
               new Notification('Nhắc nhở lịch hẹn', {
@@ -520,7 +432,11 @@ export default function Dashboard() {
                 const nextVal = !audioEnabled;
                 setAudioEnabled(nextVal);
                 if (nextVal) {
-                  playTTS('Đã kích hoạt trợ lý âm thanh Dental Smart.', true);
+                  // Synchronous unlock required by browser policy
+                  ServerSpeechEngine.unlockAudio();
+                  ServerSpeechEngine.speak('Đã kích hoạt trợ lý âm thanh Dental Smart.');
+                } else {
+                  ServerSpeechEngine.cancel();
                 }
               }}
               className={`text-xs font-semibold flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all border ${

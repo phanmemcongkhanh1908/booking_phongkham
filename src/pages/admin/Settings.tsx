@@ -1,3 +1,4 @@
+import VoiceSettingsPanel from './components/VoiceSettingsPanel';
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
@@ -490,6 +491,7 @@ export default function Settings() {
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
+      <div className="col-span-1 md:col-span-2"><VoiceSettingsPanel /></div>
 
       {/* Telegram Config */}
       <Card className="col-span-1">
