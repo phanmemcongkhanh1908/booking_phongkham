@@ -24,6 +24,8 @@ interface Service {
   durationMins: number;
   price: number;
   description?: string;
+  showPrice?: boolean;
+  isHot?: boolean;
 }
 
 export default function ServiceSelection() {
@@ -236,10 +238,18 @@ export default function ServiceSelection() {
               >
                 {/* Top Row: Category tag + Checkmark */}
                 <div className="flex items-center justify-between gap-2 w-full mb-3">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold tracking-tight bg-slate-100 text-slate-700 group-hover:bg-teal-50 group-hover:text-teal-800 transition-colors">
-                    {cat.icon}
-                    <span>{cat.label}</span>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold tracking-tight bg-slate-100 text-slate-700 group-hover:bg-teal-50 group-hover:text-teal-800 transition-colors">
+                      {cat.icon}
+                      <span>{cat.label}</span>
+                    </span>
+                    {svc.isHot && (
+                      <span className="relative overflow-hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider bg-rose-50 text-rose-600 border border-rose-200">
+                        <span className="absolute inset-0 bg-white/40 -translate-x-full animate-[shimmer_2s_infinite]"></span>
+                        HOT
+                      </span>
+                    )}
+                  </div>
 
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
                     isSelected 
@@ -268,9 +278,11 @@ export default function ServiceSelection() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="font-black text-sm sm:text-base text-teal-700 group-hover:text-teal-800">
-                      {formattedPrice}
-                    </span>
+                    {svc.showPrice && (
+                      <span className="font-black text-sm sm:text-base text-teal-700 group-hover:text-teal-800">
+                        {formattedPrice}
+                      </span>
+                    )}
                     <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 group-hover:text-teal-700 transition-colors">
                       Chọn <ArrowRight className="w-3 h-3" />
                     </span>

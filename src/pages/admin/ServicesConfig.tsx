@@ -109,7 +109,7 @@ export default function ServicesConfig() {
       <Card className="col-span-1 md:col-span-2 lg:col-span-1">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Danh sách Dịch vụ</CardTitle>
-          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0 }); setShowServiceForm(true); }}>
+          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false }); setShowServiceForm(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Thêm dịch vụ
           </Button>
         </CardHeader>
@@ -132,6 +132,20 @@ export default function ServicesConfig() {
                     <Input type="number" value={editingService.bufferAfter} onChange={e => setEditingService({...editingService, bufferAfter: e.target.value})} />
                   </div>
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-text-muted">Giá dịch vụ (VNĐ)</label>
+                  <Input type="number" placeholder="Ví dụ: 500000" value={editingService.price || ''} onChange={e => setEditingService({...editingService, price: e.target.value})} />
+                </div>
+                <div className="flex items-center gap-6 pt-2">
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input type="checkbox" checked={editingService.showPrice || false} onChange={e => setEditingService({...editingService, showPrice: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
+                    <span>Hiển thị giá</span>
+                  </label>
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input type="checkbox" checked={editingService.isHot || false} onChange={e => setEditingService({...editingService, isHot: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
+                    <span>Nổi bật (HOT)</span>
+                  </label>
+                </div>
                 <div className="flex justify-end space-x-2 pt-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowServiceForm(false)}>Hủy</Button>
                   <Button type="submit" size="sm">Lưu</Button>
@@ -144,11 +158,23 @@ export default function ServicesConfig() {
             {services.map(svc => (
               <div key={svc.id} className="flex justify-between items-center p-3 border border-border-subtle rounded hover:bg-bg-base transition-colors">
                 <div>
-                  <h4 className="font-medium text-sm text-text-main">{svc.name}</h4>
-                  <div className="flex items-center text-xs text-text-muted mt-1">
-                    <Clock className="w-3 h-3 mr-1" />
-                    {svc.durationMins} phút khám
-                    {svc.bufferAfter > 0 && ` + ${svc.bufferAfter} phút dọn dẹp`}
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-medium text-sm text-text-main">{svc.name}</h4>
+                    {svc.isHot && (
+                      <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-sm">HOT</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-text-muted mt-1">
+                    <span className="flex items-center">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {svc.durationMins} phút khám
+                      {svc.bufferAfter > 0 && ` + ${svc.bufferAfter} phút dọn dẹp`}
+                    </span>
+                    {svc.price && svc.showPrice && (
+                      <span className="font-medium text-teal-600">
+                        {Number(svc.price).toLocaleString('vi-VN')}đ
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex space-x-2">

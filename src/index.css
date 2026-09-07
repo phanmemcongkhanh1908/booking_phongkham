@@ -63,6 +63,12 @@
   }
 }
 
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 html, body {
   background-color: var(--bg-base);
   color: var(--text-main);
