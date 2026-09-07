@@ -58,8 +58,9 @@ export default function Dashboard() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const playTTS = (text: string) => {
-    if (!audioEnabledRef.current || !('speechSynthesis' in window)) return;
+  const playTTS = (text: string, force: boolean = false) => {
+    if (!force && !audioEnabledRef.current) return;
+    if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); // clear previous
 
     // Play a short pleasant chime using Web Audio API
@@ -92,6 +93,11 @@ export default function Dashboard() {
         playNote(659.25, 0.12, 0.8);  // E5
         playNote(783.99, 0.24, 0.8);  // G5
         playNote(1046.50, 0.36, 1.2); // C6 (sustained a bit longer)
+        
+        // Clean up audio context
+        setTimeout(() => {
+          if (ctx.state !== 'closed') ctx.close();
+        }, 2000);
       }
     } catch (err) {
       console.warn("Could not play chime", err);
@@ -108,13 +114,35 @@ export default function Dashboard() {
       utterance.pitch = 1.0;
       
       // Attempt to select a specific high-quality Vietnamese voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang.includes('vi'));
-      if (viVoice) {
-        utterance.voice = viVoice;
+      const setVoiceAndSpeak = () => {
+        const voices = window.speechSynthesis.getVoices();
+        
+        // Find best Vietnamese voice
+        const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang === 'vi_VN') ||
+                        voices.find(v => v.lang.toLowerCase().startsWith('vi')) ||
+                        voices.find(v => v.name.toLowerCase().includes('vietnamese'));
+          
+        if (viVoice) {
+          utterance.voice = viVoice;
+          window.speechSynthesis.speak(utterance);
+        } else {
+          // If no specific Vietnamese voice is found, we STILL enforce the vi-VN lang tag
+          // Some browsers will use a cloud voice automatically if the local device lacks one
+          utterance.lang = 'vi-VN';
+          window.speechSynthesis.speak(utterance);
+        }
+      };
+
+      // In some browsers (like Chrome), getVoices() is loaded asynchronously.
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          setVoiceAndSpeak();
+          // Reset listener to avoid memory leaks
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+      } else {
+        setVoiceAndSpeak();
       }
-      
-      window.speechSynthesis.speak(utterance);
     }, 1100);
   };
 
@@ -492,7 +520,7 @@ export default function Dashboard() {
                 const nextVal = !audioEnabled;
                 setAudioEnabled(nextVal);
                 if (nextVal) {
-                  playTTS('Đã kích hoạt trợ lý âm thanh Dental Smart.');
+                  playTTS('Đã kích hoạt trợ lý âm thanh Dental Smart.', true);
                 }
               }}
               className={`text-xs font-semibold flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all border ${
