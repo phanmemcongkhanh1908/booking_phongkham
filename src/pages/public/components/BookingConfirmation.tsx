@@ -29,6 +29,8 @@ export default function BookingConfirmation() {
     serviceId,
     serviceName, 
     servicePrice,
+    serviceIsFree,
+    serviceShowPrice,
     serviceDuration,
     holdExpiresAt, 
     patientDraft, 
@@ -256,10 +258,14 @@ export default function BookingConfirmation() {
                 </div>
               </div>
               <div className="sm:text-right">
-                <span className="text-xs text-slate-400 block font-medium">Chi phí dự kiến</span>
-                <span className="text-lg font-extrabold text-teal-700">
-                  {servicePrice ? `${servicePrice.toLocaleString('vi-VN')} đ` : 'Miễn phí khám'}
-                </span>
+                {(serviceIsFree || (servicePrice && servicePrice > 0)) ? (
+                  <>
+                    <span className="text-xs text-slate-400 block font-medium">Chi phí dự kiến</span>
+                    <span className="text-lg font-extrabold text-teal-700">
+                      {serviceIsFree ? 'Miễn phí' : `${servicePrice!.toLocaleString('vi-VN')} đ`}
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>

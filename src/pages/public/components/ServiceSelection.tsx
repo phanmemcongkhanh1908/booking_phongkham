@@ -99,7 +99,7 @@ export default function ServiceSelection() {
     if (currentServiceId && currentServiceId !== svc.id) {
       clearHold();
     }
-    setService(svc.id, svc.name, svc.price, svc.durationMins);
+    setService(svc.id, svc.name, svc.price, svc.durationMins, svc.isFree, svc.showPrice);
     navigate('/book/chon-gio');
   };
 
@@ -221,9 +221,14 @@ export default function ServiceSelection() {
           {filteredServices.map((svc) => {
             const cat = getCategory(svc.name);
             const isSelected = currentServiceId === svc.id;
-            const formattedPrice = svc.price && Number(svc.price) > 0 
-              ? `${Number(svc.price).toLocaleString('vi-VN')}đ` 
-              : 'Miễn phí';
+            let formattedPrice = '';
+            if (svc.showPrice) {
+               if (svc.isFree) {
+                 formattedPrice = 'Miễn phí';
+               } else if (svc.price && Number(svc.price) > 0) {
+                 formattedPrice = `${Number(svc.price).toLocaleString('vi-VN')}đ`;
+               }
+            }
 
             return (
               <button

@@ -144,7 +144,7 @@ export default function ServicesConfig() {
       <Card className="col-span-1 md:col-span-2 lg:col-span-1">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Danh sách Dịch vụ</CardTitle>
-          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false, isActive: true }); setShowServiceForm(true); }}>
+          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false, isFree: false, isActive: true }); setShowServiceForm(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Thêm dịch vụ
           </Button>
         </CardHeader>
@@ -169,12 +169,30 @@ export default function ServicesConfig() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-text-muted">Giá dịch vụ (VNĐ)</label>
-                  <Input type="number" placeholder="Ví dụ: 500000" value={editingService.price || ''} onChange={e => setEditingService({...editingService, price: e.target.value})} />
+                  <Input 
+                    type="text" 
+                    placeholder="Ví dụ: 500,000" 
+                    value={editingService.price != null && editingService.price !== '' ? editingService.price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : ''} 
+                    onChange={e => {
+                      const val = e.target.value.replace(/\D/g, '');
+                      setEditingService({...editingService, price: val !== '' ? parseInt(val) : ''})
+                    }} 
+                    disabled={editingService.isFree}
+                  />
                 </div>
                 <div className="flex flex-wrap items-center gap-6 pt-2">
                   <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
                     <input type="checkbox" checked={editingService.isActive !== false} onChange={e => setEditingService({...editingService, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
                     <span>Đang hoạt động</span>
+                  </label>
+                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={editingService.isFree || false} 
+                      onChange={e => setEditingService({...editingService, isFree: e.target.checked, price: e.target.checked ? '' : editingService.price})} 
+                      className="rounded border-border-subtle text-primary focus:ring-teal-600" 
+                    />
+                    <span>Miễn phí</span>
                   </label>
                   <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
                     <input type="checkbox" checked={editingService.showPrice || false} onChange={e => setEditingService({...editingService, showPrice: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />

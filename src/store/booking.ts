@@ -14,6 +14,8 @@ interface BookingState {
   serviceId: string | null;
   serviceName: string | null;
   servicePrice: number | null;
+  serviceIsFree: boolean | null;
+  serviceShowPrice: boolean | null;
   serviceDuration: number | null;
   providerId: string | null;
   providerName: string | null;
@@ -48,7 +50,7 @@ interface BookingState {
   } | null;
   
   setStep: (step: number) => void;
-  setService: (id: string, name: string, price?: number | null, duration?: number | null) => void;
+  setService: (id: string, name: string, price?: number | null, duration?: number | null, isFree?: boolean | null, showPrice?: boolean | null) => void;
   clearHold: () => void;
   setDateTimeSlot: (date: string, providerId: string | null, token: string, start: string, end: string, expiresAt: number, providerName?: string | null) => void;
   setPatientDraft: (draft: Partial<PatientDraft>) => void;
@@ -79,6 +81,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   serviceId: null,
   serviceName: null,
   servicePrice: null,
+  serviceIsFree: null,
+  serviceShowPrice: null,
   serviceDuration: null,
   providerId: null,
   providerName: null,
@@ -108,13 +112,15 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     holdExpiresAt: null,
   }),
 
-  setService: (id, name, price = null, duration = null) => {
+  setService: (id, name, price = null, duration = null, isFree = null, showPrice = null) => {
     const currentServiceId = get().serviceId;
     const isDifferent = currentServiceId !== id;
     set({ 
       serviceId: id, 
       serviceName: name, 
       servicePrice: price, 
+      serviceIsFree: isFree,
+      serviceShowPrice: showPrice,
       serviceDuration: duration, 
       step: 2,
       // Khi đổi dịch vụ khác, xoá hold cũ tránh lệch serviceId trong appointment
@@ -160,6 +166,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     serviceId: null,
     serviceName: null,
     servicePrice: null,
+    serviceIsFree: null,
+    serviceShowPrice: null,
     serviceDuration: null,
     providerId: null,
     providerName: null,

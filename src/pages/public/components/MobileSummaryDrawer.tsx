@@ -24,6 +24,8 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
   
   const serviceName = useBookingStore(s => s.serviceName);
   const servicePrice = useBookingStore(s => s.servicePrice);
+  const serviceIsFree = useBookingStore(s => s.serviceIsFree);
+  const serviceShowPrice = useBookingStore(s => s.serviceShowPrice);
   const serviceDuration = useBookingStore(s => s.serviceDuration);
   const slotStartTime = useBookingStore(s => s.slotStartTime);
   const providerName = useBookingStore(s => s.providerName);
@@ -51,9 +53,12 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
-  const formattedPrice = servicePrice && Number(servicePrice) > 0 
-    ? `${Number(servicePrice).toLocaleString('vi-VN')}đ` 
-    : 'Miễn phí';
+  let formattedPrice = '';
+  if (serviceIsFree) {
+    formattedPrice = 'Miễn phí';
+  } else if (servicePrice && Number(servicePrice) > 0) {
+    formattedPrice = `${Number(servicePrice).toLocaleString('vi-VN')}đ`;
+  }
 
   // Only show when at least a service is selected and not in step 5
   if (!serviceName || currentStep >= 5) return null;
@@ -82,7 +87,7 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
             <p className="text-[11px] text-slate-500 truncate mt-0.5">
               {slotStartTime 
                 ? format(new Date(slotStartTime), 'HH:mm • EEEE, dd/MM', { locale: vi })
-                : 'Đang chọn ngày giờ'} • <strong className="text-teal-800">{formattedPrice}</strong>
+                : 'Đang chọn ngày giờ'} {formattedPrice ? `• ` : ''}{formattedPrice && <strong className="text-teal-800">{formattedPrice}</strong>}
             </p>
           </div>
         </div>
@@ -110,9 +115,11 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
                 </p>
               )}
             </div>
-            <span className="text-xs font-black text-teal-800 bg-teal-50 px-2 py-1 rounded-lg border border-teal-200/60">
-              {formattedPrice}
-            </span>
+            {formattedPrice && (
+              <span className="text-xs font-black text-teal-800 bg-teal-50 px-2 py-1 rounded-lg border border-teal-200/60">
+                {formattedPrice}
+              </span>
+            )}
           </div>
 
           {/* Time & Doctor */}

@@ -26,9 +26,10 @@ adminRouter.post("/services", async (req, res, next) => {
       durationMins: parseInt(req.body.durationMins),
       bufferBefore: parseInt(req.body.bufferBefore) || 0,
       bufferAfter: parseInt(req.body.bufferAfter) || 0,
-      price: req.body.price ? parseInt(req.body.price) : null,
+      price: req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null,
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
+      isFree: Boolean(req.body.isFree),
       isActive: true,
     }).returning();
     res.json({ success: true, data: newService[0] });
@@ -46,9 +47,10 @@ adminRouter.put("/services/:id", async (req, res, next) => {
       bufferBefore: parseInt(req.body.bufferBefore) || 0,
       bufferAfter: parseInt(req.body.bufferAfter) || 0,
       isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : true,
-      price: req.body.price ? parseInt(req.body.price) : null,
+      price: req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null,
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
+      isFree: Boolean(req.body.isFree),
     }).where(eq(services.id, req.params.id)).returning();
     res.json({ success: true, data: updated[0] });
   } catch (error) {

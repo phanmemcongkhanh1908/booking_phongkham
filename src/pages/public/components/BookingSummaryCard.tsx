@@ -23,6 +23,8 @@ interface BookingSummaryCardProps {
 export default function BookingSummaryCard({ currentStep }: BookingSummaryCardProps) {
   const serviceName = useBookingStore(s => s.serviceName);
   const servicePrice = useBookingStore(s => s.servicePrice);
+  const serviceIsFree = useBookingStore(s => s.serviceIsFree);
+  const serviceShowPrice = useBookingStore(s => s.serviceShowPrice);
   const serviceDuration = useBookingStore(s => s.serviceDuration);
   const slotStartTime = useBookingStore(s => s.slotStartTime);
   const providerName = useBookingStore(s => s.providerName);
@@ -51,9 +53,12 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
-  const formattedPrice = servicePrice && Number(servicePrice) > 0 
-    ? `${Number(servicePrice).toLocaleString('vi-VN')}đ` 
-    : 'Miễn phí';
+  let formattedPrice = '';
+  if (serviceIsFree) {
+    formattedPrice = 'Miễn phí';
+  } else if (servicePrice && Number(servicePrice) > 0) {
+    formattedPrice = `${Number(servicePrice).toLocaleString('vi-VN')}đ`;
+  }
 
   return (
     <aside className="w-full lg:w-80 xl:w-90 shrink-0 space-y-4">
@@ -121,9 +126,11 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
                     </p>
                   )}
                 </div>
-                <span className="text-xs sm:text-sm font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 shrink-0">
-                  {formattedPrice}
-                </span>
+                {formattedPrice && (
+                  <span className="text-xs sm:text-sm font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 shrink-0">
+                    {formattedPrice}
+                  </span>
+                )}
               </div>
             ) : (
               <p className="text-xs text-slate-400 italic pt-1">
@@ -177,23 +184,25 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
           )}
 
           {/* Price Breakdown / Transparent Guarantee */}
-          <div className="pt-3 space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Phí dịch vụ:</span>
-              <span className="font-medium text-slate-700">{formattedPrice}</span>
+          {formattedPrice && (
+            <div className="pt-3 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Phí dịch vụ:</span>
+                <span className="font-medium text-slate-700">{formattedPrice}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Phí giữ chỗ & đặt hẹn:</span>
+                <span className="font-bold text-emerald-600">0đ (Miễn phí)</span>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between font-bold text-sm text-slate-900">
+                <span>Tổng thanh toán dự kiến:</span>
+                <span className="text-base text-teal-700 font-extrabold">{formattedPrice}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-normal pt-1">
+                * Thanh toán tại phòng khám sau khi hoàn tất dịch vụ. Cam kết không phụ thu phí ẩn.
+              </p>
             </div>
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Phí giữ chỗ & đặt hẹn:</span>
-              <span className="font-bold text-emerald-600">0đ (Miễn phí)</span>
-            </div>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between font-bold text-sm text-slate-900">
-              <span>Tổng thanh toán dự kiến:</span>
-              <span className="text-base text-teal-700 font-extrabold">{formattedPrice}</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-normal pt-1">
-              * Thanh toán tại phòng khám sau khi hoàn tất dịch vụ. Cam kết không phụ thu phí ẩn.
-            </p>
-          </div>
+          )}
         </div>
       </div>
 
