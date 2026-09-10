@@ -70,7 +70,9 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
   const [clinicProfile, setClinicProfile] = useState<any>(null);
+  const [bookingFormConfig, setBookingFormConfig] = useState<any>(null);
   const { enabled: audioEnabled, setEnabled: setAudioEnabled } = useVoiceStore();
+
 
     const [toasts, setToasts] = useState<any[]>([]);
   const knownAppointmentIds = useRef<Set<string>>(new Set());
@@ -90,16 +92,22 @@ export default function Dashboard() {
 
   ;
 
-
   useEffect(() => {
     const unsub = initGoogleAuth();
     api.get('/admin/settings').then(res => {
-      if (res.data.data && res.data.data.clinicProfile) {
-        setClinicProfile(res.data.data.clinicProfile);
+      if (res.data.data) {
+        if (res.data.data.clinicProfile) {
+          setClinicProfile(res.data.data.clinicProfile);
+        }
+        if (res.data.data.bookingFormConfig) {
+          const config = res.data.data.bookingFormConfig;
+          setBookingFormConfig(typeof config === 'string' ? JSON.parse(config) : config);
+        }
       }
     }).catch(console.error);
     return () => unsub();
   }, [initGoogleAuth]);
+
 
 
   
@@ -348,6 +356,8 @@ export default function Dashboard() {
       alert('Không thể đọc mã QR. Hãy chắc chắn đây là mã từ vé đặt lịch.');
     }
   };
+  const isCompact = bookingFormConfig?.uiVersion === "compact";
+
 
   return (
     <div className="flex min-h-screen flex-col bg-bg-base">
@@ -912,107 +922,108 @@ export default function Dashboard() {
                   </div>
 
                   {/* Mobile Card View (visible on mobile < md) */}
-                  <div className="block md:hidden divide-y divide-slate-100">
+                  {/* Mobile Card View (visible on mobile < md) */}
+                  <div className="block md:hidden p-3 space-y-3 bg-slate-50">
                     {displayedAppointments.map((apt) => (
-                      <div key={apt.id} className="p-3.5 space-y-2.5 bg-surface hover:bg-slate-50/50 transition-colors">
-                        <div className="flex items-start justify-between gap-2.5">
-                          <div className="min-w-0">
-                            <h4 className="font-bold text-text-main text-sm truncate">{apt.patientName}</h4>
+                      <div key={apt.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 transition-all">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="min-w-0 pr-2">
+                            <h4 className="font-bold text-slate-900 text-base truncate mb-1">{apt.patientName}</h4>
                             {apt.patientPhone && (
                               <a 
                                 href={`tel:${apt.patientPhone}`} 
-                                className="text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1 mt-0.5"
+                                className="text-sm text-primary font-medium hover:underline inline-flex items-center gap-1.5"
                               >
-                                <PhoneCall className="w-3 h-3 shrink-0" />
+                                <PhoneCall className="w-3.5 h-3.5 shrink-0" />
                                 {apt.patientPhone}
                               </a>
                             )}
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="font-bold text-text-main text-xs sm:text-sm">
+                          <div className="text-right shrink-0 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                            <div className="font-bold text-slate-800 text-sm">
                               {format(new Date(apt.startAt), 'HH:mm')}
                             </div>
-                            <div className="text-[10px] sm:text-[11px] text-text-muted">
+                            <div className="text-[11px] text-slate-500 font-medium">
                               {format(new Date(apt.startAt), 'dd/MM/yyyy')}
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-1.5 text-text-muted truncate min-w-0">
-                            <span className="font-medium text-text-main truncate">{apt.serviceName}</span>
-                            {apt.providerName && (
+                        {!isCompact && (
+                          <div className="mb-3 px-3 py-2 bg-slate-50 rounded-lg text-xs">
+                            <div className="flex flex-col gap-1 text-slate-600">
+                              <span className="font-medium text-slate-800 line-clamp-1">{apt.serviceName}</span>
+                              {apt.providerName && (
+                                <span className="flex items-center gap-1.5 opacity-80">
+                                  <span className="w-1 h-1 rounded-full bg-slate-400"></span>
+                                  {apt.providerName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-3 flex flex-col gap-3 border-t border-slate-100">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-semibold text-slate-500">Trạng thái:</span>
+                            <span 
+                              className="inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold"
+                              style={{ 
+                                backgroundColor: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.bg || 'var(--bg-muted)', 
+                                color: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.color || 'var(--text-muted)',
+                              }}
+                            >
+                              {LABEL_OVERRIDES[apt.status] || APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.label || apt.status}
+                            </span>
+                          </div>
+                          
+                          {/* Action Buttons Container */}
+                          <div className="flex gap-2 w-full mt-1">
+                            {isCompact ? (
                               <>
-                                <span>•</span>
-                                <span className="truncate">{apt.providerName}</span>
+                                {apt.status === 'REQUESTED' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-emerald-500 text-white hover:bg-emerald-600 active:scale-95">Chốt Lịch</button>
+                                )}
+                                {apt.status === 'CONFIRMED' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-indigo-500 text-white hover:bg-indigo-600 active:scale-95">Check-in</button>
+                                )}
+                                {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
+                                  <>
+                                    <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95">Đổi Lịch</button>
+                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
+                                  </>
+                                )}
+                                {apt.status === 'CHECKED_IN' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-teal-500 text-white hover:bg-teal-600 active:scale-95">Hoàn Thành</button>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {apt.status === 'REQUESTED' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 active:scale-95">Xác Nhận</button>
+                                )}
+                                {apt.status === 'CONFIRMED' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 active:scale-95">Check-in</button>
+                                )}
+                                {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
+                                  <>
+                                    <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95">Đổi Lịch</button>
+                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
+                                  </>
+                                )}
+                                {apt.status === 'CHECKED_IN' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 active:scale-95">Khám</button>
+                                )}
+                                {apt.status === 'IN_SERVICE' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 active:scale-95">Xong</button>
+                                )}
                               </>
                             )}
                           </div>
-                          <span 
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold shrink-0"
-                            style={{ 
-                              backgroundColor: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.bg || 'var(--bg-muted)', 
-                              color: APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.color || 'var(--text-muted)',
-                              border: `1px solid ${APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.color || 'transparent'}40`
-                            }}
-                          >
-                            {LABEL_OVERRIDES[apt.status] || APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.label || apt.status}
-                          </span>
-                        </div>
-
-                        {/* Action buttons on mobile */}
-                        <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 flex-wrap">
-                          {apt.status === 'REQUESTED' && (
-                            <button 
-                              onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} 
-                              className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200/60 shadow-2xs text-center min-h-[36px]"
-                            >
-                              Xác Nhận
-                            </button>
-                          )}
-                          {apt.status === 'CONFIRMED' && (
-                            <button 
-                              onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} 
-                              className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60 shadow-2xs text-center min-h-[36px]"
-                            >
-                              Check-in
-                            </button>
-                          )}
-                          {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
-                            <>
-                              <button 
-                                onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })}
-                                className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60 shadow-2xs text-center min-h-[36px]"
-                              >
-                                Đổi Lịch
-                              </button>
-                              <button 
-                                onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} 
-                                className="py-1.5 px-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60 shadow-2xs text-center min-h-[36px]"
-                              >
-                                Hủy Lịch
-                              </button>
-                            </>
-                          )}
-                          {apt.status === 'CHECKED_IN' && (
-                            <button 
-                              onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} 
-                              className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200/60 shadow-2xs text-center min-h-[36px]"
-                            >
-                              Đang Khám
-                            </button>
-                          )}
-                          {apt.status === 'IN_SERVICE' && (
-                            <button 
-                              onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} 
-                              className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60 shadow-2xs text-center min-h-[36px]"
-                            >
-                              Hoàn Thành
-                            </button>
-                          )}
                         </div>
                       </div>
                     ))}
+
                     {displayedAppointments.length === 0 && !loading && (
                       <div className="p-8 text-center text-text-muted text-sm space-y-2">
                         <p>
@@ -1045,14 +1056,15 @@ export default function Dashboard() {
                   </div>
 
                   {/* Desktop Table View (visible on md and up) */}
+                  {/* Desktop Table View (visible on md and up) */}
                   <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left text-sm text-text-muted min-w-[720px]">
                       <thead className="bg-bg-base border-b border-border-subtle text-text-muted">
                         <tr>
                           <th className="px-4 py-3 font-semibold">Khách hàng</th>
                           <th className="px-4 py-3 font-semibold">Thời gian</th>
-                          <th className="px-4 py-3 font-semibold">Dịch vụ</th>
-                          <th className="px-4 py-3 font-semibold">Bác sĩ</th>
+                          {!isCompact && <th className="px-4 py-3 font-semibold">Dịch vụ</th>}
+                          {!isCompact && <th className="px-4 py-3 font-semibold">Bác sĩ</th>}
                           <th className="px-4 py-3 font-semibold">Trạng thái</th>
                           <th className="px-4 py-3 font-semibold text-right">Thao tác</th>
                         </tr>
@@ -1068,8 +1080,8 @@ export default function Dashboard() {
                               <div className="font-medium text-text-main">{format(new Date(apt.startAt), 'HH:mm')}</div>
                               <div className="text-xs text-text-muted">{format(new Date(apt.startAt), 'dd/MM/yyyy')}</div>
                             </td>
-                            <td className="px-4 py-3 text-text-main">{apt.serviceName}</td>
-                            <td className="px-4 py-3">{apt.providerName}</td>
+                            {!isCompact && <td className="px-4 py-3 text-text-main">{apt.serviceName}</td>}
+                            {!isCompact && <td className="px-4 py-3">{apt.providerName}</td>}
                             <td className="px-4 py-3">
                               <span 
                                 className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
@@ -1084,31 +1096,54 @@ export default function Dashboard() {
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex justify-end items-center gap-2">
-                                {apt.status === 'REQUESTED' && (
-                                  <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-teal-50 text-teal-700 hover:bg-teal-100 border-transparent hover:border-current/10">Xác Nhận</button>
-                                )}
-                                {apt.status === 'CONFIRMED' && (
-                                  <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-transparent hover:border-current/10">Check-in</button>
-                                )}
-                                {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
+                                {isCompact ? (
                                   <>
-                                    <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border-transparent hover:border-current/10">Đổi Lịch</button>
-                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
+                                    {apt.status === 'REQUESTED' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="text-xs px-3.5 py-2 rounded-lg font-bold shadow-sm transition-all bg-emerald-500 text-white hover:bg-emerald-600 border border-transparent">Chốt Lịch</button>
+                                    )}
+                                    {apt.status === 'CONFIRMED' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs px-3.5 py-2 rounded-lg font-bold shadow-sm transition-all bg-indigo-500 text-white hover:bg-indigo-600 border border-transparent">Check-in</button>
+                                    )}
+                                    {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
+                                      <>
+                                        <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200">Đổi Lịch</button>
+                                        <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Hủy</button>
+                                      </>
+                                    )}
+                                    {apt.status === 'CHECKED_IN' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-teal-500 text-white hover:bg-teal-600 border border-transparent">Hoàn Thành</button>
+                                    )}
                                   </>
-                                )}
-                                {apt.status === 'CHECKED_IN' && (
-                                  <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 border-transparent hover:border-current/10">Đang Khám</button>
-                                )}
-                                {apt.status === 'IN_SERVICE' && (
-                                  <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-green-50 text-green-700 hover:bg-green-100 border-transparent hover:border-current/10">Hoàn Thành</button>
+                                ) : (
+                                  <>
+                                    {apt.status === 'REQUESTED' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'CONFIRMED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-teal-50 text-teal-700 hover:bg-teal-100 border-transparent hover:border-current/10">Xác Nhận</button>
+                                    )}
+                                    {apt.status === 'CONFIRMED' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-transparent hover:border-current/10">Check-in</button>
+                                    )}
+                                    {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
+                                      <>
+                                        <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border-transparent hover:border-current/10">Đổi Lịch</button>
+                                        <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
+                                      </>
+                                    )}
+                                    {apt.status === 'CHECKED_IN' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 border-transparent hover:border-current/10">Đang Khám</button>
+                                    )}
+                                    {apt.status === 'IN_SERVICE' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-green-50 text-green-700 hover:bg-green-100 border-transparent hover:border-current/10">Hoàn Thành</button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </td>
                           </tr>
                         ))}
+
                         {displayedAppointments.length === 0 && !loading && (
                           <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
+                            <td colSpan={isCompact ? 4 : 6} className="px-4 py-8 text-center text-text-muted">
                               <div className="space-y-1.5">
                                 <p>
                                   {statusFilter === 'TODAY'
@@ -1136,7 +1171,7 @@ export default function Dashboard() {
                         )}
                         {loading && (
                           <tr>
-                            <td colSpan={6} className="px-4 py-8 text-center text-text-muted">Đang tải...</td>
+                            <td colSpan={isCompact ? 4 : 6} className="px-4 py-8 text-center text-text-muted">Đang tải...</td>
                           </tr>
                         )}
                       </tbody>
