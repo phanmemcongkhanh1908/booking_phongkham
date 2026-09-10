@@ -142,6 +142,8 @@ export default function BookingConfirmation() {
         setError(err.response.data.error.message);
       } else if (err.response?.data?.message) {
         setError(err.response.data.message);
+      } else if (err.message) {
+        setError(err.message);
       } else {
         setError('Hệ thống gặp sự cố kết nối khi tạo lịch hẹn. Vui lòng kiểm tra lại đường truyền mạng hoặc thử lại sau.');
       }

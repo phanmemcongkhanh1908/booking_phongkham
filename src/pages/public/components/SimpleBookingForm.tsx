@@ -51,7 +51,7 @@ export default function SimpleBookingForm() {
   
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const setStepStore = useBookingStore(s => s.setStep);
-  const setBookingResult = useBookingStore(s => s.setBookingResult);
+  const setAppointmentSuccess = useBookingStore(s => s.setAppointmentSuccess);
   
   const nextDays = Array.from({ length: 7 }).map((_, i) => addDays(startOfToday(), i));
 
@@ -124,7 +124,14 @@ export default function SimpleBookingForm() {
       });
 
       if (res.data.success) {
-        setBookingResult(res.data.data);
+        setAppointmentSuccess(
+          res.data.data.appointmentId,
+          formData.fullName,
+          formData.phone,
+          res.data.data.patientEmail,
+          res.data.data.patientTelegramId,
+          res.data.data.telegramBotUsername
+        );
         setStepStore(5);
         navigate('/book/hoan-tat');
         toast.success('Đặt lịch thành công!');
@@ -142,7 +149,7 @@ export default function SimpleBookingForm() {
       }
     } catch (error: any) {
       console.error(error);
-      toast.error(error.response?.data?.error?.message || 'Có lỗi xảy ra, vui lòng thử lại.');
+      toast.error(error.response?.data?.error?.message || error.message || 'Có lỗi xảy ra, vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
     }
