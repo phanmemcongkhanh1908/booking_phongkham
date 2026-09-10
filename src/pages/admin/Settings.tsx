@@ -33,7 +33,8 @@ import {
   LogOut,
   Database,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  LayoutList
 } from 'lucide-react';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { 
@@ -127,6 +128,7 @@ export default function Settings() {
     'Cần xuất hóa đơn'
   ];
   const [bookingFormConfig, setBookingFormConfig] = useState({
+    uiVersion: 'full', // 'full' | 'simple'
     showNotificationChannels: true,
     showHoldCountdown: true,
     quickNotesTags: DEFAULT_TAGS,
@@ -254,6 +256,7 @@ export default function Settings() {
       if (dbBookingFormConfig) {
         setBookingFormConfig(prev => ({
           ...prev,
+          uiVersion: dbBookingFormConfig.uiVersion || 'full',
           showNotificationChannels: dbBookingFormConfig.showNotificationChannels !== false,
           showHoldCountdown: dbBookingFormConfig.showHoldCountdown !== false,
           quickNotesTags: Array.isArray(dbBookingFormConfig.quickNotesTags) ? dbBookingFormConfig.quickNotesTags : DEFAULT_TAGS,
@@ -804,6 +807,49 @@ export default function Settings() {
           )}
 
           <form onSubmit={handleSaveBookingForm} className="space-y-6">
+            
+            {/* Mục Mới: Lựa chọn phiên bản giao diện */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <LayoutList className="w-4 h-4 text-teal-600" />
+                    <span className="text-sm font-bold text-slate-800">
+                      Phiên bản Giao diện Đặt lịch
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                    Lựa chọn giao diện hiển thị với bệnh nhân. <strong>Bản đầy đủ</strong> cung cấp nhiều thông tin chi tiết và thu thập đầy đủ nhu cầu. <strong>Bản rút gọn</strong> ưu tiên thao tác cực nhanh, ít bước nhất để tối đa hóa tỷ lệ đặt hẹn thành công.
+                  </p>
+                </div>
+                
+                <div className="flex bg-slate-200 p-1 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setBookingFormConfig(prev => ({ ...prev, uiVersion: 'full' }))}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      bookingFormConfig.uiVersion === 'full'
+                        ? 'bg-white text-teal-700 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Bản Đầy Đủ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookingFormConfig(prev => ({ ...prev, uiVersion: 'simple' }))}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      bookingFormConfig.uiVersion === 'simple'
+                        ? 'bg-white text-teal-700 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Bản Rút Gọn
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Mục 1: Ẩn / Hiện Kênh nhận vé khám & nhắc hẹn thông minh */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

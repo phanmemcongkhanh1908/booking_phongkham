@@ -13,6 +13,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { useAuthStore } from '../../store/auth';
 import { findOrCreateClinicSpreadsheet, syncAppointmentsToSheet } from '../../lib/googleWorkspace';
 import api from '../../services/api';
 
@@ -40,6 +41,9 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
     lastSyncAt,
     setLastSyncAt
   } = useGoogleAuthStore();
+
+  const currentUser = useAuthStore(s => s.user);
+  const isClinicAdmin = currentUser?.tenantId != null;
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -225,31 +229,35 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
 
   // 3. Main Warning Banner: Admin has not connected Google yet
   return (
-    <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 p-4 sm:p-5 shadow-sm text-slate-800 relative transition-all">
+    <div className={`mb-6 rounded-2xl border-2 p-4 sm:p-5 shadow-sm relative transition-all ${isClinicAdmin ? 'border-rose-400 bg-gradient-to-br from-rose-50 via-white to-rose-50/60 text-slate-900' : 'border-amber-300 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 text-slate-800'}`}>
       {/* Dismiss button */}
-      <button
-        type="button"
-        onClick={() => setWarningDismissed(true)}
-        className="absolute top-3.5 right-3.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-        title="Tạm ẩn cảnh báo trong phiên này"
-      >
-        <X className="w-4 h-4" />
-      </button>
+      {!isClinicAdmin && (
+        <button
+          type="button"
+          onClick={() => setWarningDismissed(true)}
+          className="absolute top-3.5 right-3.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          title="Tạm ẩn cảnh báo trong phiên này"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
 
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-start gap-3.5 max-w-3xl">
-          <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md ring-4 ring-amber-100 mt-0.5">
+          <div className={`w-11 h-11 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-md ring-4 mt-0.5 ${isClinicAdmin ? 'bg-rose-500 ring-rose-100' : 'bg-amber-500 ring-amber-100'}`}>
             <ShieldAlert className="w-6 h-6 animate-pulse" />
           </div>
 
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-amber-200/80 text-amber-950 border border-amber-300/80">
-                <Sparkles className="w-3 h-3 text-amber-700" /> Cảnh báo an toàn dữ liệu
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wide border ${isClinicAdmin ? 'bg-rose-200/80 text-rose-950 border-rose-300/80' : 'bg-amber-200/80 text-amber-950 border-amber-300/80'}`}>
+                <Sparkles className={`w-3 h-3 ${isClinicAdmin ? 'text-rose-700' : 'text-amber-700'}`} /> {isClinicAdmin ? 'Yêu Cầu Bắt Buộc' : 'Cảnh báo an toàn dữ liệu'}
               </span>
-              <span className="text-xs font-semibold text-slate-500">
-                Khuyến nghị thiết lập bảo vệ dự phòng
-              </span>
+              {!isClinicAdmin && (
+                <span className="text-xs font-semibold text-slate-500">
+                  Khuyến nghị thiết lập bảo vệ dự phòng
+                </span>
+              )}
             </div>
 
             <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
@@ -257,15 +265,23 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
             </h3>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Mặc dù hệ thống đang lưu trữ dữ liệu an toàn trên cơ sở dữ liệu đám mây <strong className="text-slate-800">Neon</strong>, việc kết nối tài khoản Google cá nhân của phòng khám là bước bảo đảm then chốt để:
+              {isClinicAdmin ? (
+                <span>
+                  Để đảm bảo an toàn, bảo mật dữ liệu phòng khám của bạn và cách ly dữ liệu với các hệ thống khác, bạn <strong className="text-rose-700">BẮT BUỘC</strong> phải kết nối tài khoản Google cá nhân của phòng khám ở lần đăng nhập đầu tiên.
+                </span>
+              ) : (
+                <span>
+                  Mặc dù hệ thống đang lưu trữ dữ liệu an toàn trên cơ sở dữ liệu đám mây <strong className="text-slate-800">Neon</strong>, việc kết nối tài khoản Google cá nhân của phòng khám là bước bảo đảm then chốt để:
+                </span>
+              )}
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-              <div className="flex items-center gap-2 text-xs text-slate-700 font-medium bg-white/80 px-2.5 py-1.5 rounded-lg border border-amber-200/80">
+              <div className={`flex items-center gap-2 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${isClinicAdmin ? 'bg-white text-slate-800 border-rose-200' : 'bg-white/80 text-slate-700 border-amber-200/80'}`}>
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>Tự động đồng bộ lịch sử đặt hẹn sang <strong>Google Sheets</strong></span>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-700 font-medium bg-white/80 px-2.5 py-1.5 rounded-lg border border-amber-200/80">
+              <div className={`flex items-center gap-2 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${isClinicAdmin ? 'bg-white text-slate-800 border-rose-200' : 'bg-white/80 text-slate-700 border-amber-200/80'}`}>
                 <HardDrive className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Lưu trữ phim chụp X-quang & hồ sơ bệnh án vào <strong>Google Drive</strong></span>
               </div>
@@ -296,13 +312,15 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setWarningDismissed(true)}
-            className="text-[11px] text-slate-500 hover:text-slate-800 text-center md:text-right mt-0.5"
-          >
-            Để sau (tạm ẩn phiên này)
-          </button>
+          {!isClinicAdmin && (
+            <button
+              type="button"
+              onClick={() => setWarningDismissed(true)}
+              className="text-[11px] text-slate-500 hover:text-slate-800 text-center md:text-right mt-0.5"
+            >
+              Để sau (tạm ẩn phiên này)
+            </button>
+          )}
         </div>
       </div>
 

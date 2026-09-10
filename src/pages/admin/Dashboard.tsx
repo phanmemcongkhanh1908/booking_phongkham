@@ -15,10 +15,10 @@ import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2 } from 'lucide-react';
 
 export default function Dashboard() {
-  const logout = useAuthStore((state) => state.logout);
+  const { logout, user } = useAuthStore((state) => state);
   const { hasPermission } = usePermissions();
   const { isConnected, init: initGoogleAuth } = useGoogleAuthStore();
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -26,6 +26,33 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showStorageReminder, setShowStorageReminder] = useState(false);
+  
+  // Reschedule Modal State
+  const [rescheduleData, setRescheduleData] = useState<{isOpen: boolean, appointment: any | null, newDate: string, newTime: string}>({
+    isOpen: false,
+    appointment: null,
+    newDate: '',
+    newTime: ''
+  });
+
+  useEffect(() => {
+    if (user?.tenantId && isConnected) {
+      const lastCheck = localStorage.getItem('lastStorageCheckDate_' + user.id);
+      const now = Date.now();
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+      if (!lastCheck || now - parseInt(lastCheck) > thirtyDays) {
+        setShowStorageReminder(true);
+      }
+    }
+  }, [user?.tenantId, user?.id, isConnected]);
+
+  const dismissStorageReminder = () => {
+    if (user?.id) {
+      localStorage.setItem('lastStorageCheckDate_' + user.id, Date.now().toString());
+    }
+    setShowStorageReminder(false);
+  };
 
   // Set default active tab based on permissions
   const defaultTab = hasPermission('appointment.view') 
@@ -215,6 +242,34 @@ export default function Dashboard() {
       fetchAppointments();
     } catch (error) {
       alert("Không thể cập nhật trạng thái");
+      console.error(error);
+    }
+  };
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rescheduleData.appointment || !rescheduleData.newDate || !rescheduleData.newTime) return;
+    
+    try {
+      const startAt = new Date(`${rescheduleData.newDate}T${rescheduleData.newTime}:00`);
+      // Assuming 30 mins slot
+      const endAt = new Date(startAt.getTime() + 30 * 60000);
+      
+      await api.patch(`/appointments/${rescheduleData.appointment.id}/time`, { 
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString()
+      });
+      
+      if (rescheduleData.appointment.status === 'REQUESTED') {
+        await api.patch(`/appointments/${rescheduleData.appointment.id}/status`, {
+          status: 'CONFIRMED'
+        });
+      }
+      fetchAppointments();
+      setRescheduleData({ isOpen: false, appointment: null, newDate: '', newTime: '' });
+      addToast('Đã thay đổi lịch hẹn thành công');
+    } catch (error) {
+      alert("Không thể thay đổi lịch");
       console.error(error);
     }
   };
@@ -450,6 +505,17 @@ export default function Dashboard() {
               <span className="hidden sm:inline">{audioEnabled ? 'Âm thanh' : 'Âm thanh'}</span>
             </button>
 
+            {/* User Profile */}
+            {user && (
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl mr-2">
+                <UserCircle2 className="w-5 h-5 text-slate-400" />
+                <div className="flex flex-col text-left">
+                  <span className="text-[11px] font-semibold text-slate-800 leading-none">{user.username || user.email}</span>
+                  <span className="text-[10px] text-slate-500 capitalize leading-tight mt-0.5">{user.role === 'role-admin' || user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span>
+                </div>
+              </div>
+            )}
+
             {/* Logout */}
             <button 
               onClick={logout} 
@@ -538,13 +604,61 @@ export default function Dashboard() {
         </div>
       </header>
       
-      <main className="flex-1 p-3.5 sm:p-6 max-w-7xl mx-auto w-full">
-        <GoogleBackupWarningBanner 
-          onNavigateToSettings={() => setActiveTab('settings')} 
-          appointments={appointments}
-          onAppointmentsSynced={() => fetchAppointments(false)}
-        />
-        {activeTab === 'analytics' && <Analytics />}
+      <main className="flex-1 p-3.5 sm:p-6 max-w-7xl mx-auto w-full relative">
+        {user?.tenantId && !isConnected && (
+          <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center pt-20 px-4">
+             <div className="w-full max-w-3xl shadow-2xl rounded-2xl overflow-hidden ring-4 ring-white relative bg-white">
+                <GoogleBackupWarningBanner 
+                  appointments={appointments}
+                  onAppointmentsSynced={() => fetchAppointments(false)}
+                />
+             </div>
+          </div>
+        )}
+
+        {!(user?.tenantId && !isConnected) && (
+          <GoogleBackupWarningBanner 
+            onNavigateToSettings={() => setActiveTab('settings')} 
+            appointments={appointments}
+            onAppointmentsSynced={() => fetchAppointments(false)}
+          />
+        )}
+
+        {showStorageReminder && user?.tenantId && isConnected && (
+          <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden relative">
+            <button 
+              onClick={dismissStorageReminder}
+              className="absolute top-3 right-3 p-1 text-blue-400 hover:text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
+              title="Đã kiểm tra / Tạm ẩn"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="p-4 flex gap-3.5">
+              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                <Cloud className="w-5 h-5" />
+              </div>
+              <div className="pr-6">
+                <h3 className="font-bold text-blue-900 mb-1">Kiểm tra dung lượng Google Drive</h3>
+                <p className="text-sm text-blue-800 leading-relaxed mb-3">
+                  Để đảm bảo quá trình đồng bộ và sao lưu diễn ra liên tục, vui lòng kiểm tra dung lượng còn trống trên tài khoản Google Drive của bạn. Tránh trường hợp dữ liệu bị đầy không thể lưu hồ sơ mới.
+                </p>
+                <a 
+                  href="https://drive.google.com/settings/storage" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  onClick={dismissStorageReminder}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Kiểm tra dung lượng ngay
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className={user?.tenantId && !isConnected ? 'opacity-30 pointer-events-none blur-sm select-none' : ''}>
+          {activeTab === 'analytics' && <Analytics />}
         {activeTab === 'patients' && <Patients />}
         {activeTab === 'appointments' && (
           <>
@@ -838,12 +952,20 @@ export default function Dashboard() {
                             </button>
                           )}
                           {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
-                            <button 
-                              onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} 
-                              className="py-1.5 px-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60 shadow-2xs text-center min-h-[36px]"
-                            >
-                              Hủy Lịch
-                            </button>
+                            <>
+                              <button 
+                                onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })}
+                                className="flex-1 py-1.5 px-3 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60 shadow-2xs text-center min-h-[36px]"
+                              >
+                                Đổi Lịch
+                              </button>
+                              <button 
+                                onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} 
+                                className="py-1.5 px-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60 shadow-2xs text-center min-h-[36px]"
+                              >
+                                Hủy Lịch
+                              </button>
+                            </>
                           )}
                           {apt.status === 'CHECKED_IN' && (
                             <button 
@@ -942,7 +1064,10 @@ export default function Dashboard() {
                                   <button onClick={() => handleUpdateStatus(apt.id, 'CHECKED_IN')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-transparent hover:border-current/10">Check-in</button>
                                 )}
                                 {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
-                                  <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
+                                  <>
+                                    <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border-transparent hover:border-current/10">Đổi Lịch</button>
+                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
+                                  </>
                                 )}
                                 {apt.status === 'CHECKED_IN' && (
                                   <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 border-transparent hover:border-current/10">Đang Khám</button>
@@ -997,7 +1122,68 @@ export default function Dashboard() {
         )}
         {activeTab === 'services' && <ServicesConfig />}
         {activeTab === 'settings' && <Settings />}
+        </div>
       </main>
+
+      {/* Reschedule Modal */}
+      {rescheduleData.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-600" />
+                Thay đổi thời gian hẹn
+              </h3>
+              <button 
+                onClick={() => setRescheduleData({ isOpen: false, appointment: null, newDate: '', newTime: '' })}
+                className="text-slate-400 hover:text-slate-700 transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRescheduleSubmit} className="p-4 sm:p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-slate-700">Ngày khám mới</label>
+                <input 
+                  type="date" 
+                  required
+                  value={rescheduleData.newDate}
+                  onChange={e => setRescheduleData(prev => ({ ...prev, newDate: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                />
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-slate-700">Giờ khám mới</label>
+                <input 
+                  type="time" 
+                  required
+                  value={rescheduleData.newTime}
+                  onChange={e => setRescheduleData(prev => ({ ...prev, newTime: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                />
+              </div>
+              
+              <div className="pt-2 flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setRescheduleData({ isOpen: false, appointment: null, newDate: '', newTime: '' })}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-colors"
+                >
+                  Cập nhật
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Floating Toast Message System (Góc dưới bên phải màn hình) */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">

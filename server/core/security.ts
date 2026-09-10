@@ -19,6 +19,7 @@ export interface TokenPayload {
   userId: string;
   role: string;
   permissions: string[];
+  tenantId?: string;
 }
 
 export const hashPassword = async (password: string): Promise<string> => {

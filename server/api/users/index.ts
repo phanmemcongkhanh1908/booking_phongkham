@@ -29,7 +29,8 @@ const UpdateUserSchema = z.object({
 
 usersRouter.get("/", requirePermission("user.create"), async (req, res, next) => {
   try {
-    const userRecords = await db
+    const isFullAdmin = !req.user?.tenantId && req.user?.permissions?.includes("*");
+    let userRecords = await db
       .select({
         id: users.id,
         email: users.email,
@@ -38,9 +39,16 @@ usersRouter.get("/", requirePermission("user.create"), async (req, res, next) =>
         roleName: roles.name,
         permissions: users.permissions,
         rolePermissions: roles.permissions,
+        tenantId: users.tenantId,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id));
+
+    if (!isFullAdmin) {
+      const myTenantId = req.user?.tenantId;
+      userRecords = userRecords.filter((u: any) => u.tenantId === myTenantId);
+    }
+    
     res.json({ success: true, data: userRecords });
   } catch (error) {
     next(error);
@@ -72,23 +80,36 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
 
     let targetRoleId = roleId;
     if (!targetRoleId) {
-      const allRoles = await db.select().from(roles);
-      const defaultRole = allRoles.find(
-        (r: any) => (r.name || "").trim().toLowerCase() === "admin"
-      );
-      if (defaultRole) {
-        targetRoleId = defaultRole.id;
+      const isFullAdmin = !permissions || permissions.length === 0 || permissions.includes("*") || permissions.includes("all");
+      if (isFullAdmin) {
+        const allRoles = await db.select().from(roles);
+        const defaultRole = allRoles.find(
+          (r: any) => (r.name || "").trim().toLowerCase() === "admin"
+        );
+        if (defaultRole) {
+          targetRoleId = defaultRole.id;
+        } else {
+          targetRoleId = "role-admin";
+        }
       } else {
-        targetRoleId = "role-admin";
+        targetRoleId = null;
       }
     }
 
     const hashedPassword = await hashPassword(password);
     
+    // Nếu người tạo có tenantId, tài khoản con kế thừa tenantId đó.
+    // Nếu là admin gốc (không có tenantId) tạo tài khoản mới (và không phải đang tạo thêm admin gốc), cấp 1 tenantId mới cho phòng khám.
+    let newTenantId = req.user?.tenantId;
+    if (!newTenantId && !isFullAdmin) {
+       newTenantId = "tenant-" + Date.now().toString();
+    }
+
     const newUser = await db.insert(users).values({
       email: identifier,
       passwordHash: hashedPassword,
       roleId: targetRoleId,
+      tenantId: newTenantId,
       isActive: true,
       permissions: permissions || [],
       createdAt: new Date().toISOString(),

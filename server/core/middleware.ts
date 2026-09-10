@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { AppError, UnauthorizedError, ForbiddenError } from "./errors.js";
 import { verifyToken, TokenPayload } from "./security.js";
+import { appContext } from "./context.js";
 
 // Mở rộng interface Request của Express để chứa thông tin User
 declare global {
@@ -30,7 +31,13 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
     const payload = verifyToken(token);
     
     req.user = payload;
-    next();
+    
+    appContext.run({ 
+      tenantId: payload.tenantId,
+      isFullAdmin: !payload.tenantId && (payload.permissions.includes("*") || payload.permissions.includes("all"))
+    }, () => {
+      next();
+    });
   } catch (error) {
     next(new UnauthorizedError("Token không hợp lệ hoặc đã hết hạn"));
   }

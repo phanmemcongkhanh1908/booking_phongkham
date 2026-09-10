@@ -523,4 +523,26 @@ adminRouter.get("/appointments", requireAuth, async (req, res, next) => {
   }
 });
 
+adminRouter.post("/storage-alert", requireAuth, async (req, res, next) => {
+  try {
+    const { usedPercent, driveLink } = req.body;
+    
+    const userRecord = await db.select().from(users).where(eq(users.id, req.user?.userId)).limit(1);
+    const emailToUse = userRecord[0]?.email;
+    
+    if (emailToUse && usedPercent > 80) {
+      const { sendStorageAlertEmail } = await import("../../services/email.js");
+      // Get clinic name
+      const settingsDb = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
+      const clinicName = settingsDb[0]?.value?.name || "Nha Khoa Smart Dental";
+      
+      await sendStorageAlertEmail(emailToUse, clinicName, usedPercent, driveLink);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default adminRouter;

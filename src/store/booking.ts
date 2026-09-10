@@ -44,6 +44,7 @@ interface BookingState {
     slogan?: string;
   } | null;
   bookingFormConfig: {
+    uiVersion?: 'full' | 'simple';
     showNotificationChannels?: boolean;
     showHoldCountdown?: boolean;
     quickNotesTags?: string[];

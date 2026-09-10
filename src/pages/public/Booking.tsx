@@ -17,6 +17,7 @@ import PatientForm from './components/PatientForm';
 import BookingConfirmation from './components/BookingConfirmation';
 import BookingSummaryCard from './components/BookingSummaryCard';
 import MobileSummaryDrawer from './components/MobileSummaryDrawer';
+import SimpleBookingForm from './components/SimpleBookingForm';
 
 const SuccessView = React.lazy(() => import('./components/SuccessView'));
 
@@ -26,6 +27,7 @@ export default function Booking() {
 
   const clinicProfile = useBookingStore(s => s.clinicProfile);
   const setClinicProfile = useBookingStore(s => s.setClinicProfile);
+  const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const setBookingFormConfig = useBookingStore(s => s.setBookingFormConfig);
   const setStepStore = useBookingStore(s => s.setStep);
 
@@ -61,6 +63,8 @@ export default function Booking() {
   }, [setClinicProfile, setBookingFormConfig]);
 
   useEffect(() => {
+    if (bookingFormConfig?.uiVersion === 'simple') return;
+
     if (currentPath === 'book' || currentPath === '') {
       navigate('/book/dich-vu', { replace: true });
     } else if (step >= 2 && !serviceId) {
@@ -70,7 +74,7 @@ export default function Booking() {
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone)) {
       navigate('/book/thong-tin', { replace: true });
     }
-  }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate]);
+  }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion]);
 
   const hasCustomClinic = Boolean(
     clinicProfile?.clinicName && 
@@ -164,8 +168,8 @@ export default function Booking() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 sm:space-y-6">
-        {/* Stepper Progress Ribbon (Visible in Steps 1, 2, 3, 4) */}
-        {step < 5 && (
+        {/* Stepper Progress Ribbon (Visible in Steps 1, 2, 3, 4) - Hidden if Simple Version */}
+        {step < 5 && bookingFormConfig?.uiVersion !== 'simple' && (
           <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white p-3 sm:p-5 shadow-sm">
             <div className="max-w-3xl mx-auto">
               <div className="relative flex items-center justify-between">
@@ -228,28 +232,32 @@ export default function Booking() {
           </div>
         )}
 
-        {/* Mobile Accordion Summary Drawer (Step 2, 3, 4) */}
-        {step < 5 && <MobileSummaryDrawer currentStep={step} />}
+        {/* Mobile Accordion Summary Drawer (Step 2, 3, 4) - Chỉ hiện khi dùng giao diện Full */}
+        {step < 5 && bookingFormConfig?.uiVersion !== 'simple' && <MobileSummaryDrawer currentStep={step} />}
 
         {/* Dynamic Multi-Column Body */}
         {step < 5 ? (
-          <div className="flex flex-col lg:flex-row items-start gap-6 xl:gap-8">
-            {/* Primary Interactive View (Left) */}
-            <div className="flex-1 w-full min-w-0 animate-in fade-in slide-in-from-bottom-3 duration-500">
-              <Routes>
-                <Route path="dich-vu" element={<ServiceSelection />} />
-                <Route path="chon-gio" element={<DateTimeSelection />} />
-                <Route path="thong-tin" element={<PatientForm />} />
-                <Route path="xac-nhan" element={<BookingConfirmation />} />
-                <Route path="*" element={<Navigate to="dich-vu" replace />} />
-              </Routes>
-            </div>
+          bookingFormConfig?.uiVersion === 'simple' ? (
+            <SimpleBookingForm />
+          ) : (
+            <div className="flex flex-col lg:flex-row items-start gap-6 xl:gap-8">
+              {/* Primary Interactive View (Left) */}
+              <div className="flex-1 w-full min-w-0 animate-in fade-in slide-in-from-bottom-3 duration-500">
+                <Routes>
+                  <Route path="dich-vu" element={<ServiceSelection />} />
+                  <Route path="chon-gio" element={<DateTimeSelection />} />
+                  <Route path="thong-tin" element={<PatientForm />} />
+                  <Route path="xac-nhan" element={<BookingConfirmation />} />
+                  <Route path="*" element={<Navigate to="dich-vu" replace />} />
+                </Routes>
+              </div>
 
-            {/* Sticky Concierge Summary Sidebar (Right on Desktop) */}
-            <div className="hidden lg:block sticky top-28">
-              <BookingSummaryCard currentStep={step} />
+              {/* Sticky Concierge Summary Sidebar (Right on Desktop) */}
+              <div className="hidden lg:block sticky top-28">
+                <BookingSummaryCard currentStep={step} />
+              </div>
             </div>
-          </div>
+          )
         ) : (
           /* Step 5: Success View (Centered E-Ticket & Confirmation Hub) with Lazy Loading */
           <Suspense fallback={

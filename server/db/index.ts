@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
+import { appContext } from "../core/context.js";
 
 const DB_FILE = path.join(process.cwd(), "server", "data", "store.json");
 
@@ -297,8 +298,22 @@ class QueryBuilder {
       const tableData = memoryStore[tableName] || {};
       const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
 
+      const ctx = appContext.getStore();
+      const tenantId = ctx?.tenantId;
+      const isFullAdmin = ctx?.isFullAdmin;
+
       let results = [];
       for (const docData of docsData) {
+        if (!isFullAdmin && tenantId && tableName !== "roles") {
+          // If the record has a tenantId and it doesn't match, skip
+          // If the record doesn't have a tenantId, it's global, we might let them see it?
+          // To be strict, if tenantId exists on the context, we ONLY show records matching that tenantId,
+          // OR records that explicitly have no tenantId (shared globals).
+          if (docData.tenantId && docData.tenantId !== tenantId) {
+             continue;
+          }
+        }
+
         const joinsData: any = {};
         let skip = false;
 
@@ -375,9 +390,18 @@ class QueryBuilder {
       const isArray = Array.isArray(this.data);
       const items = isArray ? this.data : [this.data];
       const results = [];
+      
+      const ctx = appContext.getStore();
+      const tenantId = ctx?.tenantId;
+
       for (const item of items) {
         const id = item.id || String(uuidv4());
         let docData = { ...item, id };
+        
+        if (tenantId && !docData.tenantId && tableName !== "roles") {
+          docData.tenantId = tenantId;
+        }
+
         if (!docData.createdAt && tableName !== "settings") {
           docData.createdAt = new Date().toISOString();
         }

@@ -7,9 +7,13 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import { format, parseISO } from 'date-fns';
+import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { fetchDriveQuota, formatBytes, DriveQuota } from '../../lib/googleWorkspace';
+import { useAuthStore } from '../../store/auth';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 const RETENTION_COLORS = ['#8b5cf6', '#e2e8f0'];
+const STORAGE_COLORS = ['#3b82f6', '#e2e8f0'];
 
 export default function Analytics() {
   const [data, setData] = useState<{ 
@@ -24,6 +28,10 @@ export default function Analytics() {
     serviceStats: [], occupancyStats: []
   });
   const [loading, setLoading] = useState(true);
+  
+  const user = useAuthStore(state => state.user);
+  const { isConnected, accessToken } = useGoogleAuthStore();
+  const [driveQuota, setDriveQuota] = useState<DriveQuota | null>(null);
 
   useEffect(() => {
     api.get('/admin/analytics').then(res => {
@@ -32,6 +40,39 @@ export default function Analytics() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (isConnected && accessToken) {
+      fetchDriveQuota(accessToken).then(quota => {
+        if (quota) {
+          setDriveQuota(quota);
+          
+          if (quota.limit && quota.usage) {
+            const limitNum = Number(quota.limit);
+            const usedNum = Number(quota.usage);
+            if (limitNum > 0) {
+              const percent = Math.round((usedNum / limitNum) * 100);
+              if (percent > 80) {
+                // Check local storage to prevent spamming the email every time the page loads
+                const lastAlertStr = localStorage.getItem('lastStorageAlert_' + user?.id);
+                const lastAlert = lastAlertStr ? parseInt(lastAlertStr) : 0;
+                const now = Date.now();
+                // Only send alert once every 7 days per user
+                if (now - lastAlert > 7 * 24 * 60 * 60 * 1000) {
+                  api.post('/admin/storage-alert', {
+                    usedPercent: percent,
+                    driveLink: 'https://drive.google.com/settings/storage'
+                  }).then(() => {
+                    localStorage.setItem('lastStorageAlert_' + user?.id, now.toString());
+                  }).catch(console.error);
+                }
+              }
+            }
+          }
+        }
+      }).catch(console.error);
+    }
+  }, [isConnected, accessToken, user?.id]);
 
   if (loading) return <div className="p-8 text-center text-text-muted">Đang tải dữ liệu báo cáo...</div>;
 
@@ -66,6 +107,25 @@ export default function Analytics() {
     { name: 'Khám 1 lần', value: (data.totalPatients || 0) - (data.returningPatients || 0) }
   ];
 
+  let storageData: any[] = [];
+  let driveUsagePercent = 0;
+  let formattedUsed = '0';
+  let formattedTotal = '0';
+
+  if (driveQuota?.limit && driveQuota?.usage) {
+    const limitNum = Number(driveQuota.limit);
+    const usedNum = Number(driveQuota.usage);
+    if (limitNum > 0) {
+      storageData = [
+        { name: 'Đã sử dụng', value: usedNum },
+        { name: 'Còn trống', value: limitNum - usedNum }
+      ];
+      driveUsagePercent = Math.round((usedNum / limitNum) * 100);
+      formattedUsed = formatBytes(usedNum);
+      formattedTotal = formatBytes(limitNum);
+    }
+  }
+
   return (
     <div className="space-y-6">
       
@@ -98,6 +158,46 @@ export default function Analytics() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
+        {/* Google Drive Storage (If Connected) */}
+        {driveQuota && storageData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Dung lượng Google Drive</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px] flex flex-col items-center justify-center relative">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie 
+                      data={storageData} 
+                      dataKey="value" 
+                      nameKey="name" 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={80} 
+                      outerRadius={100}
+                    >
+                      {storageData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={STORAGE_COLORS[index % STORAGE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <PieTooltip formatter={(val: any) => formatBytes(val)} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Centered Percentage */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-6">
+                  <span className="text-3xl font-extrabold text-blue-900">{driveUsagePercent}%</span>
+                  <span className="text-xs text-slate-500 font-medium">Đã sử dụng</span>
+                </div>
+              </div>
+              <p className="text-center text-xs text-slate-500 mt-2">
+                Đã dùng {formattedUsed} / {formattedTotal}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Appointments by Day */}
         <Card>
           <CardHeader>

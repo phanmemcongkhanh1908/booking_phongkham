@@ -106,6 +106,64 @@ export async function testSmtpConnection(config: EmailConfig, testRecipient?: st
   return true;
 }
 
+export async function sendStorageAlertEmail(adminEmail: string, clinicName: string, usedPercent: number, driveLink: string): Promise<boolean> {
+  if (!adminEmail) return false;
+  const config = await getEmailConfig();
+  
+  if (!config.enabled || !config.host || !config.user || !config.pass) {
+    console.log("[Email Service] SMTP chưa được bật. Không thể gửi cảnh báo dung lượng.");
+    return false;
+  }
+  
+  const transporter = createTransporter(config);
+  if (!transporter) return false;
+  
+  const subject = `⚠️ Cảnh báo dung lượng lưu trữ Google Drive (${usedPercent}%) - ${clinicName}`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${subject}</title>
+    </head>
+    <body style="margin: 0; padding: 20px; background-color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #0f172a;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+        <div style="background-color: #DC2626; color: #ffffff; padding: 28px 24px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">Cảnh Báo Dung Lượng</h1>
+        </div>
+        <div style="padding: 32px 24px;">
+          <p style="font-size: 16px; margin-top: 0; line-height: 1.6;">
+            Kính gửi Quản trị viên phòng khám <strong>${clinicName}</strong>,
+          </p>
+          <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+            Hệ thống phát hiện tài khoản Google Drive liên kết của bạn đã sử dụng tới <strong>${usedPercent}%</strong> dung lượng cho phép.
+          </p>
+          <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; margin: 24px 0; color: #991b1b;">
+            Để đảm bảo quá trình đồng bộ hóa dữ liệu sao lưu, phim X-quang và hồ sơ bệnh án không bị gián đoạn, vui lòng kiểm tra và giải phóng dung lượng hoặc nâng cấp gói lưu trữ trên Google Drive.
+          </div>
+          <div style="text-align: center; margin-top: 24px;">
+             <a href="${driveLink}" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: #2563EB; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold;">Quản lý dung lượng Drive</a>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  try {
+    await transporter.sendMail({
+      from: config.from || config.user,
+      to: adminEmail,
+      subject,
+      html
+    });
+    return true;
+  } catch (error) {
+    console.error(`[Email Service] Lỗi gửi email cảnh báo dung lượng:`, error);
+    return false;
+  }
+}
+
 export interface AppointmentNotificationData {
   appointmentId: string;
   patientName: string;

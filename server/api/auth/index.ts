@@ -23,6 +23,7 @@ authRouter.post("/login", async (req, res, next) => {
         roleName: roles.name,
         rolePermissions: roles.permissions,
         userPermissions: users.permissions,
+        tenantId: users.tenantId,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id));
@@ -60,6 +61,7 @@ authRouter.post("/login", async (req, res, next) => {
       userId: user.id,
       role: user.roleName || "guest",
       permissions: mergedPermissions,
+      tenantId: user.tenantId,
     });
 
     res.json({
@@ -71,6 +73,7 @@ authRouter.post("/login", async (req, res, next) => {
           email: user.email,
           role: user.roleName,
           permissions: mergedPermissions,
+          tenantId: user.tenantId,
         },
       },
     });
