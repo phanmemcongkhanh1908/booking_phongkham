@@ -26,6 +26,8 @@ import {
   Sparkles,
   Timer,
   Lock,
+  Unlock,
+  Key,
   Cloud,
   HardDrive,
   FileSpreadsheet,
@@ -34,8 +36,11 @@ import {
   Database,
   ArrowRight,
   ShieldAlert,
-  LayoutList
+  LayoutList,
+  Megaphone
 } from 'lucide-react';
+import { useAuthStore } from "../../store/auth";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { 
   findOrCreateClinicSpreadsheet, 
@@ -51,6 +56,8 @@ declare global {
 }
 
 export default function Settings() {
+  const { hasPermission } = usePermissions();
+  const { user } = useAuthStore();
   const { 
     isConnected: isGoogleConnected, 
     accessToken: googleToken, 
@@ -108,6 +115,13 @@ export default function Settings() {
   const [emailMsg, setEmailMsg] = useState('');
   const [emailTesting, setEmailTesting] = useState(false);
   const [showEmailHelp, setShowEmailHelp] = useState(false);
+
+  const [announcementBanner, setAnnouncementBanner] = useState({
+    isVisible: false,
+    message: '',
+    type: 'info' // info, warning, success
+  });
+  const [bannerMsg, setBannerMsg] = useState('');
 
   const [clinicProfile, setClinicProfile] = useState({
     clinicName: '',
@@ -248,24 +262,27 @@ export default function Settings() {
 
   useEffect(() => {
     api.get('/admin/settings').then(res => {
-      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig } = res.data.data || {};
+      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner } = res.data.data || {};
       if (telegramToken) setTelegramToken(telegramToken);
       if (telegramChatId) setTelegramChatId(telegramChatId);
       if (telegramBotUsername) setTelegramBotUsername(telegramBotUsername);
-      if (clinicProfile) setClinicProfile(clinicProfile);
+      if (clinicProfile) setClinicProfile(typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile);
+      if (dbAnnouncementBanner) setAnnouncementBanner(typeof dbAnnouncementBanner === 'string' ? JSON.parse(dbAnnouncementBanner) : dbAnnouncementBanner);
       if (dbBookingFormConfig) {
+        const configParsed = typeof dbBookingFormConfig === 'string' ? JSON.parse(dbBookingFormConfig) : dbBookingFormConfig;
         setBookingFormConfig(prev => ({
           ...prev,
-          uiVersion: dbBookingFormConfig.uiVersion || 'full',
-          showNotificationChannels: dbBookingFormConfig.showNotificationChannels !== false,
-          showHoldCountdown: dbBookingFormConfig.showHoldCountdown !== false,
-          quickNotesTags: Array.isArray(dbBookingFormConfig.quickNotesTags) ? dbBookingFormConfig.quickNotesTags : DEFAULT_TAGS,
+          uiVersion: configParsed.uiVersion || 'full',
+          showNotificationChannels: configParsed.showNotificationChannels !== false,
+          showHoldCountdown: configParsed.showHoldCountdown !== false,
+          quickNotesTags: Array.isArray(configParsed.quickNotesTags) ? configParsed.quickNotesTags : DEFAULT_TAGS,
         }));
       }
       if (dbEmailConfig) {
-        setEmailConfig(prev => ({ ...prev, ...dbEmailConfig }));
-        if (dbEmailConfig.user && !testRecipient) {
-          setTestRecipient(dbEmailConfig.user);
+        const emailParsed = typeof dbEmailConfig === 'string' ? JSON.parse(dbEmailConfig) : dbEmailConfig;
+        setEmailConfig(prev => ({ ...prev, ...emailParsed }));
+        if (emailParsed.user && !testRecipient) {
+          setTestRecipient(emailParsed.user);
         }
       }
     }).catch(console.error);
@@ -318,6 +335,35 @@ export default function Settings() {
       setIsUserError(false);
     } catch (err: any) {
       alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi xóa tài khoản');
+    }
+  };
+
+  const handleToggleLockUser = async (userId: string, currentStatus: boolean) => {
+    const actionText = currentStatus ? 'khoá' : 'mở khoá';
+    if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản này?`)) return;
+    try {
+      await api.put(`/users/${userId}`, { isActive: !currentStatus });
+      setUserAccounts(prev => prev.map(u => u.id === userId ? { ...u, isActive: !currentStatus } : u));
+      setMsg(`Đã ${actionText} tài khoản thành công`);
+      setIsUserError(false);
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || `Có lỗi xảy ra khi ${actionText} tài khoản`);
+    }
+  };
+
+  const handleResetPassword = async (userId: string) => {
+    const newPassword = prompt('Nhập mật khẩu mới cho tài khoản này (tối thiểu 6 ký tự):');
+    if (newPassword === null) return;
+    if (newPassword.trim().length < 6) {
+      alert('Mật khẩu mới phải có ít nhất 6 ký tự.');
+      return;
+    }
+    try {
+      await api.put(`/users/${userId}`, { password: newPassword.trim() });
+      setMsg('Đã đặt lại mật khẩu thành công');
+      setIsUserError(false);
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi đặt lại mật khẩu');
     }
   };
 
@@ -478,6 +524,18 @@ export default function Settings() {
       setEmailMsg('❌ ' + (err.response?.data?.error?.message || 'Không thể gửi email kiểm tra. Vui lòng kiểm tra lại mật khẩu ứng dụng / Host'));
     } finally {
       setEmailTesting(false);
+    }
+  };
+
+  const handleSaveBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBannerMsg('');
+    try {
+      await api.post('/admin/settings', { announcementBanner });
+      setBannerMsg('Lưu thông báo thành công!');
+      setTimeout(() => setBannerMsg(''), 3000);
+    } catch (err: any) {
+      setBannerMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra');
     }
   };
 
@@ -703,6 +761,71 @@ export default function Settings() {
       </Card>
 
       {/* Clinic Profile */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Megaphone className="w-5 h-5 text-amber-500" />
+            Thông báo hệ thống (Banner)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSaveBanner}>
+            {bannerMsg && (
+              <div className={`text-sm p-3 rounded-lg border ${bannerMsg.includes('lỗi') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                {bannerMsg}
+              </div>
+            )}
+            
+            <label className="flex items-center gap-2 cursor-pointer border p-3 rounded-lg hover:bg-slate-50">
+              <input 
+                type="checkbox" 
+                className="rounded border-slate-300 text-primary w-4 h-4"
+                checked={announcementBanner.isVisible}
+                onChange={(e) => setAnnouncementBanner({...announcementBanner, isVisible: e.target.checked})}
+              />
+              <div>
+                <span className="font-medium text-text-main text-sm">Bật / Tắt Banner Thông Báo</span>
+                <p className="text-xs text-text-muted mt-0.5">Hiển thị một thanh thông báo chạy chữ trên trang Đặt Khám (Ví dụ: thông báo nghỉ lễ, khuyến mãi).</p>
+              </div>
+            </label>
+
+            {announcementBanner.isVisible && (
+              <div className="space-y-4 border p-4 rounded-lg bg-slate-50/50">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-text-main">Nội dung thông báo (hỗ trợ Emoji)</label>
+                  <Input 
+                    type="text" 
+                    placeholder="VD: 📢 Nha khoa nghỉ lễ Quốc Khánh từ 01/09 đến 03/09. Xin cảm ơn quý khách!" 
+                    value={announcementBanner.message} 
+                    onChange={e => setAnnouncementBanner({...announcementBanner, message: e.target.value})} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-text-main">Màu sắc (Mức độ)</label>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="bannerType" value="info" checked={announcementBanner.type === 'info'} onChange={e => setAnnouncementBanner({...announcementBanner, type: e.target.value})} />
+                      <span className="text-blue-600 font-medium">Xanh dương (Thông tin)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="bannerType" value="warning" checked={announcementBanner.type === 'warning'} onChange={e => setAnnouncementBanner({...announcementBanner, type: e.target.value})} />
+                      <span className="text-amber-600 font-medium">Cam (Lưu ý)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="bannerType" value="success" checked={announcementBanner.type === 'success'} onChange={e => setAnnouncementBanner({...announcementBanner, type: e.target.value})} />
+                      <span className="text-emerald-600 font-medium">Xanh lá (Tích cực)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <Button type="submit" className="w-full">Cập nhật Banner</Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Clinic Info */}
       <Card>
         <CardHeader>
           <CardTitle>Thông tin Phòng khám</CardTitle>
@@ -1107,6 +1230,7 @@ export default function Settings() {
       </Card>
 
       {/* User Creation */}
+      {hasPermission('user.create') && (
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1221,23 +1345,46 @@ export default function Settings() {
                 {userAccounts.map((u, idx) => {
                   const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
                   return (
-                    <div key={u.id || idx} className="flex items-center justify-between text-xs p-2 rounded bg-bg-base border border-border-subtle group">
+                    <div key={u.id || idx} className={`flex items-center justify-between text-xs p-2 rounded border group transition-colors ${u.isActive === false ? 'bg-slate-50 border-slate-200' : 'bg-bg-base border-border-subtle hover:border-primary/30'}`}>
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                        <span className="font-medium text-text-main">{u.email}</span>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${u.isActive === false ? 'bg-slate-300' : 'bg-emerald-500'}`} />
+                        <span className={`font-medium ${u.isActive === false ? 'text-slate-400 line-through' : 'text-text-main'}`}>{u.email}</span>
+                        {u.tenantId && !user?.tenantId && (
+                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1" title="Tài khoản phòng khám (Tenant)">
+                            Tenant
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium max-w-[120px] truncate" title={hasAll ? "Toàn quyền" : u.permissions?.join(', ')}>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium max-w-[120px] truncate ${u.isActive === false ? 'bg-slate-100 text-slate-400' : 'bg-primary/10 text-primary'}`} title={hasAll ? "Toàn quyền" : u.permissions?.join(', ')}>
                           {hasAll ? 'Toàn quyền' : (u.permissions?.length ? `${u.permissions.length} quyền` : (u.roleName || 'guest'))}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(u.id)}
-                          className="text-slate-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 p-1"
-                          title="Xóa tài khoản"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleResetPassword(u.id)}
+                            className="text-slate-400 hover:text-blue-600 transition-colors p-1"
+                            title="Đặt lại mật khẩu"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleLockUser(u.id, u.isActive !== false)}
+                            className={`transition-colors p-1 ${u.isActive === false ? 'text-emerald-500 hover:text-emerald-600' : 'text-slate-400 hover:text-amber-600'}`}
+                            title={u.isActive === false ? "Mở khoá tài khoản" : "Khoá tài khoản"}
+                          >
+                            {u.isActive === false ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-slate-400 hover:text-red-600 transition-colors p-1"
+                            title="Xóa tài khoản"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1247,6 +1394,7 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Data Management */}
       <Card className="col-span-1 md:col-span-2">

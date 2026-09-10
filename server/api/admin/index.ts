@@ -408,7 +408,7 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 // Cập nhật cài đặt hệ thống
 adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, res, next) => {
   try {
-    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig } = req.body;
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner } = req.body;
     
     // Save to DB
     if (telegramToken !== undefined) {
@@ -440,6 +440,11 @@ adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, r
       await db.insert(settings)
         .values({ id: 'bookingFormConfig', value: bookingFormConfig })
         .onConflictDoUpdate({ target: settings.id, set: { value: bookingFormConfig } });
+    }
+    if (announcementBanner !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'announcementBanner', value: announcementBanner })
+        .onConflictDoUpdate({ target: settings.id, set: { value: announcementBanner } });
     }
 
     // Trigger reload bot

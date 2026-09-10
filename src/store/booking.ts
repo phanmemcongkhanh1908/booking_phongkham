@@ -35,6 +35,11 @@ interface BookingState {
   patientEmail: string | null;
   patientTelegramId: string | null;
   telegramBotUsername: string | null;
+  announcementBanner: {
+    isVisible: boolean;
+    message: string;
+    type: 'info' | 'warning' | 'success';
+  } | null;
   clinicProfile: {
     clinicName?: string;
     doctorName?: string;
@@ -57,6 +62,7 @@ interface BookingState {
   setPatientDraft: (draft: Partial<PatientDraft>) => void;
   setClinicProfile: (profile: any) => void;
   setBookingFormConfig: (config: any) => void;
+  setAnnouncementBanner: (banner: any) => void;
   setAppointmentSuccess: (
     id: string, 
     name: string, 
@@ -99,12 +105,14 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   patientEmail: null,
   patientTelegramId: null,
   telegramBotUsername: null,
+  announcementBanner: null,
   clinicProfile: null,
   bookingFormConfig: null,
 
   setStep: (step) => set({ step }),
   setClinicProfile: (profile) => set({ clinicProfile: profile }),
   setBookingFormConfig: (config) => set({ bookingFormConfig: config }),
+  setAnnouncementBanner: (banner) => set({ announcementBanner: banner }),
   
   clearHold: () => set({
     sessionToken: null,

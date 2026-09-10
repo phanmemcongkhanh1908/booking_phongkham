@@ -29,6 +29,7 @@ export default function Booking() {
   const setClinicProfile = useBookingStore(s => s.setClinicProfile);
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const setBookingFormConfig = useBookingStore(s => s.setBookingFormConfig);
+  const setAnnouncementBanner = useBookingStore(s => s.setAnnouncementBanner);
   const setStepStore = useBookingStore(s => s.setStep);
 
   const steps = [
@@ -42,11 +43,11 @@ export default function Booking() {
   const currentPath = location.pathname.split('/').pop() || '';
   const currentStepObj = steps.find(s => s.path === currentPath);
   const step = currentStepObj ? currentStepObj.id : 1;
-
   const serviceId = useBookingStore(s => s.serviceId);
   const selectedDate = useBookingStore(s => s.selectedDate);
   const sessionToken = useBookingStore(s => s.sessionToken);
   const patientDraft = useBookingStore(s => s.patientDraft);
+  const announcementBanner = useBookingStore(s => s.announcementBanner);
 
   useEffect(() => {
     // Tải cấu hình thông tin phòng khám & hồ sơ tiếp đón
@@ -58,9 +59,12 @@ export default function Booking() {
         if (res.data?.data?.bookingFormConfig) {
           setBookingFormConfig(res.data.data.bookingFormConfig);
         }
+        if (res.data?.data?.announcementBanner) {
+          setAnnouncementBanner(res.data.data.announcementBanner);
+        }
       })
       .catch(console.error);
-  }, [setClinicProfile, setBookingFormConfig]);
+  }, [setClinicProfile, setBookingFormConfig, setAnnouncementBanner]);
 
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
@@ -165,6 +169,32 @@ export default function Booking() {
           </div>
         </div>
       </header>
+
+      {/* Announcement Banner */}
+      {announcementBanner?.isVisible && announcementBanner.message && (
+        <div className={`overflow-hidden relative z-20 shadow-sm border-b ${
+          announcementBanner.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+          announcementBanner.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+          'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <div className="max-w-7xl mx-auto flex items-center h-9 px-3 sm:px-6 lg:px-8">
+            <div className="shrink-0 mr-3 flex items-center">
+              <Sparkles className={`w-4 h-4 ${
+                announcementBanner.type === 'warning' ? 'text-amber-500' :
+                announcementBanner.type === 'success' ? 'text-emerald-500' :
+                'text-blue-500'
+              }`} />
+            </div>
+            <div className="flex-1 overflow-hidden relative">
+              <div className="animate-marquee whitespace-nowrap font-medium text-xs sm:text-sm">
+                {announcementBanner.message}
+                <span className="inline-block w-8"></span>
+                {announcementBanner.message}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 sm:space-y-6">

@@ -65,7 +65,7 @@
 
 @keyframes shimmer {
   100% {
-    transform: translateX(100%);
+    transform: translateX(100vw);
   }
 }
 
@@ -114,4 +114,12 @@ html, body {
   border-radius: 6px !important;
   padding: 4px 6px !important;
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+}
+@keyframes marquee {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
+.animate-marquee {
+  display: inline-block;
+  animation: marquee 25s linear infinite;
 }

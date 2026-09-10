@@ -445,12 +445,20 @@ publicRouter.get("/clinic-info", async (req, res, next) => {
 
     const botUsername = await getTelegramBotUsername();
 
+    // Load announcement banner
+    let bannerRes = await db.select().from(settings).where(eq(settings.id, "announcementBanner")).limit(1);
+    let announcementBanner = null;
+    if (bannerRes.length > 0) {
+      announcementBanner = typeof bannerRes[0].value === 'string' ? JSON.parse(bannerRes[0].value) : bannerRes[0].value;
+    }
+
     res.json({
       success: true,
       data: {
         clinicProfile,
         bookingFormConfig,
         telegramBotUsername: botUsername,
+        announcementBanner,
       }
     });
   } catch (error) {

@@ -57,15 +57,23 @@ usersRouter.get("/", requirePermission("user.create"), async (req, res, next) =>
 
 usersRouter.post("/", requirePermission("user.create"), async (req, res, next) => {
   try {
+    console.log("[Users API] Creating new user account...");
+    console.log("[Users API] Request body keys:", Object.keys(req.body));
+    console.log("[Users API] Initiator user ID:", req.user?.userId, "Tenant:", req.user?.tenantId);
+    
     const { email, username, password, roleId, permissions } = CreateUserSchema.parse(req.body);
     const rawIdentifier = (username || email || "").trim();
     const identifier = rawIdentifier.toLowerCase();
+    
+    console.log("[Users API] Target identifier:", identifier, "Role:", roleId, "Permissions:", permissions);
 
     if (rawIdentifier.length < 2) {
+      console.warn("[Users API] Creation failed: identifier too short.");
       throw new BadRequestError("Tên tài khoản phải có ít nhất 2 ký tự");
     }
 
     if (!password) {
+      console.warn("[Users API] Creation failed: password missing.");
       throw new BadRequestError("Vui lòng nhập mật khẩu");
     }
 
@@ -75,12 +83,15 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       (u: any) => (u.email || "").trim().toLowerCase() === identifier
     );
     if (existing) {
+      console.warn("[Users API] Creation failed: identifier already exists.");
       throw new BadRequestError(`Tên tài khoản hoặc email '${rawIdentifier}' đã tồn tại trong hệ thống.`);
     }
 
     let targetRoleId = roleId;
+    const isFullAdmin = !permissions || permissions.length === 0 || permissions.includes("*") || permissions.includes("all");
+    console.log("[Users API] Is considered Full Admin (based on requested permissions):", isFullAdmin);
+    
     if (!targetRoleId) {
-      const isFullAdmin = !permissions || permissions.length === 0 || permissions.includes("*") || permissions.includes("all");
       if (isFullAdmin) {
         const allRoles = await db.select().from(roles);
         const defaultRole = allRoles.find(
@@ -91,9 +102,13 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
         } else {
           targetRoleId = "role-admin";
         }
+        console.log("[Users API] Assigned default admin role ID:", targetRoleId);
       } else {
         targetRoleId = null;
+        console.log("[Users API] No role assigned.");
       }
+    } else {
+      console.log("[Users API] Using explicitly requested role ID:", targetRoleId);
     }
 
     const hashedPassword = await hashPassword(password);
@@ -101,10 +116,16 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     // Nếu người tạo có tenantId, tài khoản con kế thừa tenantId đó.
     // Nếu là admin gốc (không có tenantId) tạo tài khoản mới (và không phải đang tạo thêm admin gốc), cấp 1 tenantId mới cho phòng khám.
     let newTenantId = req.user?.tenantId;
-    if (!newTenantId && !isFullAdmin) {
+    if (!newTenantId && !isFullAdmin) { 
        newTenantId = "tenant-" + Date.now().toString();
+       console.log("[Users API] Root admin created clinic admin. Generated new tenantId:", newTenantId);
+    } else if (newTenantId) {
+       console.log("[Users API] Inheriting tenantId from creator:", newTenantId);
+    } else {
+       console.log("[Users API] Creating another root admin (no tenantId).");
     }
 
+    console.log("[Users API] Inserting user into database...");
     const newUser = await db.insert(users).values({
       email: identifier,
       passwordHash: hashedPassword,
@@ -115,6 +136,8 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }).returning();
+    
+    console.log("[Users API] User inserted successfully. User ID:", newUser[0]?.id);
 
     res.json({
       success: true,
@@ -128,6 +151,7 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       },
     });
   } catch (error) {
+    console.error("[Users API] Account creation error:", error);
     next(error);
   }
 });
