@@ -72,22 +72,6 @@ export default function Settings() {
   } = useGoogleAuthStore();
 
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [isUserError, setIsUserError] = useState(false);
-  const [userAccounts, setUserAccounts] = useState<any[]>([]);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['*']); // Default all for root admin feeling, or we can make it empty initially
-
-  const AVAILABLE_PERMISSIONS = [
-    { id: '*', label: 'Toàn quyền (Quản trị viên)' },
-    { id: 'appointment.view', label: 'Quản lý lịch hẹn' },
-    { id: 'patient.view', label: 'Quản lý bệnh nhân' },
-    { id: 'service.manage', label: 'Quản lý dịch vụ & bác sĩ' },
-    { id: 'report.view', label: 'Xem thống kê báo cáo' },
-    { id: 'setting.manage', label: 'Cấu hình hệ thống' },
-  ];
   const [driveInfo, setDriveInfo] = useState<any>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
@@ -294,79 +278,6 @@ export default function Settings() {
       }
     }).catch(() => {});
   }, []);
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMsg('');
-    setIsUserError(false);
-    try {
-      const trimmedIdentifier = email.trim();
-      const res = await api.post('/users', { 
-        username: trimmedIdentifier,
-        email: trimmedIdentifier,
-        password,
-        permissions: selectedPermissions
-      });
-      setMsg(res.data?.message || `Tạo tài khoản '${trimmedIdentifier}' thành công!`);
-      setIsUserError(false);
-      setEmail('');
-      setPassword('');
-      setSelectedPermissions(['*']); // Reset
-      // Làm mới danh sách tài khoản
-      const refreshed = await api.get('/users');
-      if (refreshed.data?.data) {
-        setUserAccounts(refreshed.data.data);
-      }
-    } catch (err: any) {
-      setIsUserError(true);
-      setMsg(err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi tạo tài khoản');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa tài khoản này không? Hành động này không thể hoàn tác.')) return;
-    try {
-      await api.delete(`/users/${userId}`);
-      setUserAccounts(prev => prev.filter(u => u.id !== userId));
-      setMsg('Đã xóa tài khoản thành công');
-      setIsUserError(false);
-    } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi xóa tài khoản');
-    }
-  };
-
-  const handleToggleLockUser = async (userId: string, currentStatus: boolean) => {
-    const actionText = currentStatus ? 'khoá' : 'mở khoá';
-    if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản này?`)) return;
-    try {
-      await api.put(`/users/${userId}`, { isActive: !currentStatus });
-      setUserAccounts(prev => prev.map(u => u.id === userId ? { ...u, isActive: !currentStatus } : u));
-      setMsg(`Đã ${actionText} tài khoản thành công`);
-      setIsUserError(false);
-    } catch (err: any) {
-      alert(err.response?.data?.error?.message || `Có lỗi xảy ra khi ${actionText} tài khoản`);
-    }
-  };
-
-  const handleResetPassword = async (userId: string) => {
-    const newPassword = prompt('Nhập mật khẩu mới cho tài khoản này (tối thiểu 6 ký tự):');
-    if (newPassword === null) return;
-    if (newPassword.trim().length < 6) {
-      alert('Mật khẩu mới phải có ít nhất 6 ký tự.');
-      return;
-    }
-    try {
-      await api.put(`/users/${userId}`, { password: newPassword.trim() });
-      setMsg('Đã đặt lại mật khẩu thành công');
-      setIsUserError(false);
-    } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi đặt lại mật khẩu');
-    }
-  };
-
   useEffect(() => {
     if (googleToken) {
       fetchDriveQuota(googleToken).then(data => {
@@ -379,10 +290,8 @@ export default function Settings() {
     setIsConnectingGoogle(true);
     setGoogleStatusMsg(null);
     try {
-      const { accessToken } = await connectGoogleStore();
-      const quota = await fetchDriveQuota(accessToken);
-      if (quota) setDriveInfo(quota);
-
+      const accessToken = await connectGoogleStore();
+      
       // Try finding or creating the clinic's Google Sheet automatically
       try {
         const sheetInfo = await findOrCreateClinicSpreadsheet(accessToken, 'Dental Smart');
@@ -402,7 +311,7 @@ export default function Settings() {
       console.error(err);
       setGoogleStatusMsg({
         type: 'error',
-        text: err.message || 'Không thể kết nối tài khoản Google. Vui lòng thử lại.'
+        text: err.message || 'Lỗi khi kết nối Google. Vui lòng thử lại.'
       });
     } finally {
       setIsConnectingGoogle(false);
@@ -1228,173 +1137,6 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
-
-      {/* User Creation */}
-      {hasPermission('user.create') && (
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Tạo tài khoản Quản trị</CardTitle>
-            <span className="text-[11px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
-              Không bắt buộc @
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form className="space-y-4" onSubmit={handleCreateUser}>
-            {msg && (
-              <div className={`text-sm p-3 rounded-lg border flex items-center gap-2 ${
-                isUserError 
-                  ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50' 
-                  : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50'
-              }`}>
-                {isUserError ? <AlertTriangle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
-                <span>{msg}</span>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-text-main flex items-center justify-between">
-                <span>Tên tài khoản / Email</span>
-                <span className="text-xs text-text-muted">Tùy ý (VD: admin, quanly)</span>
-              </label>
-              <Input 
-                type="text" 
-                placeholder="VD: admin hoặc admin@phongkham.vn" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
-                required 
-                autoComplete="off"
-              />
-              <p className="text-[11px] text-text-muted">
-                Admin có thể đặt tên tài khoản tùy ý (VD: <strong>admin</strong>, <strong>bacsi1</strong>) hoặc địa chỉ email. Không bắt buộc phải có ký tự @.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-text-main">Mật khẩu</label>
-              <div className="relative">
-                <Input 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="Tối thiểu 6 ký tự (VD: admin@123)" 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  required 
-                  autoComplete="new-password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main focus:outline-none transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Phân quyền chức năng</label>
-              <div className="space-y-2 max-h-[160px] overflow-y-auto p-2 bg-slate-50 border border-border-subtle rounded-xl">
-                {AVAILABLE_PERMISSIONS.map(p => (
-                  <label key={p.id} className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-slate-300 text-primary focus:ring-primary h-4 w-4"
-                      checked={selectedPermissions.includes('*') || selectedPermissions.includes(p.id)}
-                      disabled={p.id !== '*' && selectedPermissions.includes('*')}
-                      onChange={(e) => {
-                        if (p.id === '*') {
-                          setSelectedPermissions(e.target.checked ? ['*'] : []);
-                        } else {
-                          setSelectedPermissions(prev => 
-                            e.target.checked 
-                              ? [...prev.filter(id => id !== '*'), p.id] 
-                              : prev.filter(id => id !== p.id)
-                          );
-                        }
-                      }}
-                    />
-                    <span className="text-sm text-text-main">{p.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Đang khởi tạo...
-                </>
-              ) : (
-                'Tạo tài khoản quản trị'
-              )}
-            </Button>
-          </form>
-
-          {userAccounts.length > 0 && (
-            <div className="pt-3 border-t border-border-subtle space-y-2">
-              <p className="text-xs font-semibold text-text-main flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                Danh sách tài khoản hệ thống ({userAccounts.length}):
-              </p>
-              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                {userAccounts.map((u, idx) => {
-                  const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
-                  return (
-                    <div key={u.id || idx} className={`flex items-center justify-between text-xs p-2 rounded border group transition-colors ${u.isActive === false ? 'bg-slate-50 border-slate-200' : 'bg-bg-base border-border-subtle hover:border-primary/30'}`}>
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${u.isActive === false ? 'bg-slate-300' : 'bg-emerald-500'}`} />
-                        <span className={`font-medium ${u.isActive === false ? 'text-slate-400 line-through' : 'text-text-main'}`}>{u.email}</span>
-                        {u.tenantId && !user?.tenantId && (
-                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-1" title="Tài khoản phòng khám (Tenant)">
-                            Tenant
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium max-w-[120px] truncate ${u.isActive === false ? 'bg-slate-100 text-slate-400' : 'bg-primary/10 text-primary'}`} title={hasAll ? "Toàn quyền" : u.permissions?.join(', ')}>
-                          {hasAll ? 'Toàn quyền' : (u.permissions?.length ? `${u.permissions.length} quyền` : (u.roleName || 'guest'))}
-                        </span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => handleResetPassword(u.id)}
-                            className="text-slate-400 hover:text-blue-600 transition-colors p-1"
-                            title="Đặt lại mật khẩu"
-                          >
-                            <Key className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleLockUser(u.id, u.isActive !== false)}
-                            className={`transition-colors p-1 ${u.isActive === false ? 'text-emerald-500 hover:text-emerald-600' : 'text-slate-400 hover:text-amber-600'}`}
-                            title={u.isActive === false ? "Mở khoá tài khoản" : "Khoá tài khoản"}
-                          >
-                            {u.isActive === false ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(u.id)}
-                            className="text-slate-400 hover:text-red-600 transition-colors p-1"
-                            title="Xóa tài khoản"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      )}
 
       {/* Data Management */}
       <Card className="col-span-1 md:col-span-2">

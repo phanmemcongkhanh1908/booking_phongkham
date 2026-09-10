@@ -406,7 +406,7 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 });
 
 // Cập nhật cài đặt hệ thống
-adminRouter.post("/settings", requireAuth, requirePermission("*"), async (req, res, next) => {
+adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
     const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner } = req.body;
     

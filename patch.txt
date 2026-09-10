@@ -1,0 +1,31 @@
+                <div className="border border-slate-200 rounded-xl bg-slate-50/50 max-h-[280px] overflow-y-auto divide-y divide-slate-200/60">
+                  {PERMISSION_MATRIX.map(module => (
+                    <div key={module.module} className="p-4 space-y-3">
+                      <h4 className="text-sm font-bold text-slate-800">{module.module}</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {module.permissions.map(p => (
+                          <label key={p.id} className="flex items-center gap-2.5 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              className="rounded border-slate-300 text-primary focus:ring-primary h-4 w-4"
+                              checked={selectedPermissions.includes('*') || selectedPermissions.includes(p.id)}
+                              disabled={p.id !== '*' && selectedPermissions.includes('*')}
+                              onChange={(e) => {
+                                if (p.id === '*') {
+                                  setSelectedPermissions(e.target.checked ? ['*'] : []);
+                                } else {
+                                  setSelectedPermissions(prev => 
+                                    e.target.checked 
+                                      ? [...prev.filter(id => id !== '*'), p.id] 
+                                      : prev.filter(id => id !== p.id)
+                                  );
+                                }
+                              }}
+                            />
+                            <span className="text-sm text-slate-700 group-hover:text-slate-900">{p.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>

@@ -11,11 +11,12 @@ import CalendarView from './CalendarView';
 import ServicesConfig from './ServicesConfig';
 import Analytics from './Analytics';
 import Patients from './Patients';
+import UsersManagement from './UsersManagement';
 import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2 } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck } from 'lucide-react';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -61,11 +62,11 @@ export default function Dashboard() {
       ? 'patients' 
       : hasPermission('service.manage') 
         ? 'services' 
-        : hasPermission('report.view') 
+        : hasPermission('analytics.view') 
           ? 'analytics' 
           : 'settings';
 
-  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics'>(defaultTab as any);
+  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(defaultTab as any);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
   const [clinicProfile, setClinicProfile] = useState<any>(null);
@@ -417,7 +418,7 @@ export default function Dashboard() {
                 Dịch vụ & Lịch
               </button>
             )}
-            {hasPermission('report.view') && (
+            {hasPermission('analytics.view') && (
               <button 
                 onClick={() => setActiveTab('analytics')}
                 className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
@@ -440,7 +441,20 @@ export default function Dashboard() {
                 }`}
               >
                 <SettingsIcon className="w-4 h-4 mr-1.5 shrink-0" />
-                Tài khoản
+                Cài đặt
+              </button>
+            )}
+            {hasPermission('user.create') && (
+              <button 
+                onClick={() => setActiveTab('users')}
+                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                  activeTab === 'users' 
+                    ? 'bg-primary/10 text-primary font-bold' 
+                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" />
+                Nhân sự
               </button>
             )}
           </nav>
@@ -570,7 +584,7 @@ export default function Dashboard() {
                 Dịch vụ & Lịch
               </button>
             )}
-            {hasPermission('report.view') && (
+            {hasPermission('analytics.view') && (
               <button 
                 onClick={() => setActiveTab('analytics')}
                 className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
@@ -593,7 +607,20 @@ export default function Dashboard() {
                 }`}
               >
                 <SettingsIcon className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Tài khoản
+                Cài đặt
+              </button>
+            )}
+            {hasPermission('user.create') && (
+              <button 
+                onClick={() => setActiveTab('users')}
+                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
+                  activeTab === 'users' 
+                    ? 'bg-primary text-white shadow-2xs' 
+                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                Nhân sự
               </button>
             )}
           </div>
@@ -1122,6 +1149,7 @@ export default function Dashboard() {
         )}
         {activeTab === 'services' && <ServicesConfig />}
         {activeTab === 'settings' && <Settings />}
+        {activeTab === 'users' && <UsersManagement />}
         </div>
       </main>
 

@@ -1,0 +1,216 @@
+{
+  "roles": {
+    "3d556bbd-6aa1-40e2-93d5-09512d0c1db8": {
+      "name": "admin",
+      "permissions": [
+        "all"
+      ],
+      "id": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8"
+    }
+  },
+  "users": {
+    "fa2d5aa4-f9bd-422f-a826-1da931e299ae": {
+      "email": "admin@dentalsmartbooking.com",
+      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$AeJb84pJwrkMA4k5EZRZ9Q$OcYkUyGA2mXLXJRYdUbK/Vd0RBSdHLLmI+JxuCF5jQM",
+      "roleId": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8",
+      "isActive": true,
+      "id": "fa2d5aa4-f9bd-422f-a826-1da931e299ae"
+    }
+  },
+  "providers": {
+    "4dc148a2-f35f-477c-9c6a-2e2b2808fec3": {
+      "name": "Bác sĩ Chuyên khoa Răng Hàm Mặt",
+      "specialty": "Nha khoa tổng quát & Thẩm mỹ",
+      "workingHours": {
+        "monday": [
+          {
+            "start": "08:00",
+            "end": "17:00"
+          }
+        ],
+        "tuesday": [
+          {
+            "start": "08:00",
+            "end": "17:00"
+          }
+        ],
+        "wednesday": [
+          {
+            "start": "08:00",
+            "end": "17:00"
+          }
+        ],
+        "thursday": [
+          {
+            "start": "08:00",
+            "end": "17:00"
+          }
+        ],
+        "friday": [
+          {
+            "start": "08:00",
+            "end": "17:00"
+          }
+        ]
+      },
+      "bookingEnabled": true,
+      "isActive": true,
+      "id": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3"
+    }
+  },
+  "services": {
+    "5f8616f4-7774-4d77-a6e7-2218b4f333e7": {
+      "name": "Khám răng tổng quát & Tư vấn",
+      "description": "Khám kiểm tra sức khỏe răng miệng toàn diện, chụp phim X-quang kiểm tra tổng quát.",
+      "durationMins": 30,
+      "price": 0,
+      "bufferBefore": 0,
+      "bufferAfter": 10,
+      "isActive": true,
+      "id": "5f8616f4-7774-4d77-a6e7-2218b4f333e7"
+    },
+    "597138cd-5a79-4c91-b465-7d32e6c7ba3c": {
+      "name": "Cạo vôi răng & Đánh bóng",
+      "description": "Làm sạch mảng bám, vôi răng bằng sóng siêu âm không đau, đánh bóng men răng.",
+      "durationMins": 30,
+      "price": 200000,
+      "bufferBefore": 5,
+      "bufferAfter": 10,
+      "isActive": true,
+      "id": "597138cd-5a79-4c91-b465-7d32e6c7ba3c"
+    },
+    "4ca791a3-b244-4949-87a9-fc3b2748baa5": {
+      "name": "Trám răng thẩm mỹ Composite",
+      "description": "Phục hồi hình thể răng sâu, mẻ với vật liệu Composite trùng màu răng tự nhiên.",
+      "durationMins": 45,
+      "price": 350000,
+      "bufferBefore": 5,
+      "bufferAfter": 10,
+      "isActive": true,
+      "id": "4ca791a3-b244-4949-87a9-fc3b2748baa5"
+    },
+    "bbdb4191-c7cb-4ba6-8d7b-7f3827e4efa5": {
+      "name": "Nhổ răng khôn / Tiểu phẫu",
+      "description": "Tiểu phẫu nhổ răng khôn mọc lệch, ngầm an toàn bằng công nghệ Piezotome.",
+      "durationMins": 60,
+      "price": 1200000,
+      "bufferBefore": 10,
+      "bufferAfter": 15,
+      "isActive": true,
+      "id": "bbdb4191-c7cb-4ba6-8d7b-7f3827e4efa5"
+    },
+    "be07ca4b-bae6-4bdf-8f8f-2ed81a96badd": {
+      "name": "Tẩy trắng răng công nghệ cao",
+      "description": "Tẩy trắng răng bằng ánh sáng Laser/LED hiện đại, bật từ 2-4 tông màu an toàn.",
+      "durationMins": 60,
+      "price": 1500000,
+      "bufferBefore": 10,
+      "bufferAfter": 15,
+      "isActive": true,
+      "id": "be07ca4b-bae6-4bdf-8f8f-2ed81a96badd"
+    }
+  },
+  "settings": {
+    "b2d3e3c7-92f9-4286-8346-ac91e64a1340": {
+      "key": "clinic_profile",
+      "value": {
+        "name": "Nha Khoa Dental Smart",
+        "address": "123 Nguyễn Văn Cừ, Quận 5, TP. Hồ Chí Minh",
+        "phone": "0901 234 567",
+        "email": "contact@dentalsmartbooking.com",
+        "workingHours": "08:00 - 17:00 (Thứ 2 - Thứ 7)",
+        "description": "Phòng khám nha khoa kỹ thuật cao, tận tâm, hiện đại."
+      },
+      "id": "b2d3e3c7-92f9-4286-8346-ac91e64a1340"
+    },
+    "patientContacts": {
+      "id": "patientContacts",
+      "value": {
+        "44386fd2-bcde-44bb-80a4-afee0f2020b3": {},
+        "0923654789": {},
+        "c709f369-ed35-4f14-9ac2-6dec02ea3cdd": {},
+        "0988776655": {},
+        "af39d362-4823-413a-b67b-1e6b50003c41": {},
+        "0931221212": {}
+      },
+      "updatedAt": "2026-09-06T15:53:30.957Z"
+    }
+  },
+  "appointment_holds": {
+    "87fc85eb-65b4-4dbf-bf01-e36b6bd329aa": {
+      "sessionToken": "e3b76159-853f-407f-b6bf-2b980dc33c54",
+      "providerId": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3",
+      "serviceId": "5f8616f4-7774-4d77-a6e7-2218b4f333e7",
+      "startAt": "2026-09-08T09:30:00.000Z",
+      "endAt": "2026-09-08T10:10:00.000Z",
+      "expiresAt": "2026-09-06T15:32:02.587Z",
+      "id": "87fc85eb-65b4-4dbf-bf01-e36b6bd329aa"
+    },
+    "a016cd13-9061-4386-924f-e964fefc9ad0": {
+      "sessionToken": "37ad9f27-e460-4733-8ede-e4f3511fc9b9",
+      "providerId": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3",
+      "serviceId": "be07ca4b-bae6-4bdf-8f8f-2ed81a96badd",
+      "startAt": "2026-09-07T11:00:00.000Z",
+      "endAt": "2026-09-07T12:25:00.000Z",
+      "expiresAt": "2026-09-06T15:36:06.515Z",
+      "id": "a016cd13-9061-4386-924f-e964fefc9ad0"
+    }
+  },
+  "patients": {
+    "44386fd2-bcde-44bb-80a4-afee0f2020b3": {
+      "fullName": "dfgsdf",
+      "phone": "0923654789",
+      "createdAt": "2026-09-06T10:00:00.000Z",
+      "id": "44386fd2-bcde-44bb-80a4-afee0f2020b3"
+    },
+    "c709f369-ed35-4f14-9ac2-6dec02ea3cdd": {
+      "fullName": "Nguyen Van A",
+      "phone": "0988776655",
+      "notes": "{\"text\":\"Kham kiem tra\",\"diagnosis\":\"\",\"treatmentPlan\":\"\",\"documents\":[]}",
+      "createdAt": "2026-09-06T11:00:00.000Z",
+      "id": "c709f369-ed35-4f14-9ac2-6dec02ea3cdd"
+    },
+    "af39d362-4823-413a-b67b-1e6b50003c41": {
+      "fullName": "thfh",
+      "phone": "0931221212",
+      "createdAt": "2026-09-06T12:00:00.000Z",
+      "id": "af39d362-4823-413a-b67b-1e6b50003c41"
+    }
+  },
+  "appointments": {
+    "7816f663-19a9-4f93-bc82-6063f624fe8a": {
+      "patientId": "44386fd2-bcde-44bb-80a4-afee0f2020b3",
+      "providerId": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3",
+      "serviceId": "597138cd-5a79-4c91-b465-7d32e6c7ba3c",
+      "startAt": "2026-09-08T09:00:00.000Z",
+      "endAt": "2026-09-08T09:30:00.000Z",
+      "status": "COMPLETED",
+      "source": "ONLINE",
+      "id": "7816f663-19a9-4f93-bc82-6063f624fe8a",
+      "updatedAt": "2026-09-06T15:53:52.381Z"
+    },
+    "424ffee4-cf1e-4983-93ee-3be73f41981d": {
+      "patientId": "c709f369-ed35-4f14-9ac2-6dec02ea3cdd",
+      "providerId": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3",
+      "serviceId": "5f8616f4-7774-4d77-a6e7-2218b4f333e7",
+      "startAt": "2026-09-09T09:00:00.000Z",
+      "endAt": "2026-09-09T09:30:00.000Z",
+      "status": "COMPLETED",
+      "notes": "Kham kiem tra",
+      "source": "ONLINE",
+      "id": "424ffee4-cf1e-4983-93ee-3be73f41981d",
+      "updatedAt": "2026-09-06T15:53:57.091Z"
+    },
+    "bcfc765b-8480-454a-a821-a5285d9c8387": {
+      "patientId": "af39d362-4823-413a-b67b-1e6b50003c41",
+      "providerId": "4dc148a2-f35f-477c-9c6a-2e2b2808fec3",
+      "serviceId": "597138cd-5a79-4c91-b465-7d32e6c7ba3c",
+      "startAt": "2026-09-07T09:00:00.000Z",
+      "endAt": "2026-09-07T09:45:00.000Z",
+      "status": "CHECKED_IN",
+      "source": "ONLINE",
+      "id": "bcfc765b-8480-454a-a821-a5285d9c8387",
+      "updatedAt": "2026-09-06T15:53:58.858Z"
+    }
+  }
+}

@@ -29,7 +29,7 @@ const UpdateUserSchema = z.object({
 
 usersRouter.get("/", requirePermission("user.create"), async (req, res, next) => {
   try {
-    const isFullAdmin = !req.user?.tenantId && req.user?.permissions?.includes("*");
+    const isFullAdmin = !req.user?.tenantId && (req.user?.role === "admin" || req.user?.permissions?.includes("*") || req.user?.permissions?.includes("all"));
     let userRecords = await db
       .select({
         id: users.id,
@@ -166,6 +166,10 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
       throw new NotFoundError("Không tìm thấy người dùng");
     }
 
+    if (existingUsers[0].email === "admin@dentalsmartbooking.com" && typeof isActive === 'boolean' && !isActive) {
+      throw new BadRequestError("Không thể khóa tài khoản admin tối cao");
+    }
+
     const updateData: any = {
       updatedAt: new Date().toISOString()
     };
@@ -191,6 +195,11 @@ usersRouter.delete("/:id", requirePermission("user.create"), async (req, res, ne
   try {
     const userId = req.params.id;
     
+    const targetUser = await db.select().from(users).where(eq(users.id, userId));
+    if (targetUser.length > 0 && targetUser[0].email === "admin@dentalsmartbooking.com") {
+      throw new BadRequestError("Không thể xóa tài khoản admin tối cao");
+    }
+
     // Ngăn chặn xóa chính mình
     if (req.user?.userId === userId) {
       throw new BadRequestError("Không thể xóa tài khoản đang đăng nhập");
