@@ -177,3 +177,108 @@ export async function notifyPatientAppointment(
 
   return result;
 }
+export async function remindPatientAppointment(
+  appointmentId: string
+): Promise<NotificationResult> {
+  const result: NotificationResult = {
+    telegramSent: false,
+    emailSent: false,
+    webPushSent: false,
+    errors: [],
+  };
+
+  try {
+    const aptRecords = await db
+      .select({
+        id: appointments.id,
+        startAt: appointments.startAt,
+        status: appointments.status,
+        patientId: appointments.patientId,
+        patientName: patients.fullName,
+        patientPhone: patients.phone,
+        patientTelegramId: patients.telegramId,
+        serviceName: services.name,
+        providerName: providers.name,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+
+    if (aptRecords.length === 0) {
+      result.errors.push("Không tìm thấy thông tin lịch hẹn");
+      return result;
+    }
+    const apt = aptRecords[0];
+
+    // Chỉ gửi nhắc nhở cho lịch hẹn đã xác nhận
+    if (apt.status !== "CONFIRMED") {
+      result.errors.push("Lịch hẹn chưa được xác nhận");
+      return result;
+    }
+
+    const { email } = await getPatientContact(apt.patientId);
+    if (email) result.patientEmail = email;
+    if (apt.patientTelegramId) result.patientTelegramId = apt.patientTelegramId;
+
+    const dateStr = safeFormatDate(new Date(apt.startAt), "dd/MM/yyyy");
+    const timeStr = safeFormatDate(new Date(apt.startAt), "HH:mm");
+
+    // Lấy config
+    const settingsRecords = await db.select().from(settings);
+    const settingsObj: any = {};
+    settingsRecords.forEach((s: any) => {
+      settingsObj[s.id] = s.value;
+    });
+
+    const clinicProfile = settingsObj.clinicProfile || {
+      clinicName: "Phòng khám",
+      phone: "",
+      address: ""
+    };
+
+    const pushTitle = "Nhắc nhở lịch hẹn ngày mai";
+    const pushBody = `Bạn có lịch hẹn ${apt.serviceName} vào lúc ${timeStr} ngày mai tại ${clinicProfile.clinicName}. Vui lòng đến đúng giờ.`;
+
+    if (email) {
+      try {
+        const emailData: AppointmentNotificationData = {
+          patientName: apt.patientName,
+          date: dateStr,
+          time: timeStr,
+          serviceName: apt.serviceName || "Khám nha khoa",
+          providerName: apt.providerName,
+          clinicName: clinicProfile.clinicName,
+          clinicAddress: clinicProfile.address,
+          clinicPhone: clinicProfile.phone,
+          status: "CONFIRMED"
+        };
+        await sendPatientAppointmentEmail(email, "REMINDER", emailData);
+        result.emailSent = true;
+      } catch (err: any) {
+        result.errors.push(`Email error: ${err.message}`);
+      }
+    }
+
+    // Web Push
+    try {
+      await sendWebPush(apt.patientId, {
+        notification: {
+          title: pushTitle,
+          body: pushBody,
+          icon: "/icon-192x192.png",
+        }
+      });
+      result.webPushSent = true;
+    } catch (err: any) {
+      result.errors.push(`WebPush error: ${err.message}`);
+    }
+
+    return result;
+  } catch (err: any) {
+    result.errors.push(err.message);
+    return result;
+  }
+}

@@ -553,95 +553,9 @@ export default function Dashboard() {
         </div>
 
           {/* Tier 2: Dedicated Horizontal Tab Bar on Mobile & Tablet (< md) */}
-        <div className="md:hidden relative border-t border-slate-200/60 bg-slate-50/70">
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none px-3.5 py-2 pr-8">
-            {hasPermission('appointment.view') && (
-              <button 
-                onClick={() => setActiveTab('appointments')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'appointments' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Lịch hẹn
-              </button>
-            )}
-            {hasPermission('patient.view') && (
-              <button 
-                onClick={() => setActiveTab('patients')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'patients' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Hồ sơ Bệnh án
-              </button>
-            )}
-            {hasPermission('service.manage') && (
-              <button 
-                onClick={() => setActiveTab('services')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'services' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <LayoutList className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Dịch vụ & Lịch
-              </button>
-            )}
-            {hasPermission('analytics.view') && (
-              <button 
-                onClick={() => setActiveTab('analytics')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'analytics' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Báo cáo
-              </button>
-            )}
-            {hasPermission('setting.manage') && (
-              <button 
-                onClick={() => setActiveTab('settings')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'settings' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <SettingsIcon className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Cài đặt
-              </button>
-            )}
-            {hasPermission('user.create') && (
-              <button 
-                onClick={() => setActiveTab('users')}
-                className={`text-xs font-bold flex items-center px-3 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-all ${
-                  activeTab === 'users' 
-                    ? 'bg-primary text-white shadow-2xs' 
-                    : 'bg-white text-text-muted hover:text-text-main border border-border-subtle'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                Nhân sự
-              </button>
-            )}
-          </div>
-          {/* Scroll Indicator */}
-          <div className="absolute right-0 top-0 bottom-0 w-8 flex items-center justify-end pr-1.5 bg-gradient-to-l from-slate-50/90 to-transparent pointer-events-none">
-            <ChevronRight className="w-4 h-4 text-slate-400 animate-pulse" />
-          </div>
-        </div>
-      </header>
+        </header>
       
-      <main className="flex-1 p-3.5 sm:p-6 max-w-7xl mx-auto w-full relative">
+      <main className="flex-1 p-3.5 sm:p-6 pb-24 md:pb-6 max-w-7xl mx-auto w-full relative">
         {user?.tenantId && !isConnected && (
           <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center pt-20 px-4">
              <div className="w-full max-w-3xl shadow-2xl rounded-2xl overflow-hidden ring-4 ring-white relative bg-white">
@@ -1248,7 +1162,59 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Floating Toast Message System (Góc dưới bên phải màn hình) */}
+      
+      {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-center justify-around px-2 h-16">
+          {hasPermission('appointment.view') && (
+            <button 
+              onClick={() => setActiveTab('appointments')}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'appointments' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Calendar className={`w-5 h-5 ${activeTab === 'appointments' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Lịch hẹn</span>
+            </button>
+          )}
+          {hasPermission('patient.view') && (
+            <button 
+              onClick={() => setActiveTab('patients')}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'patients' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Users className={`w-5 h-5 ${activeTab === 'patients' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Bệnh án</span>
+            </button>
+          )}
+          {hasPermission('service.manage') && (
+            <button 
+              onClick={() => setActiveTab('services')}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'services' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <LayoutList className={`w-5 h-5 ${activeTab === 'services' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Dịch vụ</span>
+            </button>
+          )}
+          {hasPermission('analytics.view') && (
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'analytics' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <BarChart3 className={`w-5 h-5 ${activeTab === 'analytics' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Thống kê</span>
+            </button>
+          )}
+          {hasPermission('setting.manage') && (
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'settings' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <SettingsIcon className={`w-5 h-5 ${activeTab === 'settings' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Cài đặt</span>
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* Floating Toast Message System */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
         {toasts.map((t) => (
           <div

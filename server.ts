@@ -16,6 +16,7 @@ import ttsRouter from "./server/api/tts/index.js";
 import patientsRouter from "./server/api/patients/index.js";
 import "./server/core/telegram.js"; // Initialize Telegram bot
 import { bootstrapSystem } from "./server/core/bootstrap.js";
+import { initReminderCronJob } from "./server/jobs/appointmentReminder.js";
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ async function startServer() {
     console.log(`[Server] Dental Smart Booking Engine running on http://localhost:${PORT}`);
     try {
       await bootstrapSystem();
+      initReminderCronJob();
       console.log("[Server] System bootstrapping completed.");
     } catch (err: any) {
       console.warn("[Server] Bootstrap non-critical warning:", err.message);

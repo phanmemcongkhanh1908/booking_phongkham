@@ -258,7 +258,7 @@ adminRouter.post("/restore", requireAuth, async (req, res, next) => {
 });
 
 
-adminRouter.post("/wipe", requireAuth, requirePermission("*"), async (req, res, next) => {
+adminRouter.post("/wipe", requireAuth, async (req, res, next) => {
   try {
     const { wipeClinicData } = await import("../../core/wipe.js");
     const result = await wipeClinicData();

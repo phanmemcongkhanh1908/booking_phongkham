@@ -42,6 +42,8 @@ import {
 import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import SyncDiagnosticModal from './components/SyncDiagnosticModal';
+import { forceSyncAppointmentsToSheet } from '../../lib/googleWorkspace';
 import { 
   findOrCreateClinicSpreadsheet, 
   syncAppointmentsToSheet, 
@@ -74,6 +76,7 @@ export default function Settings() {
   const [email, setEmail] = useState('');
   const [driveInfo, setDriveInfo] = useState<any>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
   const [googleStatusMsg, setGoogleStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualSheetInput, setManualSheetInput] = useState('');
@@ -230,7 +233,29 @@ export default function Settings() {
 
     try {
       const res = await api.post('/admin/wipe');
-      const successMessage = res.data?.message || 'Đã xóa sạch toàn bộ dữ liệu phòng khám thành công.';
+      let successMessage = res.data?.message || 'Đã xóa sạch toàn bộ dữ liệu phòng khám thành công.';
+      
+      // Clear Google Sheets if connected
+      const googleState = useGoogleAuthStore.getState();
+      if (googleState.accessToken && googleState.spreadsheetId) {
+         try {
+           const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${googleState.spreadsheetId}/values/Appointments:clear`, {
+             method: 'POST',
+             headers: {
+               'Authorization': `Bearer ${googleState.accessToken}`
+             }
+           });
+           if (sheetRes.ok) {
+              successMessage += ' Dữ liệu trên Google Sheets cũng đã được xóa sạch.';
+           } else {
+              console.warn('Could not clear Google Sheets:', await sheetRes.text());
+              successMessage += ' (Không thể tự động xóa dữ liệu trên Google Sheets, bạn có thể xóa thủ công).';
+           }
+         } catch(e) {
+           console.error('Error clearing Google Sheets:', e);
+         }
+      }
+
       setDataMsg(successMessage);
       setIsDataError(false);
       setIsWipeModalOpen(false);
@@ -366,6 +391,34 @@ export default function Settings() {
       });
     } finally {
       setIsSyncingAppointments(false);
+    }
+  };
+
+  
+  const handleForceSyncAllAppointments = async () => {
+    if (!googleToken) return;
+    try {
+      let targetSheetId = spreadsheetId;
+      if (!targetSheetId) {
+        const sheetInfo = await findOrCreateClinicSpreadsheet(googleToken, 'Dental Smart');
+        targetSheetId = sheetInfo.spreadsheetId;
+        setSpreadsheetInfo(sheetInfo.spreadsheetId, sheetInfo.spreadsheetUrl);
+      }
+      const res = await api.get('/appointments');
+      const allAppts = res.data?.data || [];
+      const syncResult = await forceSyncAppointmentsToSheet(allAppts, googleToken, targetSheetId);
+      const timeStr = new Date().toLocaleTimeString('vi-VN');
+      setLastSyncAt(timeStr);
+      setGoogleStatusMsg({
+        type: 'success',
+        text: `Đã làm mới đồng bộ thành công toàn bộ ${syncResult.count} lịch hẹn sang Google Sheets lúc ${timeStr}!`
+      });
+    } catch (e: any) {
+      console.error('Lỗi làm mới đồng bộ:', e);
+      setGoogleStatusMsg({
+        type: 'error',
+        text: 'Lỗi làm mới đồng bộ: ' + (e.message || 'Vui lòng kiểm tra quyền truy cập.')
+      });
     }
   };
 
@@ -1483,6 +1536,16 @@ export default function Settings() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  
+                  <Button
+                    onClick={() => setIsDiagnosticOpen(true)}
+                    variant="outline"
+                    className="text-xs font-semibold px-3 py-2 rounded-xl text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 gap-1.5"
+                  >
+                    <LayoutList className="w-3.5 h-3.5" />
+                    <span>Chẩn đoán Đồng bộ</span>
+                  </Button>
+
                   <Button
                     onClick={handleSyncAllAppointments}
                     disabled={isSyncingAppointments}
@@ -1609,6 +1672,13 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {isDiagnosticOpen && (
+        <SyncDiagnosticModal 
+          onClose={() => setIsDiagnosticOpen(false)}
+          onForceSyncAll={handleForceSyncAllAppointments}
+        />
+      )}
     </div>
   );
 }

@@ -180,7 +180,7 @@ export interface AppointmentNotificationData {
 }
 
 export async function sendPatientAppointmentEmail(
-  type: "CREATED" | "CONFIRMED" | "CANCELLED",
+  type: "CREATED" | "CONFIRMED" | "CANCELLED" | "REMINDER",
   data: AppointmentNotificationData
 ): Promise<boolean> {
   if (!data.patientEmail) {
@@ -216,12 +216,18 @@ export async function sendPatientAppointmentEmail(
     bannerColor = "#2563EB";
     statusBadge = `<span style="background-color: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 9999px; font-weight: bold; font-size: 13px;">ĐANG XỬ LÝ</span>`;
     messageIntro = `Hệ thống đã ghi nhận yêu cầu đặt lịch hẹn của quý khách. Bộ phận lễ tân sẽ liên hệ hoặc xác nhận trong thời gian sớm nhất.`;
+  } else if (type === "REMINDER") {
+    subject = `⏰ [Nhắc nhở] Lịch hẹn khám ngày mai tại ${clinicName}`;
+    bannerColor = "#F59E0B";
+    statusBadge = `<span style="background-color: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 9999px; font-weight: bold; font-size: 13px;">NHẮC NHỞ LỊCH HẸN</span>`;
+    messageIntro = `Đây là tin nhắn nhắc nhở bạn có một lịch hẹn sắp tới vào ngày mai tại phòng khám. Vui lòng có mặt đúng giờ để việc thăm khám được thuận lợi nhất!`;
   } else {
     subject = `⚠️ [Thông báo hủy] Lịch hẹn khám tại ${clinicName}`;
     bannerColor = "#DC2626";
     statusBadge = `<span style="background-color: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 9999px; font-weight: bold; font-size: 13px;">ĐÃ HỦY</span>`;
     messageIntro = `Lịch hẹn khám của quý khách đã được hủy bỏ theo yêu cầu hoặc lịch làm việc của phòng khám.`;
   }
+
 
   const html = `
     <!DOCTYPE html>
