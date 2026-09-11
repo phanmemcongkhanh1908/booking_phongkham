@@ -1,6 +1,6 @@
 import React, { useEffect, Suspense } from 'react';
 import { useBookingStore } from '../../store/booking';
-import { Link, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Link, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { 
   ShieldAlert, 
   Check, 
@@ -23,6 +23,8 @@ const SuccessView = React.lazy(() => import('./components/SuccessView'));
 
 export default function Booking() {
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
   const location = useLocation();
 
   const clinicProfile = useBookingStore(s => s.clinicProfile);
@@ -49,9 +51,12 @@ export default function Booking() {
   const patientDraft = useBookingStore(s => s.patientDraft);
   const announcementBanner = useBookingStore(s => s.announcementBanner);
 
+  const setTenantId = useBookingStore(s => s.setTenantId);
+
   useEffect(() => {
     // Tải cấu hình thông tin phòng khám & hồ sơ tiếp đón
-    api.get('/public/clinic-info')
+    const endpoint = slug ? `/public/clinic-info/${slug}` : '/public/clinic-info';
+    api.get(endpoint)
       .then(res => {
         if (res.data?.data?.clinicProfile) {
           setClinicProfile(res.data.data.clinicProfile);
@@ -62,21 +67,28 @@ export default function Booking() {
         if (res.data?.data?.announcementBanner) {
           setAnnouncementBanner(res.data.data.announcementBanner);
         }
+        if (res.data?.data?.tenantId !== undefined) {
+          setTenantId(res.data.data.tenantId);
+          // Gắn header mặc định cho axios để các API public gọi phía sau tự nhận diện tenantId
+          if (res.data.data.tenantId) {
+            api.defaults.headers.common['x-tenant-id'] = res.data.data.tenantId;
+          }
+        }
       })
       .catch(console.error);
-  }, [setClinicProfile, setBookingFormConfig, setAnnouncementBanner]);
+  }, [slug, setClinicProfile, setBookingFormConfig, setAnnouncementBanner, setTenantId]);
 
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
 
     if (currentPath === 'book' || currentPath === '') {
-      navigate('/book/dich-vu', { replace: true });
+      navigate(`${basePath}/dich-vu`, { replace: true });
     } else if (step >= 2 && !serviceId) {
-      navigate('/book/dich-vu', { replace: true });
+      navigate(`${basePath}/dich-vu`, { replace: true });
     } else if (step >= 3 && (!selectedDate || !sessionToken)) {
-      navigate('/book/chon-gio', { replace: true });
+      navigate(`${basePath}/chon-gio`, { replace: true });
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone)) {
-      navigate('/book/thong-tin', { replace: true });
+      navigate(`${basePath}/thong-tin`, { replace: true });
     }
   }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion]);
 
@@ -98,16 +110,16 @@ export default function Booking() {
   const handleStepClick = (targetStep: number) => {
     if (targetStep === 1) {
       setStepStore(1);
-      navigate('/book/dich-vu');
+      navigate(`${basePath}/dich-vu`);
     } else if (targetStep === 2 && serviceId) {
       setStepStore(2);
-      navigate('/book/chon-gio');
+      navigate(`${basePath}/chon-gio`);
     } else if (targetStep === 3 && serviceId && selectedDate && sessionToken) {
       setStepStore(3);
-      navigate('/book/thong-tin');
+      navigate(`${basePath}/thong-tin`);
     } else if (targetStep === 4 && serviceId && selectedDate && sessionToken && patientDraft?.fullName && patientDraft?.phone) {
       setStepStore(4);
-      navigate('/book/xac-nhan');
+      navigate(`${basePath}/xac-nhan`);
     }
   };
 

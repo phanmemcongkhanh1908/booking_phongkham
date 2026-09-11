@@ -24,6 +24,7 @@ export default function App() {
           {/* Public Routes */}
           <Route path="/" element={<Navigate to="/book" replace />} />
           <Route path="/book/*" element={<PublicBooking />} />
+          <Route path="/booking/:slug/*" element={<PublicBooking />} />
           <Route path="/lich-hen-cua-toi" element={<MyBooking />} />
           <Route path="/admin/login" element={<Login />} />
           

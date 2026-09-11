@@ -17,6 +17,8 @@ const CreateUserSchema = z.object({
   password: z.string().min(6, "Mật khẩu phải từ 6 ký tự trở lên").optional(),
   roleId: z.string().optional(),
   permissions: z.array(z.string()).optional(),
+  uiMode: z.string().optional(),
+  slug: z.string().optional(),
 }).refine(data => !!(data.username?.trim() || data.email?.trim()), {
   message: "Vui lòng nhập tên tài khoản hoặc email",
 });
@@ -25,6 +27,8 @@ const UpdateUserSchema = z.object({
   password: z.string().min(6, "Mật khẩu phải từ 6 ký tự trở lên").optional(),
   isActive: z.boolean().optional(),
   permissions: z.array(z.string()).optional(),
+  uiMode: z.string().optional(),
+  slug: z.string().optional(),
 });
 
 usersRouter.get("/", requirePermission("user.create"), async (req, res, next) => {
@@ -40,6 +44,8 @@ usersRouter.get("/", requirePermission("user.create"), async (req, res, next) =>
         permissions: users.permissions,
         rolePermissions: roles.permissions,
         tenantId: users.tenantId,
+        uiMode: users.uiMode,
+        slug: users.slug,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id));
@@ -61,7 +67,7 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     console.log("[Users API] Request body keys:", Object.keys(req.body));
     console.log("[Users API] Initiator user ID:", req.user?.userId, "Tenant:", req.user?.tenantId);
     
-    const { email, username, password, roleId, permissions } = CreateUserSchema.parse(req.body);
+    const { email, username, password, roleId, permissions, uiMode, slug } = CreateUserSchema.parse(req.body);
     const rawIdentifier = (username || email || "").trim();
     const identifier = rawIdentifier.toLowerCase();
     
@@ -133,6 +139,8 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       tenantId: newTenantId,
       isActive: true,
       permissions: permissions || [],
+      uiMode,
+      slug,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }).returning();
@@ -148,6 +156,8 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
         username: rawIdentifier,
         isActive: true,
         permissions: permissions || [],
+      uiMode,
+      slug,
       },
     });
   } catch (error) {
@@ -159,7 +169,7 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
 usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next) => {
   try {
     const userId = req.params.id;
-    const { password, isActive, permissions } = UpdateUserSchema.parse(req.body);
+    const { password, isActive, permissions, uiMode, slug } = UpdateUserSchema.parse(req.body);
 
     const existingUsers = await db.select().from(users).where(eq(users.id, userId));
     if (existingUsers.length === 0) {
@@ -179,6 +189,8 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
     if (typeof isActive === 'boolean') {
       updateData.isActive = isActive;
     }
+    if (uiMode !== undefined) updateData.uiMode = uiMode;
+    if (slug !== undefined) updateData.slug = slug;
     if (permissions) {
       updateData.permissions = permissions;
     }

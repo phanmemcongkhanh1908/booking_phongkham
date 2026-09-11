@@ -10,6 +10,7 @@ export interface PatientDraft {
 }
 
 interface BookingState {
+  tenantId: string | null;
   step: number;
   serviceId: string | null;
   serviceName: string | null;
@@ -55,6 +56,7 @@ interface BookingState {
     quickNotesTags?: string[];
   } | null;
   
+  setTenantId: (id: string | null) => void;
   setStep: (step: number) => void;
   setService: (id: string, name: string, price?: number | null, duration?: number | null, isFree?: boolean | null, showPrice?: boolean | null) => void;
   clearHold: () => void;
@@ -84,6 +86,7 @@ const initialPatientDraft: PatientDraft = {
 };
 
 export const useBookingStore = create<BookingState>((set, get) => ({
+  tenantId: null,
   step: 1,
   serviceId: null,
   serviceName: null,
@@ -109,6 +112,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   clinicProfile: null,
   bookingFormConfig: null,
 
+  setTenantId: (id) => set({ tenantId: id }),
   setStep: (step) => set({ step }),
   setClinicProfile: (profile) => set({ clinicProfile: profile }),
   setBookingFormConfig: (config) => set({ bookingFormConfig: config }),
@@ -171,6 +175,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   }),
 
   reset: () => set({
+  tenantId: null,
     step: 1,
     serviceId: null,
     serviceName: null,

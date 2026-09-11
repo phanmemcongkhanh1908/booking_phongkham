@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useHoldSlot, Slot } from '../../../hooks/useHoldSlot';
 
 interface DaySummary {
@@ -66,6 +66,8 @@ export default function DateTimeSelection() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
 
   // Generate 28 next days
   const nextDays = Array.from({ length: 28 }).map((_, i) => addDays(startOfToday(), i));
@@ -214,7 +216,7 @@ export default function DateTimeSelection() {
 
     if (res.success) {
       setStep(3);
-      navigate('/book/thong-tin');
+      navigate(`${basePath}/x`);
     } else {
       // Làm mới lại danh sách slot nếu slot bị conflict
       fetchSlots(selectedDate);
@@ -364,7 +366,7 @@ export default function DateTimeSelection() {
           <div className="flex items-start gap-4">
             <button
               type="button"
-              onClick={() => { setStep(1); navigate('/book/dich-vu'); }}
+              onClick={() => { setStep(1); navigate(`${basePath}/x`); }}
               className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 transition-colors mt-0.5 cursor-pointer"
               title="Quay lại chọn dịch vụ"
             >

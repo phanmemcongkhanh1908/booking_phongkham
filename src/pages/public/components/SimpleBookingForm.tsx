@@ -7,7 +7,7 @@ import { vi } from 'date-fns/locale';
 import { 
   Stethoscope, Calendar as CalendarIcon, Clock, User, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 interface Service {
   id: string;
@@ -28,6 +28,8 @@ interface Slot {
 
 export default function SimpleBookingForm() {
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
   
   // States
   const [services, setServices] = useState<Service[]>([]);
@@ -133,7 +135,7 @@ export default function SimpleBookingForm() {
           res.data.data.telegramBotUsername
         );
         setStepStore(5);
-        navigate('/book/hoan-tat');
+        navigate(`${basePath}/hoan-tat`);
         toast.success('Đặt lịch thành công!');
       } else {
         toast.error('Khung giờ này đã có người đặt, vui lòng chọn lại.');

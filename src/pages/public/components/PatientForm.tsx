@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 const DEFAULT_QUICK_TAGS = [
   'Đang đau nhức / Ê buốt',
@@ -43,6 +43,8 @@ export default function PatientForm() {
     setPatientDraft
   } = useBookingStore();
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
 
   const showNotificationChannels = bookingFormConfig?.showNotificationChannels !== false;
   const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;
@@ -170,7 +172,7 @@ export default function PatientForm() {
     });
 
     setStep(4);
-    navigate('/book/xac-nhan');
+    navigate(`${basePath}/xac-nhan`);
   };
 
   return (
@@ -181,7 +183,7 @@ export default function PatientForm() {
           <div className="flex items-start gap-4">
             <button 
               type="button"
-              onClick={() => { setStep(2); navigate('/book/chon-gio'); }} 
+              onClick={() => { setStep(2); navigate(`${basePath}/chon-gio`); }} 
               className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 transition-colors mt-0.5"
               title="Quay lại chọn giờ"
             >

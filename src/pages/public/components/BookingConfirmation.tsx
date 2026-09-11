@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 export default function BookingConfirmation() {
   const { 
@@ -38,6 +38,8 @@ export default function BookingConfirmation() {
     bookingFormConfig 
   } = useBookingStore();
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +49,11 @@ export default function BookingConfirmation() {
   useEffect(() => {
     if (!sessionToken || !slotStartTime || !patientDraft?.fullName || !patientDraft?.phone) {
       if (!serviceId) {
-        navigate('/book/dich-vu');
+        navigate(`${basePath}/dich-vu`);
       } else if (!sessionToken || !slotStartTime) {
-        navigate('/book/chon-gio');
+        navigate(`${basePath}/chon-gio`);
       } else {
-        navigate('/book/thong-tin');
+        navigate(`${basePath}/thong-tin`);
       }
     }
   }, [sessionToken, slotStartTime, patientDraft, serviceId, navigate]);
@@ -120,10 +122,10 @@ export default function BookingConfirmation() {
             patientDraft.telegramId || null,
             appointmentData.telegramBotUsername || null
           );
-          navigate('/book/hoan-tat');
+          navigate(`${basePath}/hoan-tat`);
         } else {
           setStep(5);
-          navigate('/book/hoan-tat');
+          navigate(`${basePath}/hoan-tat`);
         }
       } else {
         // Lỗi trả về từ backend nhưng không ném exception
@@ -164,7 +166,7 @@ export default function BookingConfirmation() {
               type="button"
               onClick={() => {
                 setStep(3);
-                navigate('/book/thong-tin');
+                navigate(`${basePath}/thong-tin`);
               }}
               className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 transition-colors mt-0.5 cursor-pointer"
               title="Quay lại chỉnh sửa thông tin"
@@ -212,7 +214,7 @@ export default function BookingConfirmation() {
                 type="button"
                 onClick={() => {
                   setStep(2);
-                  navigate('/book/chon-gio');
+                  navigate(`${basePath}/chon-gio`);
                 }}
                 className="mt-2 text-xs font-bold text-red-700 underline hover:text-red-900 cursor-pointer"
               >
@@ -238,7 +240,7 @@ export default function BookingConfirmation() {
                 type="button"
                 onClick={() => {
                   setStep(1);
-                  navigate('/book/dich-vu');
+                  navigate(`${basePath}/dich-vu`);
                 }}
                 className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 cursor-pointer"
               >
@@ -283,7 +285,7 @@ export default function BookingConfirmation() {
                 type="button"
                 onClick={() => {
                   setStep(2);
-                  navigate('/book/chon-gio');
+                  navigate(`${basePath}/chon-gio`);
                 }}
                 className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 cursor-pointer"
               >
@@ -326,7 +328,7 @@ export default function BookingConfirmation() {
                 type="button"
                 onClick={() => {
                   setStep(3);
-                  navigate('/book/thong-tin');
+                  navigate(`${basePath}/thong-tin`);
                 }}
                 className="text-xs font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 cursor-pointer"
               >

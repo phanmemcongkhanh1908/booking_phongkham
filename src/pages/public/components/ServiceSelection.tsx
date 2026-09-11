@@ -16,7 +16,7 @@ import {
   AlertCircle,
   RefreshCw
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 interface Service {
   id: string;
@@ -39,6 +39,8 @@ export default function ServiceSelection() {
   const setService = useBookingStore(state => state.setService);
   const clearHold = useBookingStore(state => state.clearHold);
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
 
   const fetchServices = async () => {
     setLoading(true);
@@ -100,7 +102,7 @@ export default function ServiceSelection() {
       clearHold();
     }
     setService(svc.id, svc.name, svc.price, svc.durationMins, svc.isFree, svc.showPrice);
-    navigate('/book/chon-gio');
+    navigate(`${basePath}/chon-gio`);
   };
 
   if (loading) {

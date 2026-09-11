@@ -25,7 +25,7 @@ import { toPng } from 'html-to-image';
 import { format, addMinutes } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import api from '../../../services/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 export default function SuccessView() {
   const { 
@@ -43,6 +43,8 @@ export default function SuccessView() {
   } = useBookingStore();
 
   const navigate = useNavigate();
+  const { slug } = useParams();
+  const basePath = slug ? `/booking/${slug}` : '/book';
   const ticketRef = useRef<HTMLDivElement>(null);
   const [emailInput, setEmailInput] = useState(patientEmail || '');
   const [emailSent, setEmailSent] = useState(Boolean(patientEmail));
@@ -132,7 +134,7 @@ export default function SuccessView() {
 
   const handleNewBooking = () => {
     reset();
-    navigate('/book/dich-vu');
+    navigate(`${basePath}/dich-vu`);
   };
 
   return (
