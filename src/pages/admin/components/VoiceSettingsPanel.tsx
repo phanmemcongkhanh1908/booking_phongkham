@@ -84,12 +84,12 @@ export default function VoiceSettingsPanel() {
                 <Loader2 className="w-4 h-4 animate-spin" /> Đang kiểm tra...
               </div>
             ) : ttsStatus?.enabled ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                   Đã kết nối máy chủ
                 </div>
-                <div className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-mono">
+                <div className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-mono break-all sm:break-normal w-max max-w-full">
                   {ttsStatus.providers.join(', ')}
                 </div>
               </div>
@@ -133,8 +133,9 @@ export default function VoiceSettingsPanel() {
           </div>
           
           <div className="mt-4 pt-4 border-t border-slate-100">
-            <a href="/kiem-tra-giong-doc.html" target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 w-max">
-              <Globe className="w-4 h-4" /> Công cụ chẩn đoán giọng đọc của máy tính (Dự phòng)
+            <a href="/kiem-tra-giong-doc.html" target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 w-full sm:w-max flex-wrap">
+              <Globe className="w-4 h-4 shrink-0" /> 
+              <span>Công cụ chẩn đoán giọng đọc của máy tính (Dự phòng)</span>
             </a>
           </div>
         </div>

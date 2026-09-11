@@ -13,6 +13,17 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+
+  React.useEffect(() => {
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    const savedPassword = localStorage.getItem('rememberedPassword');
+    if (savedEmail && savedPassword) {
+      setEmail(savedEmail);
+      setPassword(savedPassword);
+      setRememberMe(true);
+    }
+  }, []);
   const setAuth = useAuthStore(state => state.setAuth);
   const navigate = useNavigate();
 
@@ -25,6 +36,13 @@ export default function Login() {
       const res = await api.post('/auth/login', { email, password });
       if (res.data.success) {
         setAuth(res.data.data.token, res.data.data.user);
+        if (rememberMe) {
+          localStorage.setItem('rememberedEmail', email);
+          localStorage.setItem('rememberedPassword', password);
+        } else {
+          localStorage.removeItem('rememberedEmail');
+          localStorage.removeItem('rememberedPassword');
+        }
         navigate('/admin/dashboard');
       }
     } catch (err: any) {
@@ -85,6 +103,19 @@ export default function Login() {
                   )}
                 </button>
               </div>
+            </div>
+            
+            <div className="flex items-center space-x-2 pb-1">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="rounded border-slate-300 text-primary focus:ring-teal-600 h-4 w-4 cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="text-sm text-text-muted cursor-pointer select-none">
+                Ghi nhớ tài khoản và mật khẩu
+              </label>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Đang xử lý...' : 'Đăng nhập'}

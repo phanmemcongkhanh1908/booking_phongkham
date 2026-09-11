@@ -60,6 +60,7 @@ declare global {
 export default function Settings() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
+  const isSimpleMode = user?.uiMode === 'simple';
   const { 
     isConnected: isGoogleConnected, 
     accessToken: googleToken, 
@@ -513,11 +514,13 @@ export default function Settings() {
   };
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <div className="col-span-1 md:col-span-2"><VoiceSettingsPanel /></div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 w-full max-w-full overflow-x-hidden">
+      {!isSimpleMode && (
+        <>
+          <div className="col-span-1 md:col-span-2"><VoiceSettingsPanel /></div>
 
-      {/* Telegram Config */}
-      <Card className="col-span-1">
+          {/* Telegram Config */}
+          <Card className="col-span-1">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Send className="w-5 h-5 text-blue-500" />
@@ -637,8 +640,8 @@ export default function Settings() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2 space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
+              <div className="sm:col-span-2 space-y-1">
                 <label className="text-[11px] font-semibold text-text-main">Máy chủ SMTP (Host)</label>
                 <Input 
                   type="text" 
@@ -694,13 +697,13 @@ export default function Settings() {
             </div>
 
             {/* Test Email Row */}
-            <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
               <Input 
                 type="email" 
                 placeholder="Email nhận thư thử nghiệm..." 
                 value={testRecipient} 
                 onChange={e => setTestRecipient(e.target.value)} 
-                className="text-xs h-8 flex-1"
+                className="text-xs h-8 flex-1 w-full"
               />
               <Button 
                 type="button" 
@@ -708,7 +711,7 @@ export default function Settings() {
                 size="sm"
                 onClick={handleTestEmail} 
                 disabled={emailTesting || !emailConfig.host || !emailConfig.user}
-                className="text-xs h-8 shrink-0"
+                className="text-xs h-8 shrink-0 w-full sm:w-auto"
               >
                 {emailTesting ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : <Mail className="w-3 h-3 mr-1" />}
                 Kiểm tra & Gửi thử
@@ -786,6 +789,8 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
+        </>
+      )}
 
       {/* Clinic Info */}
       <Card>
@@ -1126,20 +1131,20 @@ export default function Settings() {
 
             {/* Live Preview Box */}
             <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50/30 p-4 sm:p-5 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 uppercase tracking-wider">
-                <Sparkles className="w-4 h-4 text-teal-600" />
-                Mô phỏng hiển thị trên trang bệnh nhân (Live Preview):
+              <div className="flex sm:items-center gap-1.5 text-xs font-bold text-teal-800 uppercase tracking-wider flex-wrap">
+                <Sparkles className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Mô phỏng hiển thị trên trang bệnh nhân (Live Preview):</span>
               </div>
               
               <div className="rounded-xl bg-white p-4 border border-slate-200/90 shadow-xs space-y-4 text-xs">
                 {/* Notification Channels Preview */}
                 {bookingFormConfig.showNotificationChannels ? (
-                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex items-center justify-between">
-                    <span className="font-semibold text-teal-900 flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-teal-600" />
-                      Kênh nhận vé khám & nhắc hẹn thông minh (Email & Telegram): ĐANG HIỂN THỊ
+                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="font-semibold text-teal-900 flex items-start sm:items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5 sm:mt-0" />
+                      <span>Kênh nhận vé khám & nhắc hẹn thông minh (Email & Telegram): ĐANG HIỂN THỊ</span>
                     </span>
-                    <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded border border-teal-200">
+                    <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded border border-teal-200 w-max">
                       Bệnh nhân có thể nhập
                     </span>
                   </div>
@@ -1151,13 +1156,13 @@ export default function Settings() {
 
                 {/* Hold Countdown Timer Preview */}
                 {bookingFormConfig.showHoldCountdown ? (
-                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex items-center justify-between">
-                    <span className="font-semibold text-teal-900 flex items-center gap-2">
-                      <Timer className="w-3.5 h-3.5 text-teal-600" />
-                      Thời gian giữ chỗ riêng 5 phút: ĐANG HIỂN THỊ
+                  <div className="p-3 rounded-lg bg-teal-50/50 border border-teal-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="font-semibold text-teal-900 flex items-start sm:items-center gap-2">
+                      <Timer className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5 sm:mt-0" />
+                      <span>Thời gian giữ chỗ riêng 5 phút: ĐANG HIỂN THỊ</span>
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
-                      <Lock className="w-3 h-3" />
+                    <span className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200 w-max">
+                      <Lock className="w-3 h-3 shrink-0" />
                       Giữ chỗ riêng: 4:51
                     </span>
                   </div>
@@ -1192,10 +1197,12 @@ export default function Settings() {
       </Card>
 
       {/* Data Management */}
-      <Card className="col-span-1 md:col-span-2">
-        <CardHeader>
-          <CardTitle>Quản lý Dữ liệu</CardTitle>
-        </CardHeader>
+      {!isSimpleMode && (
+        <>
+        <Card className="col-span-1 md:col-span-2">
+          <CardHeader>
+            <CardTitle>Quản lý Dữ liệu</CardTitle>
+          </CardHeader>
         <CardContent className="space-y-4">
           {dataMsg && (
             <div className={`text-sm p-3 rounded-lg border flex items-center gap-2 ${
@@ -1356,13 +1363,13 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-border-subtle">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-3 pt-4 border-t border-border-subtle">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsWipeModalOpen(false)}
                 disabled={isWiping}
-                className="text-xs"
+                className="text-xs w-full sm:w-auto"
               >
                 Hủy bỏ
               </Button>
@@ -1375,7 +1382,7 @@ export default function Settings() {
                    wipeConfirmInput.trim().toUpperCase() !== 'WIPE') ||
                   isWiping
                 }
-                className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
               >
                 {isWiping ? (
                   <>
@@ -1393,6 +1400,8 @@ export default function Settings() {
           </div>
         </div>
       )}
+      </>
+      )}
 
       {/* Google Workspace Integration & Backup */}
       <Card className="col-span-1 md:col-span-2 border-slate-200 overflow-hidden shadow-sm">
@@ -1404,15 +1413,15 @@ export default function Settings() {
               }`}>
                 {isGoogleConnected ? <Cloud className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
               </div>
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  Tích hợp Google Workspace & Sao lưu dự phòng
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-sm sm:text-base flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <span className="leading-tight">Tích hợp Google Workspace & Sao lưu dự phòng</span>
                   {isGoogleConnected ? (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap shrink-0">
                       Đang bảo vệ kép
                     </span>
                   ) : (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                    <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shrink-0">
                       Chưa kích hoạt
                     </span>
                   )}
@@ -1462,12 +1471,12 @@ export default function Settings() {
           )}
 
           {!isGoogleConnected ? (
-            <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-6 sm:p-8 text-center space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
-                <Cloud className="w-8 h-8" />
+            <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/40 p-4 sm:p-8 text-center space-y-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+                <Cloud className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
               <div className="max-w-md mx-auto space-y-1">
-                <h4 className="text-base font-bold text-slate-900">Chưa liên kết tài khoản Google</h4>
+                <h4 className="text-sm sm:text-base font-bold text-slate-900">Chưa liên kết tài khoản Google</h4>
                 <p className="text-xs text-slate-600">
                   Nhấn nút bên dưới để đăng nhập tài khoản Google của bạn. Hệ thống sẽ tự động tạo bảng tính Google Sheets và thư mục Google Drive chuyên dụng cho Dental Smart.
                 </p>
@@ -1477,11 +1486,11 @@ export default function Settings() {
                 <Button 
                   onClick={handleConnectGoogle} 
                   disabled={isConnectingGoogle}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md gap-2"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 sm:px-6 py-2.5 rounded-xl shadow-md gap-1 sm:gap-2 h-auto flex-wrap justify-center text-xs sm:text-sm"
                 >
-                  <Cloud className="w-4 h-4" />
-                  <span>{isConnectingGoogle ? 'Đang mở đăng nhập Google...' : 'Kết nối Google Drive & Sheets ngay'}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <Cloud className="w-4 h-4 shrink-0" />
+                  <span className="text-center">{isConnectingGoogle ? 'Đang mở đăng nhập...' : 'Kết nối Google Drive & Sheets ngay'}</span>
+                  <ArrowRight className="w-4 h-4 shrink-0 hidden sm:block" />
                 </Button>
               </div>
 
@@ -1535,23 +1544,23 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3 sm:mt-0">
                   
                   <Button
                     onClick={() => setIsDiagnosticOpen(true)}
                     variant="outline"
-                    className="text-xs font-semibold px-3 py-2 rounded-xl text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 gap-1.5"
+                    className="text-xs font-semibold px-3 py-2 rounded-xl text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 gap-1.5 w-full sm:w-auto"
                   >
-                    <LayoutList className="w-3.5 h-3.5" />
+                    <LayoutList className="w-3.5 h-3.5 shrink-0" />
                     <span>Chẩn đoán Đồng bộ</span>
                   </Button>
 
                   <Button
                     onClick={handleSyncAllAppointments}
                     disabled={isSyncingAppointments}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs gap-1.5"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs gap-1.5 w-full sm:w-auto"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAppointments ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isSyncingAppointments ? 'animate-spin' : ''}`} />
                     <span>{isSyncingAppointments ? 'Đang đồng bộ...' : 'Đồng bộ toàn bộ lịch hẹn'}</span>
                   </Button>
                 </div>
@@ -1595,19 +1604,19 @@ export default function Settings() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2">
                       <Input
                         placeholder="Nhập ID Spreadsheet nếu muốn thay đổi..."
                         value={manualSheetInput}
                         onChange={(e) => setManualSheetInput(e.target.value)}
-                        className="text-xs h-8"
+                        className="text-xs h-8 flex-1 w-full"
                       />
                       <Button
                         type="button"
                         variant="outline"
                         onClick={handleSaveManualSheet}
                         disabled={!manualSheetInput.trim()}
-                        className="text-xs h-8 shrink-0"
+                        className="text-xs h-8 shrink-0 w-full sm:w-auto"
                       >
                         Lưu ID
                       </Button>

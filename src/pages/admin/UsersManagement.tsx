@@ -1,40 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
-import { 
+import {  
   Users, ShieldCheck, Key, Lock, Unlock, X, Edit, 
   Plus, CheckCircle2, AlertTriangle, RefreshCw, Loader2
-} from 'lucide-react';
+, Eye, EyeOff } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 
 const PERMISSION_MATRIX = [
   {
-    module: 'Hệ thống (Quản trị cao cấp)',
+    module: 'Quản trị hệ thống (Root)',
     permissions: [
       { id: '*', label: 'Toàn quyền (Super Admin)' },
     ]
   },
   {
-    module: 'Lịch hẹn & Khách hàng',
+    module: 'Lễ tân & CSKH',
     permissions: [
-      { id: 'appointment.view', label: 'Xem danh sách' },
-      { id: 'appointment.create', label: 'Thêm lịch hẹn' },
-      { id: 'appointment.update', label: 'Cập nhật & Xóa' },
-      { id: 'patient.view', label: 'Hồ sơ bệnh nhân' },
+      { id: 'appointment.view', label: 'Xem lịch hẹn' },
+      { id: 'appointment.create', label: 'Thêm/Sửa lịch' },
+      { id: 'appointment.update', label: 'Xóa lịch hẹn' },
+      { id: 'patient.view', label: 'Xem/Thêm hồ sơ bệnh nhân' },
     ]
   },
   {
-    module: 'Vận hành & Dữ liệu',
+    module: 'Bác sĩ & Lâm sàng',
     permissions: [
-      { id: 'service.manage', label: 'Dịch vụ & Bác sĩ' },
-      { id: 'analytics.view', label: 'Thống kê & Báo cáo' },
+      { id: 'clinical.view', label: 'Xem hồ sơ bệnh án' },
+      { id: 'clinical.edit', label: 'Chỉnh sửa/Cập nhật bệnh án' },
+      { id: 'xray.view', label: 'Xem phim X-Quang' },
     ]
   },
   {
-    module: 'Cài đặt hệ thống',
+    module: 'Quản lý phòng khám',
     permissions: [
+      { id: 'service.manage', label: 'Quản lý dịch vụ' },
+      { id: 'analytics.view', label: 'Xem báo cáo doanh thu' },
       { id: 'user.create', label: 'Quản lý nhân sự' },
-      { id: 'setting.manage', label: 'Cấu hình chung' },
+      { id: 'setting.manage', label: 'Cấu hình hệ thống' },
     ]
   }
 ];
@@ -51,7 +54,11 @@ export default function UsersManagement() {
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['*']);
+  const [uiMode, setUiMode] = useState<'full' | 'simple'>('full');
   
   const [msg, setMsg] = useState('');
   const [isError, setIsError] = useState(false);
@@ -79,7 +86,11 @@ export default function UsersManagement() {
     setEditingUserId(null);
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setSelectedPermissions(['*']);
+    setUiMode('full');
     setMsg('');
     setIsError(false);
     setShowModal(true);
@@ -93,6 +104,7 @@ export default function UsersManagement() {
     
     const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
     setSelectedPermissions(hasAll ? ['*'] : (u.permissions || []));
+    setUiMode(u.uiMode || 'full');
     
     setMsg('');
     setIsError(false);
@@ -101,6 +113,14 @@ export default function UsersManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (modalMode === 'create' && password !== confirmPassword) {
+      alert('Mật khẩu xác nhận không khớp!');
+      return;
+    }
+    if (modalMode === 'edit' && password && password !== confirmPassword) {
+      alert('Mật khẩu xác nhận không khớp!');
+      return;
+    }
     setIsSubmitting(true);
     setMsg('');
     setIsError(false);
@@ -112,11 +132,12 @@ export default function UsersManagement() {
           username: trimmedIdentifier,
           email: trimmedIdentifier,
           password,
-          permissions: selectedPermissions
+          permissions: selectedPermissions,
+          uiMode
         });
         setMsg(`Tạo tài khoản '${trimmedIdentifier}' thành công!`);
       } else {
-        const updateData: any = { permissions: selectedPermissions };
+        const updateData: any = { permissions: selectedPermissions, uiMode };
         if (password) {
           updateData.password = password.trim();
         }
@@ -338,6 +359,19 @@ export default function UsersManagement() {
                   required={modalMode === 'create'}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Cấu hình Giao diện hiển thị</label>
+                <select
+                  value={uiMode}
+                  onChange={(e) => setUiMode(e.target.value as 'full' | 'simple')}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                >
+                  <option value="full">Giao diện đầy đủ (Nâng cao)</option>
+                  <option value="simple">Giao diện đơn giản (Tối giản chức năng)</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Cấu hình này sẽ áp dụng riêng cho phòng khám (tenant) của tài khoản này.</p>
               </div>
 
               <div className="space-y-2">

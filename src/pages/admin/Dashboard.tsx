@@ -20,6 +20,7 @@ import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings 
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
+  const isSimpleMode = user?.uiMode === 'simple';
   const { hasPermission } = usePermissions();
   const { isConnected, init: initGoogleAuth } = useGoogleAuthStore();
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -415,7 +416,7 @@ export default function Dashboard() {
                 Hồ sơ Bệnh án
               </button>
             )}
-            {hasPermission('service.manage') && (
+            {!isSimpleMode && hasPermission('service.manage') && (
               <button 
                 onClick={() => setActiveTab('services')}
                 className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
@@ -428,7 +429,7 @@ export default function Dashboard() {
                 Dịch vụ & Lịch
               </button>
             )}
-            {hasPermission('analytics.view') && (
+            {!isSimpleMode && hasPermission('analytics.view') && (
               <button 
                 onClick={() => setActiveTab('analytics')}
                 className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
@@ -613,91 +614,93 @@ export default function Dashboard() {
         {activeTab === 'patients' && <Patients />}
         {activeTab === 'appointments' && (
           <>
-            <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-2 lg:grid-cols-4 mb-6 sm:mb-8">
-              <button
-                type="button"
-                onClick={() => setStatusFilter(prev => prev === 'TODAY' ? 'ALL' : 'TODAY')}
-                className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-blue-300 ${
-                  statusFilter === 'TODAY' 
-                    ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/10' 
-                    : 'border-border-subtle'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Lịch hẹn hôm nay</h3>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {!isSimpleMode && (
+              <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-2 lg:grid-cols-4 mb-6 sm:mb-8">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(prev => prev === 'TODAY' ? 'ALL' : 'TODAY')}
+                  className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-blue-300 ${
+                    statusFilter === 'TODAY' 
+                      ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/10' 
+                      : 'border-border-subtle'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2 sm:mb-3">
+                    <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Lịch hẹn hôm nay</h3>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                      <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-2xl sm:text-3xl font-extrabold text-text-main leading-tight">{stats.today}</p>
-                  <span className="text-[10px] sm:text-[11px] font-medium text-text-muted">Tổng: {appointments.length}</span>
-                </div>
-                <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Ngày {format(new Date(), 'dd/MM/yyyy')}</p>
-              </button>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-text-main leading-tight">{stats.today}</p>
+                    <span className="text-[10px] sm:text-[11px] font-medium text-text-muted">Tổng: {appointments.length}</span>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Ngày {format(new Date(), 'dd/MM/yyyy')}</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('patients')}
-                className="text-left rounded-2xl border border-border-subtle bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-emerald-300"
-              >
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Bệnh nhân mới</h3>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                    <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('patients')}
+                  className="text-left rounded-2xl border border-border-subtle bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-emerald-300"
+                >
+                  <div className="flex items-center justify-between mb-2 sm:mb-3">
+                    <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Bệnh nhân mới</h3>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+                      <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-2xl sm:text-3xl font-extrabold text-text-main leading-tight">{stats.newPatients}</p>
-                  <span className="text-[10px] sm:text-[11px] font-medium text-text-muted">Xem DS &rarr;</span>
-                </div>
-                <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Tháng {format(new Date(), 'MM/yyyy')}</p>
-              </button>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-text-main leading-tight">{stats.newPatients}</p>
+                    <span className="text-[10px] sm:text-[11px] font-medium text-text-muted">Xem DS &rarr;</span>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Tháng {format(new Date(), 'MM/yyyy')}</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setStatusFilter(prev => prev === 'PENDING' ? 'ALL' : 'PENDING')}
-                className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-amber-300 ${
-                  statusFilter === 'PENDING' 
-                    ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/10' 
-                    : 'border-border-subtle'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Chờ xác nhận</h3>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(prev => prev === 'PENDING' ? 'ALL' : 'PENDING')}
+                  className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-amber-300 ${
+                    statusFilter === 'PENDING' 
+                      ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/10' 
+                      : 'border-border-subtle'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2 sm:mb-3">
+                    <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Chờ xác nhận</h3>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                      <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-2xl sm:text-3xl font-extrabold text-amber-600 leading-tight">{stats.pending}</p>
-                  {stats.pending > 0 && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Cần duyệt</span>}
-                </div>
-                <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Lịch chờ tiếp nhận</p>
-              </button>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-amber-600 leading-tight">{stats.pending}</p>
+                    {stats.pending > 0 && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Cần duyệt</span>}
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Lịch chờ tiếp nhận</p>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setStatusFilter(prev => prev === 'CHECKED_IN' ? 'ALL' : 'CHECKED_IN')}
-                className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-teal-300 ${
-                  statusFilter === 'CHECKED_IN' 
-                    ? 'border-teal-500 ring-2 ring-teal-500/20 bg-teal-50/10' 
-                    : 'border-border-subtle'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Đã Check-in</h3>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
-                    <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(prev => prev === 'CHECKED_IN' ? 'ALL' : 'CHECKED_IN')}
+                  className={`text-left rounded-2xl border bg-surface p-3.5 sm:p-5 shadow-soft flex flex-col justify-between transition-all cursor-pointer hover:border-teal-300 ${
+                    statusFilter === 'CHECKED_IN' 
+                      ? 'border-teal-500 ring-2 ring-teal-500/20 bg-teal-50/10' 
+                      : 'border-border-subtle'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2 sm:mb-3">
+                    <h3 className="text-xs sm:text-sm font-semibold text-text-muted">Đã Check-in</h3>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
+                      <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-2xl sm:text-3xl font-extrabold text-primary leading-tight">{stats.checkedIn}</p>
-                  {stats.checkedIn > 0 && <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">Tại phòng</span>}
-                </div>
-                <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Bệnh nhân đã đến</p>
-              </button>
-            </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-primary leading-tight">{stats.checkedIn}</p>
+                    {stats.checkedIn > 0 && <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">Tại phòng</span>}
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-text-muted mt-1">Bệnh nhân đã đến</p>
+                </button>
+              </div>
+            )}
 
             <div className="rounded-2xl sm:rounded-card border border-border-subtle bg-surface shadow-soft overflow-hidden">
               <div className="p-3.5 sm:p-4 border-b border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-bg-base">
@@ -1165,11 +1168,11 @@ export default function Dashboard() {
       
       {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-center justify-around px-2 h-16">
+        <div className="flex items-center justify-start sm:justify-around px-2 h-16 overflow-x-auto gap-2">
           {hasPermission('appointment.view') && (
             <button 
               onClick={() => setActiveTab('appointments')}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'appointments' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'appointments' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <Calendar className={`w-5 h-5 ${activeTab === 'appointments' ? 'fill-primary/20' : ''}`} />
               <span className="text-[10px] font-semibold">Lịch hẹn</span>
@@ -1178,34 +1181,43 @@ export default function Dashboard() {
           {hasPermission('patient.view') && (
             <button 
               onClick={() => setActiveTab('patients')}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'patients' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'patients' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <Users className={`w-5 h-5 ${activeTab === 'patients' ? 'fill-primary/20' : ''}`} />
               <span className="text-[10px] font-semibold">Bệnh án</span>
             </button>
           )}
-          {hasPermission('service.manage') && (
+          {!isSimpleMode && hasPermission('service.manage') && (
             <button 
               onClick={() => setActiveTab('services')}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'services' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'services' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <LayoutList className={`w-5 h-5 ${activeTab === 'services' ? 'fill-primary/20' : ''}`} />
               <span className="text-[10px] font-semibold">Dịch vụ</span>
             </button>
           )}
-          {hasPermission('analytics.view') && (
+          {!isSimpleMode && hasPermission('analytics.view') && (
             <button 
               onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'analytics' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'analytics' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <BarChart3 className={`w-5 h-5 ${activeTab === 'analytics' ? 'fill-primary/20' : ''}`} />
               <span className="text-[10px] font-semibold">Thống kê</span>
             </button>
           )}
+          {hasPermission('user.create') && (
+            <button 
+              onClick={() => setActiveTab('users')}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'users' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <ShieldCheck className={`w-5 h-5 ${activeTab === 'users' ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-semibold">Nhân sự</span>
+            </button>
+          )}
           {hasPermission('setting.manage') && (
             <button 
               onClick={() => setActiveTab('settings')}
-              className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${activeTab === 'settings' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'settings' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <SettingsIcon className={`w-5 h-5 ${activeTab === 'settings' ? 'fill-primary/20' : ''}`} />
               <span className="text-[10px] font-semibold">Cài đặt</span>
