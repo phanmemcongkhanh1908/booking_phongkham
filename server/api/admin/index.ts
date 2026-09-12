@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { services, providers, settings, appointments, patients } from "../../db/schema.js";
+import { services, providers, settings, appointments, patients, users } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
 
@@ -408,7 +408,7 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 // Cập nhật cài đặt hệ thống
 adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
-    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner } = req.body;
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes } = req.body;
     
     // Save to DB
     if (telegramToken !== undefined) {
@@ -445,6 +445,11 @@ adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), 
       await db.insert(settings)
         .values({ id: 'announcementBanner', value: announcementBanner })
         .onConflictDoUpdate({ target: settings.id, set: { value: announcementBanner } });
+    }
+    if (idleTimeoutMinutes !== undefined) {
+      await db.insert(settings)
+        .values({ id: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes) })
+        .onConflictDoUpdate({ target: settings.id, set: { value: String(idleTimeoutMinutes) } });
     }
 
     // Trigger reload bot

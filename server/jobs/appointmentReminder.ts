@@ -5,7 +5,7 @@ import { and, gte, lte, eq } from "drizzle-orm";
 import { remindPatientAppointment } from "../services/patientNotification.js";
 import { addHours, subMinutes, addMinutes } from "date-fns";
 
-let reminderCronJob: cron.ScheduledTask | null = null;
+let reminderCronJob: any | null = null;
 
 // Lập lịch chạy mỗi 15 phút (*/15 * * * *)
 // Sẽ tìm các cuộc hẹn diễn ra sau đúng 24 giờ

@@ -19,6 +19,21 @@ patientsRouter.get("/", requireAuth, async (req, res, next) => {
   }
 });
 
+patientsRouter.post("/", requireAuth, async (req, res, next) => {
+  try {
+    const newPatient = await db.insert(patients).values({
+      fullName: req.body.fullName,
+      phone: req.body.phone,
+      dob: req.body.dob,
+      gender: req.body.gender,
+      notes: req.body.notes,
+    }).returning();
+    res.json({ success: true, data: newPatient[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
 patientsRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const pt = await db

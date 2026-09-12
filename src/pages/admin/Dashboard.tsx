@@ -10,6 +10,7 @@ import Settings from './Settings';
 import CalendarView from './CalendarView';
 import ServicesConfig from './ServicesConfig';
 import Analytics from './Analytics';
+import IdleTimeoutManager from '../../components/admin/IdleTimeoutManager';
 import Patients from './Patients';
 import UsersManagement from './UsersManagement';
 import QrScanner from './components/QrScanner';
@@ -21,12 +22,14 @@ import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
   const isSimpleMode = user?.uiMode === 'simple';
+  
   const { hasPermission } = usePermissions();
-  const { isConnected, init: initGoogleAuth } = useGoogleAuthStore();
+  const { isConnected, init: initGoogleAuth, connect: connectGoogleStore } = useGoogleAuthStore();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showStorageReminder, setShowStorageReminder] = useState(false);
   
@@ -277,7 +280,7 @@ export default function Dashboard() {
       }
       fetchAppointments();
       setRescheduleData({ isOpen: false, appointment: null, newDate: '', newTime: '' });
-      addToast('Đã thay đổi lịch hẹn thành công');
+      addToast('Thành công', 'Đã thay đổi lịch hẹn thành công', 'reminder');
     } catch (error) {
       alert("Không thể thay đổi lịch");
       console.error(error);
@@ -369,192 +372,202 @@ export default function Dashboard() {
         />
       )}
       {/* Admin Responsive Header */}
-      <header className="sticky top-0 z-30 bg-surface border-b border-border-subtle shadow-xs print:hidden">
-        {/* Top Tier: Brand, Navigation & Actions */}
-        <div className="flex h-14 sm:h-16 items-center justify-between px-3.5 sm:px-6">
-          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-primary rounded-xl flex items-center justify-center text-white font-extrabold text-base sm:text-xl shadow-inner shrink-0">
+      
+      {/* Admin Modern Header */}
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm print:hidden">
+        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+          
+          {/* Logo & Brand */}
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl flex items-center justify-center text-white font-extrabold text-lg shadow-md shrink-0">
               {clinicProfile?.clinicName ? clinicProfile.clinicName.charAt(0).toUpperCase() : 'D'}
             </div>
-            <div className="min-w-0">
-              <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-text-main leading-tight truncate">
+            <div className="hidden sm:block min-w-0">
+              <h1 className="text-base font-bold text-slate-800 leading-tight truncate tracking-tight">
                 {clinicProfile?.clinicName || 'Dental Smart'}
               </h1>
               {clinicProfile?.doctorName && (
-                <p className="text-[11px] sm:text-xs text-text-muted font-medium truncate">
+                <p className="text-xs text-slate-500 font-medium truncate">
                   BS. {clinicProfile.doctorName}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Desktop Navigation (md and up) */}
-          <nav className="hidden md:flex items-center space-x-1 lg:space-x-2">
+          {/* Main Navigation (Desktop) */}
+          <nav className="hidden md:flex items-center space-x-1 lg:space-x-2 absolute left-1/2 -translate-x-1/2">
             {hasPermission('appointment.view') && (
               <button 
                 onClick={() => setActiveTab('appointments')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
                   activeTab === 'appointments' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                    ? 'bg-teal-50 text-teal-700' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Calendar className="w-4 h-4 mr-1.5 shrink-0" />
+                <Calendar className="w-4 h-4 mr-2" />
                 Lịch hẹn
               </button>
             )}
             {hasPermission('patient.view') && (
               <button 
                 onClick={() => setActiveTab('patients')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
                   activeTab === 'patients' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                    ? 'bg-teal-50 text-teal-700' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Users className="w-4 h-4 mr-1.5 shrink-0" />
+                <Users className="w-4 h-4 mr-2" />
                 Hồ sơ Bệnh án
               </button>
             )}
             {!isSimpleMode && hasPermission('service.manage') && (
               <button 
                 onClick={() => setActiveTab('services')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
                   activeTab === 'services' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                    ? 'bg-teal-50 text-teal-700' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <LayoutList className="w-4 h-4 mr-1.5 shrink-0" />
+                <LayoutList className="w-4 h-4 mr-2" />
                 Dịch vụ & Lịch
               </button>
             )}
             {!isSimpleMode && hasPermission('analytics.view') && (
               <button 
                 onClick={() => setActiveTab('analytics')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
+                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
                   activeTab === 'analytics' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
+                    ? 'bg-teal-50 text-teal-700' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <BarChart3 className="w-4 h-4 mr-1.5 shrink-0" />
+                <BarChart3 className="w-4 h-4 mr-2" />
                 Báo cáo
-              </button>
-            )}
-            {hasPermission('setting.manage') && (
-              <button 
-                onClick={() => setActiveTab('settings')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                  activeTab === 'settings' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-                }`}
-              >
-                <SettingsIcon className="w-4 h-4 mr-1.5 shrink-0" />
-                Cài đặt
-              </button>
-            )}
-            {hasPermission('user.create') && (
-              <button 
-                onClick={() => setActiveTab('users')}
-                className={`text-sm font-medium flex items-center px-3 py-2 rounded-xl transition-all ${
-                  activeTab === 'users' 
-                    ? 'bg-primary/10 text-primary font-bold' 
-                    : 'text-text-muted hover:text-text-main hover:bg-slate-100'
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" />
-                Nhân sự
               </button>
             )}
           </nav>
 
-          {/* Right Action Utilities */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Google Status Badge (Desktop only) */}
-            {!isConnected ? (
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 transition-all shadow-2xs"
-                title="Cảnh báo: Chưa kết nối Google Drive & Sheets để sao lưu dự phòng (Click để cấu hình)"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                <span>Chưa kết nối Google</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition-all"
-                title="Dữ liệu đã được bảo vệ với Google Drive & Sheets (Click để xem chi tiết)"
-              >
-                <Cloud className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Google: Đã bảo vệ</span>
-              </button>
-            )}
-
-            {/* Mobile QR Scanner shortcut */}
-            <button
-              type="button"
-              onClick={() => setShowScanner(true)}
-              className="md:hidden p-2 rounded-xl text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/60 transition-colors"
-              title="Quét mã QR Check-in"
-            >
-              <QrCode className="w-4 h-4" />
-            </button>
-
-            {/* Voice Audio Assistant Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextVal = !audioEnabled;
-                setAudioEnabled(nextVal);
-                if (nextVal) {
-                  // Synchronous unlock required by browser policy
-                  ServerSpeechEngine.unlockAudio();
-                  ServerSpeechEngine.speak('Đã kích hoạt trợ lý âm thanh Dental Smart.');
-                } else {
-                  ServerSpeechEngine.cancel();
-                }
-              }}
-              className={`text-xs font-semibold flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all border ${
-                audioEnabled 
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs ring-2 ring-emerald-400/20' 
-                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-              }`}
-              title={audioEnabled ? "Đang bật âm thanh thông báo (Click để tắt)" : "Đang tắt âm thanh (Click để bật đọc giọng nói)"}
-            >
-              {audioEnabled ? <Volume2 className="w-4 h-4 text-emerald-600 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
-              <span className="hidden sm:inline">{audioEnabled ? 'Âm thanh' : 'Âm thanh'}</span>
-            </button>
-
-            {/* User Profile */}
-            {user && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl mr-2">
-                <UserCircle2 className="w-5 h-5 text-slate-400" />
-                <div className="flex flex-col text-left">
-                  <span className="text-[11px] font-semibold text-slate-800 leading-none">{user.username || user.email}</span>
-                  <span className="text-[10px] text-slate-500 capitalize leading-tight mt-0.5">{user.role === 'role-admin' || user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Logout */}
+          {/* Right Actions & User Menu */}
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Quick QR Scanner */}
             <button 
-              onClick={logout} 
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs sm:text-sm font-medium text-text-muted hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center transition-colors"
-              title="Đăng xuất khỏi hệ thống"
+              onClick={() => setShowScanner(true)}
+              className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-colors hidden sm:flex"
+              title="Quét mã QR"
             >
-              <LogOut className="w-4 h-4 sm:mr-1 shrink-0" />
-              <span className="hidden sm:inline">Đăng xuất</span>
+              <QrCode className="w-5 h-5" />
             </button>
+            
+            {/* User Dropdown Container */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 p-1.5 pr-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              >
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
+                  {user?.username ? user.username.charAt(0).toUpperCase() : <UserCircle2 className="w-5 h-5" />}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-bold text-slate-700 leading-tight max-w-[100px] truncate">{user?.username || user?.email}</p>
+                  <p className="text-[10px] font-medium text-slate-500 leading-tight">{user?.role === 'role-admin' || user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</p>
+                </div>
+              </button>
+
+              {/* Dropdown Menu */}
+              {showUserMenu && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowUserMenu(false)}
+                  ></div>
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                    
+                    <div className="px-4 py-3 border-b border-slate-50">
+                      <p className="text-sm font-bold text-slate-800 truncate">{user?.email}</p>
+                      <p className="text-xs text-slate-500">{user?.role === 'role-admin' || user?.role === 'admin' ? 'Quản trị viên hệ thống' : 'Nhân viên'}</p>
+                    </div>
+
+                    <div className="p-2 flex flex-col gap-1">
+                      {hasPermission('setting.manage') && (
+                        <button 
+                          onClick={() => { setActiveTab('settings'); setShowUserMenu(false); }}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+                        >
+                          <SettingsIcon className="w-4 h-4 mr-3 text-slate-400" />
+                          Cài đặt hệ thống
+                        </button>
+                      )}
+                      
+                      {hasPermission('user.create') && (
+                        <button 
+                          onClick={() => { setActiveTab('users'); setShowUserMenu(false); }}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${activeTab === 'users' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+                        >
+                          <ShieldCheck className="w-4 h-4 mr-3 text-slate-400" />
+                          Quản lý nhân sự
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="p-2 border-t border-slate-50 flex flex-col gap-1">
+                      {user?.tenantId && (
+                        <button 
+                          onClick={() => {
+                            if (!isConnected) connectGoogleStore();
+                          }}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${
+                            isConnected 
+                              ? 'text-emerald-700 bg-emerald-50 pointer-events-none' 
+                              : 'text-amber-700 bg-amber-50 hover:bg-amber-100'
+                          }`}
+                        >
+                          {isConnected ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 mr-3 text-amber-500" />}
+                          {isConnected ? 'Đã kết nối Google' : 'Kết nối Google Drive'}
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => {
+                          if (!audioEnabled) {
+                            ServerSpeechEngine.unlockAudio();
+                            setAudioEnabled(true);
+                          } else {
+                            ServerSpeechEngine.cancel();
+                            setAudioEnabled(false);
+                          }
+                        }}
+                        className="flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-colors"
+                      >
+                        <div className="flex items-center">
+                          {audioEnabled ? <Volume2 className="w-4 h-4 mr-3 text-emerald-500" /> : <VolumeX className="w-4 h-4 mr-3 text-slate-400" />}
+                          Âm thanh thông báo
+                        </div>
+                        <div className={`w-8 h-4 rounded-full relative transition-colors ${audioEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                          <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${audioEnabled ? 'left-4.5' : 'left-0.5'}`}></div>
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="p-2 border-t border-slate-50">
+                      <button 
+                        onClick={logout}
+                        className="w-full flex items-center px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                      >
+                        <LogOut className="w-4 h-4 mr-3 text-red-500" />
+                        Đăng xuất
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
+      </header>
 
-          {/* Tier 2: Dedicated Horizontal Tab Bar on Mobile & Tablet (< md) */}
-        </header>
       
       <main className="flex-1 p-3.5 sm:p-6 pb-24 md:pb-6 max-w-7xl mx-auto w-full relative">
         {user?.tenantId && !isConnected && (
@@ -1226,6 +1239,7 @@ export default function Dashboard() {
         </div>
       </nav>
 
+      <IdleTimeoutManager />
       {/* Floating Toast Message System */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
         {toasts.map((t) => (

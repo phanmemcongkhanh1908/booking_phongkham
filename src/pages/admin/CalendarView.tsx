@@ -70,7 +70,7 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
         startAt: slotMenu.start.toISOString(),
         endAt: slotMenu.end.toISOString(),
       };
-      const res = await api.post('/appointments', payload);
+      const res = await api.post('/appointments/quick', payload);
       if (res.data.success) {
         toast.success('Đã đặt lịch hẹn mới!');
         setShowQuickBook(false);

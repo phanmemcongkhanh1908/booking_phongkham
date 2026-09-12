@@ -88,6 +88,7 @@ export default function Settings() {
   const [telegramBotUsername, setTelegramBotUsername] = useState('');
   const [telegramMsg, setTelegramMsg] = useState('');
   const [telegramTesting, setTelegramTesting] = useState(false);
+  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState('30');
 
   // Email Config (SMTP)
   const [emailConfig, setEmailConfig] = useState({
@@ -300,7 +301,7 @@ export default function Settings() {
     // Tải danh sách tài khoản hiện có
     api.get('/users').then(res => {
       if (res.data?.data) {
-        setUserAccounts(res.data.data);
+        
       }
     }).catch(() => {});
   }, []);
@@ -506,7 +507,7 @@ export default function Settings() {
     e.preventDefault();
     setClinicMsg('');
     try {
-      await api.post('/admin/settings', { clinicProfile });
+      await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
       setClinicMsg('Lưu thông tin phòng khám thành công!');
     } catch (err: any) {
       setClinicMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra');

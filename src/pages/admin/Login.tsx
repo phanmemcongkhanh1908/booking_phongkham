@@ -8,18 +8,20 @@ import api from '../../services/api';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@dentalsmartbooking.com');
-  const [password, setPassword] = useState('admin@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
   React.useEffect(() => {
-    const savedEmail = localStorage.getItem('rememberedEmail');
+    const lastEmail = localStorage.getItem('lastEmail');
     const savedPassword = localStorage.getItem('rememberedPassword');
-    if (savedEmail && savedPassword) {
-      setEmail(savedEmail);
+    const wasRemembered = localStorage.getItem('rememberMeChecked') === 'true';
+
+    if (lastEmail) setEmail(lastEmail);
+    if (wasRemembered && savedPassword) {
       setPassword(savedPassword);
       setRememberMe(true);
     }
@@ -36,12 +38,13 @@ export default function Login() {
       const res = await api.post('/auth/login', { email, password });
       if (res.data.success) {
         setAuth(res.data.data.token, res.data.data.user);
+        localStorage.setItem('lastEmail', email);
         if (rememberMe) {
-          localStorage.setItem('rememberedEmail', email);
           localStorage.setItem('rememberedPassword', password);
+          localStorage.setItem('rememberMeChecked', 'true');
         } else {
-          localStorage.removeItem('rememberedEmail');
           localStorage.removeItem('rememberedPassword');
+          localStorage.removeItem('rememberMeChecked');
         }
         navigate('/admin/dashboard');
       }

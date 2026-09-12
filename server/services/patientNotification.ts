@@ -265,12 +265,10 @@ export async function remindPatientAppointment(
     // Web Push
     try {
       await sendWebPush(apt.patientId, {
-        notification: {
-          title: pushTitle,
-          body: pushBody,
-          icon: "/icon-192x192.png",
-        }
-      });
+        title: pushTitle,
+        body: pushBody,
+        icon: "/icon-192x192.png",
+      } as any);
       result.webPushSent = true;
     } catch (err: any) {
       result.errors.push(`WebPush error: ${err.message}`);
