@@ -28,13 +28,19 @@ export default function IdleTimeoutManager() {
     navigate('/admin/login');
   }, [logout, navigate]);
 
+  const lastActivityRef = useRef<number>(0);
+
   const resetTimer = useCallback(() => {
     if (showWarning) return; // Don't reset if warning is already showing (user must click)
+    
+    const now = Date.now();
+    if (now - lastActivityRef.current < 1000) return; // Throttle to 1 second
+    lastActivityRef.current = now;
 
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-    setShowWarning(false);
-    setCountdown(60);
+    setShowWarning(prev => prev === false ? prev : false);
+    setCountdown(prev => prev === 60 ? prev : 60);
 
     if (idleTimeoutMinutes && idleTimeoutMinutes > 0) {
       // Set idle timer
@@ -107,7 +113,7 @@ export default function IdleTimeoutManager() {
             </button>
             <button
               onClick={() => {
-                setShowWarning(false);
+                setShowWarning(prev => prev === false ? prev : false);
                 resetTimer();
               }}
               className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-colors shadow-sm"

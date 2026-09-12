@@ -216,7 +216,7 @@ export default function DateTimeSelection() {
 
     if (res.success) {
       setStep(3);
-      navigate(`${basePath}/x`);
+      navigate(`${basePath}/thong-tin`);
     } else {
       // Làm mới lại danh sách slot nếu slot bị conflict
       fetchSlots(selectedDate);
@@ -366,7 +366,7 @@ export default function DateTimeSelection() {
           <div className="flex items-start gap-4">
             <button
               type="button"
-              onClick={() => { setStep(1); navigate(`${basePath}/x`); }}
+              onClick={() => { setStep(1); navigate(`${basePath}/dich-vu`); }}
               className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 transition-colors mt-0.5 cursor-pointer"
               title="Quay lại chọn dịch vụ"
             >

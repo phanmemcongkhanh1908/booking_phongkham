@@ -83,11 +83,11 @@ export default function Booking() {
 
     if (currentPath === 'book' || currentPath === '') {
       navigate(`${basePath}/dich-vu`, { replace: true });
-    } else if (step >= 2 && !serviceId) {
+    } else if (step >= 2 && !serviceId && currentPath !== 'dich-vu') {
       navigate(`${basePath}/dich-vu`, { replace: true });
-    } else if (step >= 3 && (!selectedDate || !sessionToken)) {
+    } else if (step >= 3 && (!selectedDate || !sessionToken) && currentPath !== 'chon-gio') {
       navigate(`${basePath}/chon-gio`, { replace: true });
-    } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone)) {
+    } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone) && currentPath !== 'thong-tin') {
       navigate(`${basePath}/thong-tin`, { replace: true });
     }
   }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion]);
@@ -290,7 +290,7 @@ export default function Booking() {
                   <Route path="chon-gio" element={<DateTimeSelection />} />
                   <Route path="thong-tin" element={<PatientForm />} />
                   <Route path="xac-nhan" element={<BookingConfirmation />} />
-                  <Route path="*" element={<Navigate to="dich-vu" replace />} />
+                  <Route path="*" element={<Navigate to={`${basePath}/dich-vu`} replace />} />
                 </Routes>
               </div>
 
@@ -311,7 +311,7 @@ export default function Booking() {
             <div className="animate-in fade-in zoom-in-95 duration-500">
               <Routes>
                 <Route path="hoan-tat" element={<SuccessView />} />
-                <Route path="*" element={<Navigate to="hoan-tat" replace />} />
+                <Route path="*" element={<Navigate to={`${basePath}/hoan-tat`} replace />} />
               </Routes>
             </div>
           </Suspense>

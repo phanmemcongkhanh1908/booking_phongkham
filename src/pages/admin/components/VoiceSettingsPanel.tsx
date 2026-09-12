@@ -106,7 +106,7 @@ export default function VoiceSettingsPanel() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">
                 Âm lượng: {Math.round(volume * 100)}%
               </label>
               <input 

@@ -212,13 +212,13 @@ export default function UsersManagement() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+          <table className="w-full text-left text-[13px] text-slate-700">
+            <thead className="bg-slate-50 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-y border-slate-200">
               <tr>
-                <th className="px-6 py-4">Tài khoản / Email</th>
-                <th className="px-6 py-4">Quyền hạn</th>
-                <th className="px-6 py-4">Trạng thái</th>
-                <th className="px-6 py-4 text-right">Thao tác</th>
+                <th className="px-4 py-3">Tài khoản / Email</th>
+                <th className="px-4 py-3">Quyền hạn</th>
+                <th className="px-4 py-3">Trạng thái</th>
+                <th className="px-4 py-3 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -227,7 +227,7 @@ export default function UsersManagement() {
                 const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
                 return (
                   <tr key={u.id || idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3.5 border-b border-slate-100">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className={`font-medium ${u.isActive === false ? 'text-slate-400 line-through' : 'text-slate-800'} ${isSuperAdmin ? 'text-teal-700' : ''}`}>
@@ -251,12 +251,12 @@ export default function UsersManagement() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3.5 border-b border-slate-100">
                       <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${u.isActive === false ? 'bg-slate-100 text-slate-400' : 'bg-teal-50 text-teal-700'}`}>
                         {hasAll ? 'Toàn quyền' : (u.permissions?.length ? `${u.permissions.length} quyền` : (u.roleName || 'guest'))}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3.5 border-b border-slate-100">
                       <div className="flex items-center gap-1.5">
                         <span className={`w-2 h-2 rounded-full ${u.isActive === false ? 'bg-slate-300' : 'bg-emerald-500'}`} />
                         <span className={u.isActive === false ? 'text-slate-400' : 'text-slate-700'}>
@@ -264,7 +264,7 @@ export default function UsersManagement() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-4 py-3.5 border-b border-slate-100 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -350,7 +350,7 @@ export default function UsersManagement() {
                       </h4>
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-700">Tên tài khoản / Email</label>
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Tên tài khoản / Email</label>
                           <input 
                             type="text" 
                             placeholder="VD: admin hoặc admin@phongkham.vn" 
@@ -358,12 +358,12 @@ export default function UsersManagement() {
                             onChange={e => setEmail(e.target.value)} 
                             required={modalMode === 'create'}
                             disabled={modalMode === 'edit'}
-                            className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:bg-slate-50 disabled:text-slate-500 transition-all"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 disabled:bg-slate-50 disabled:text-slate-500 transition-all"
                           />
                         </div>
                         
                         <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-700">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">
                             {modalMode === 'edit' ? 'Mật khẩu mới (Bỏ trống nếu không đổi)' : 'Mật khẩu'}
                           </label>
                           <div className="relative">
@@ -373,7 +373,7 @@ export default function UsersManagement() {
                               value={password} 
                               onChange={e => setPassword(e.target.value)} 
                               required={modalMode === 'create'}
-                              className="w-full pl-4 pr-10 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                              className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
                             />
                             <button 
                               type="button"
@@ -386,7 +386,7 @@ export default function UsersManagement() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-700">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">
                             Xác nhận mật khẩu
                           </label>
                           <div className="relative">
@@ -396,7 +396,7 @@ export default function UsersManagement() {
                               value={confirmPassword} 
                               onChange={e => setConfirmPassword(e.target.value)} 
                               required={modalMode === 'create' || (modalMode === 'edit' && password.length > 0)}
-                              className="w-full pl-4 pr-10 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                              className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
                             />
                             <button 
                               type="button"
@@ -418,7 +418,7 @@ export default function UsersManagement() {
                       
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-700">Đường dẫn định danh (Slug)</label>
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Đường dẫn định danh (Slug)</label>
                           <input
                             type="text"
                             value={slug}
@@ -477,11 +477,11 @@ export default function UsersManagement() {
                         )}
 
                         <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-700">Giao diện hiển thị</label>
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Giao diện hiển thị</label>
                           <select
                             value={uiMode}
                             onChange={(e) => setUiMode(e.target.value as 'full' | 'simple')}
-                            className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-white"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                           >
                             <option value="full">Đầy đủ (Nâng cao)</option>
                             <option value="simple">Đơn giản (Tối giản)</option>

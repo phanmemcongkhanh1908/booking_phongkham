@@ -245,17 +245,19 @@ export async function remindPatientAppointment(
     if (email) {
       try {
         const emailData: AppointmentNotificationData = {
+          appointmentId: apt.id,
           patientName: apt.patientName,
-          date: dateStr,
-          time: timeStr,
+          patientPhone: apt.patientPhone || "",
+          patientEmail: email,
           serviceName: apt.serviceName || "Khám nha khoa",
           providerName: apt.providerName,
+          startAt: new Date(apt.startAt),
+          status: "CONFIRMED",
           clinicName: clinicProfile.clinicName,
           clinicAddress: clinicProfile.address,
-          clinicPhone: clinicProfile.phone,
-          status: "CONFIRMED"
+          clinicPhone: clinicProfile.phone
         };
-        await sendPatientAppointmentEmail(email, "REMINDER", emailData);
+        await sendPatientAppointmentEmail("REMINDER", emailData);
         result.emailSent = true;
       } catch (err: any) {
         result.errors.push(`Email error: ${err.message}`);

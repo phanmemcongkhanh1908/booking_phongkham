@@ -11,7 +11,7 @@ import {
   UploadCloud, Eye, Download, X, AlertCircle, ZoomIn, ZoomOut, 
   RotateCw, CalendarPlus, FolderPlus, Clock, Phone, Mail, 
   ClipboardList, Receipt, CalendarClock, Check, Sparkles,
-  Send, ExternalLink, ChevronLeft
+  Send, ExternalLink, ChevronLeft, Loader2
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -745,7 +745,7 @@ export default function Patients() {
               <button
                 key={p.id}
                 onClick={() => handleSelectPatient(p)}
-                className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-3 border ${
+                className={`w-full text-left p-3 rounded-xl transition-all flex items-center gap-3 border ${
                   isSelected 
                     ? 'bg-surface border-primary shadow-sm ring-1 ring-primary/20' 
                     : 'bg-surface/60 hover:bg-surface border-border-subtle hover:border-slate-300'
@@ -1000,7 +1000,7 @@ export default function Patients() {
                           <AlertCircle className="w-3.5 h-3.5" /> Dị ứng thuốc & Bệnh tim mạch, tiểu đường
                         </label>
                         <textarea 
-                          className="w-full h-24 rounded-input border border-border-subtle bg-surface px-3.5 py-2.5 text-xs text-text-main focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-shadow resize-none"
+                          className="w-full h-24 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                           placeholder="Ghi nhận dị ứng kháng sinh, tê lidocaine, thuốc chống đông, cao huyết áp, tim mạch..."
                           value={allergies}
                           onChange={e => {
@@ -1042,7 +1042,7 @@ export default function Patients() {
                         Chẩn đoán nha khoa & Tình trạng răng miệng (Răng số, vôi răng, viêm tủy...)
                       </label>
                       <textarea 
-                        className="w-full h-24 rounded-input border border-border-subtle bg-surface px-3.5 py-2.5 text-xs text-text-main focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-shadow resize-none"
+                        className="w-full h-24 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                         placeholder="VD: R46 sâu ngà sâu sát tủy; R11, R21 mẻ góc cắn; Cao răng độ 2..."
                         value={diagnosis}
                         onChange={e => {
@@ -1057,7 +1057,7 @@ export default function Patients() {
                         Kế hoạch điều trị & Ghi chú các đợt khám (Y bạ diễn tiến)
                       </label>
                       <textarea 
-                        className="w-full h-32 rounded-input border border-border-subtle bg-surface px-3.5 py-2.5 text-xs text-text-main focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-shadow resize-none"
+                        className="w-full h-32 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                         placeholder="VD: Buổi 1: Lấy vôi răng, mở tủy R46 đặt thuốc diệt tủy. Buổi 2 hẹn trám bít ống tủy..."
                         value={notesText}
                         onChange={e => {
@@ -1495,7 +1495,7 @@ export default function Patients() {
                               placeholder="0"
                             />
                             <select 
-                              className="border border-border-subtle rounded-input px-3 bg-surface text-xs font-semibold focus:outline-none focus:border-primary"
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                               value={paymentMethod}
                               onChange={e => setPaymentMethod(e.target.value)}
                             >
@@ -1745,7 +1745,7 @@ export default function Patients() {
                   value={newSectionNote}
                   onChange={e => setNewSectionNote(e.target.value)}
                   placeholder="Ghi chú thêm về góc chụp, răng mục tiêu hoặc đánh giá ban đầu..."
-                  className="w-full h-18 rounded-input border border-border-subtle bg-bg-base px-3 py-2 text-xs text-text-main focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none"
+                  className="w-full h-20 rounded-xl border border-border-subtle bg-bg-base px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                 />
               </div>
 
@@ -2013,12 +2013,12 @@ export default function Patients() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Dịch vụ điều trị <span className="text-red-500">*</span></label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Dịch vụ điều trị <span className="text-red-500">*</span></label>
                   <select 
                     required
                     value={aptService}
                     onChange={e => setAptService(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                   >
                     <option value="">-- Chọn dịch vụ --</option>
                     {services.map(s => <option key={s.id} value={s.id}>{s.name} - {s.price?.toLocaleString()}đ</option>)}
@@ -2027,36 +2027,36 @@ export default function Patients() {
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-700">Ngày hẹn <span className="text-red-500">*</span></label>
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Ngày hẹn <span className="text-red-500">*</span></label>
                     <input 
                       type="date"
                       required
                       min={new Date().toISOString().split('T')[0]}
                       value={aptDate}
                       onChange={e => setAptDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-700">Giờ hẹn <span className="text-red-500">*</span></label>
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giờ hẹn <span className="text-red-500">*</span></label>
                     <input 
                       type="time"
                       required
                       value={aptTime}
                       onChange={e => setAptTime(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Ghi chú (Không bắt buộc)</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Ghi chú (Không bắt buộc)</label>
                   <textarea 
                     rows={3}
                     placeholder="Nhập ghi chú cho bác sĩ..."
                     value={aptNotes}
                     onChange={e => setAptNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all resize-none"
                   ></textarea>
                 </div>
               </form>

@@ -154,21 +154,21 @@ export default function ServicesConfig() {
               <h4 className="font-semibold mb-4 text-sm">{editingService.id ? 'Sửa dịch vụ' : 'Thêm dịch vụ mới'}</h4>
               <form onSubmit={handleSaveService} className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-text-muted">Tên dịch vụ</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên dịch vụ</label>
                   <Input required value={editingService.name} onChange={e => setEditingService({...editingService, name: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-text-muted">Thời gian khám (phút)</label>
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Thời gian khám (phút)</label>
                     <Input type="number" required value={editingService.durationMins} onChange={e => setEditingService({...editingService, durationMins: e.target.value})} />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-text-muted">Buffer sau khám (phút)</label>
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Buffer sau khám (phút)</label>
                     <Input type="number" value={editingService.bufferAfter} onChange={e => setEditingService({...editingService, bufferAfter: e.target.value})} />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-text-muted">Giá dịch vụ (VNĐ)</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giá dịch vụ (VNĐ)</label>
                   <Input 
                     type="text" 
                     placeholder="Ví dụ: 500,000" 
@@ -213,7 +213,7 @@ export default function ServicesConfig() {
 
           <div className="space-y-3">
             {services.map(svc => (
-              <div key={svc.id} className={`flex justify-between items-center p-3 border border-border-subtle rounded transition-colors ${svc.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
+              <div key={svc.id} className={`flex justify-between items-center p-3 border border-slate-200 rounded-xl transition-all ${svc.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className={`font-medium text-sm ${svc.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{svc.name}</h4>
@@ -266,11 +266,11 @@ export default function ServicesConfig() {
               <h4 className="font-semibold mb-4 text-sm">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
               <form onSubmit={handleSaveProvider} className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-text-muted">Tên bác sĩ</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên bác sĩ</label>
                   <Input required placeholder="VD: BS. Nguyễn Văn A" value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-text-muted">Chuyên khoa</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Chuyên khoa</label>
                   <Input placeholder="VD: Chuyên khoa Răng Hàm Mặt" value={editingProvider.specialty || ''} onChange={e => setEditingProvider({...editingProvider, specialty: e.target.value})} />
                 </div>
                 <div className="flex flex-wrap items-center gap-6 pt-2">
@@ -293,7 +293,7 @@ export default function ServicesConfig() {
 
           <div className="space-y-3">
             {providers.map(prv => (
-              <div key={prv.id} className={`flex justify-between items-center p-3 border border-border-subtle rounded transition-colors ${prv.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
+              <div key={prv.id} className={`flex justify-between items-center p-3 border border-slate-200 rounded-xl transition-all ${prv.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className={`font-medium text-sm ${prv.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{prv.name}</h4>
@@ -350,7 +350,7 @@ export default function ServicesConfig() {
             </div>
 
             <div className="space-y-4">
-              <label className="text-sm font-medium text-text-main">Các ngày mở cửa trong tuần</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Các ngày mở cửa trong tuần</label>
               {daysOfWeek.map(day => {
                 const isActive = config.workingHours[day.key] && config.workingHours[day.key].length > 0;
                 return (

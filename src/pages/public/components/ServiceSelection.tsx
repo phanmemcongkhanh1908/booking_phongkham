@@ -26,6 +26,7 @@ interface Service {
   description?: string;
   showPrice?: boolean;
   isHot?: boolean;
+  isFree?: boolean;
 }
 
 export default function ServiceSelection() {

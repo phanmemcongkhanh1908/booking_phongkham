@@ -215,19 +215,19 @@ export default function SyncDiagnosticModal({ onClose, onForceSyncAll }: Props) 
                       </h4>
                     </div>
                     <div className="p-0 max-h-48 overflow-y-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 sticky top-0 text-slate-500">
+                      <table className="w-full text-left text-[13px] text-slate-700">
+                        <thead className="bg-slate-50 sticky top-0 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-y border-slate-200">
                           <tr>
-                            <th className="py-2 px-4 font-semibold">Bệnh nhân</th>
-                            <th className="py-2 px-4 font-semibold">Trạng thái</th>
-                            <th className="py-2 px-4 font-semibold">Giờ khám</th>
+                            <th className="py-2.5 px-4">Bệnh nhân</th>
+                            <th className="py-2.5 px-4">Trạng thái</th>
+                            <th className="py-2.5 px-4">Giờ khám</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {diagnosticData.missingInSheet.slice(0, 50).map((apt, idx) => (
                             <tr key={idx} className="hover:bg-slate-50">
                               <td className="py-2 px-4 font-medium text-slate-800">{apt.patientName || apt.patient?.fullName || 'Khách vãng lai'}</td>
-                              <td className="py-2 px-4"><span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium text-[10px]">{apt.status}</span></td>
+                              <td className="py-2.5 px-4 border-b border-slate-100"><span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium text-[10px]">{apt.status}</span></td>
                               <td className="py-2 px-4 text-slate-500">{new Date(apt.startAt).toLocaleString('vi-VN')}</td>
                             </tr>
                           ))}
@@ -252,22 +252,22 @@ export default function SyncDiagnosticModal({ onClose, onForceSyncAll }: Props) 
                       </h4>
                     </div>
                     <div className="p-0 max-h-48 overflow-y-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 sticky top-0 text-slate-500">
+                      <table className="w-full text-left text-[13px] text-slate-700">
+                        <thead className="bg-slate-50 sticky top-0 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-y border-slate-200">
                           <tr>
-                            <th className="py-2 px-4 font-semibold">Bệnh nhân</th>
-                            <th className="py-2 px-4 font-semibold">Trạng thái (Hệ thống)</th>
-                            <th className="py-2 px-4 font-semibold">Trạng thái (Sheets)</th>
+                            <th className="py-2.5 px-4">Bệnh nhân</th>
+                            <th className="py-2.5 px-4">Trạng thái (Hệ thống)</th>
+                            <th className="py-2.5 px-4">Trạng thái (Sheets)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {diagnosticData.conflicts.slice(0, 50).map((conflict, idx) => (
                             <tr key={idx} className="hover:bg-slate-50">
                               <td className="py-2 px-4 font-medium text-slate-800">{conflict.patientName || 'N/A'}</td>
-                              <td className="py-2 px-4">
+                              <td className="py-2.5 px-4 border-b border-slate-100">
                                 <span className="text-blue-700 font-semibold">{conflict.dbStatus}</span>
                               </td>
-                              <td className="py-2 px-4">
+                              <td className="py-2.5 px-4 border-b border-slate-100">
                                 <span className="text-orange-600 font-semibold line-through opacity-70 mr-1">{conflict.sheetStatus}</span>
                               </td>
                             </tr>

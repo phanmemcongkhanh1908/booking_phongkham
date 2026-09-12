@@ -17,7 +17,7 @@ import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -47,7 +47,7 @@ export default function Dashboard() {
       const now = Date.now();
       const thirtyDays = 30 * 24 * 60 * 60 * 1000;
       if (!lastCheck || now - parseInt(lastCheck) > thirtyDays) {
-        setShowStorageReminder(true);
+        setShowStorageReminder(prev => prev === true ? prev : true);
       }
     }
   }, [user?.tenantId, user?.id, isConnected]);
@@ -988,31 +988,31 @@ export default function Dashboard() {
                   {/* Desktop Table View (visible on md and up) */}
                   {/* Desktop Table View (visible on md and up) */}
                   <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left text-sm text-text-muted min-w-[720px]">
-                      <thead className="bg-bg-base border-b border-border-subtle text-text-muted">
+                    <table className="w-full text-left text-[13px] text-slate-700 min-w-[720px]">
+                      <thead className="bg-slate-50 border-y border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
                         <tr>
-                          <th className="px-4 py-3 font-semibold">Khách hàng</th>
-                          <th className="px-4 py-3 font-semibold">Thời gian</th>
-                          {!isCompact && <th className="px-4 py-3 font-semibold">Dịch vụ</th>}
-                          {!isCompact && <th className="px-4 py-3 font-semibold">Bác sĩ</th>}
-                          <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                          <th className="px-4 py-3 font-semibold text-right">Thao tác</th>
+                          <th className="px-4 py-3">Khách hàng</th>
+                          <th className="px-4 py-3">Thời gian</th>
+                          {!isCompact && <th className="px-4 py-3">Dịch vụ</th>}
+                          {!isCompact && <th className="px-4 py-3">Bác sĩ</th>}
+                          <th className="px-4 py-3">Trạng thái</th>
+                          <th className="px-4 py-3 text-right">Thao tác</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200">
+                      <tbody className="divide-y divide-slate-100 bg-white">
                         {displayedAppointments.map((apt) => (
-                          <tr key={apt.id} className="hover:bg-bg-base transition-colors">
-                            <td className="px-4 py-3">
+                          <tr key={apt.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3.5">
                               <div className="font-semibold text-text-main">{apt.patientName}</div>
                               <div className="text-xs text-text-muted">{apt.patientPhone}</div>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3.5">
                               <div className="font-medium text-text-main">{format(new Date(apt.startAt), 'HH:mm')}</div>
                               <div className="text-xs text-text-muted">{format(new Date(apt.startAt), 'dd/MM/yyyy')}</div>
                             </td>
-                            {!isCompact && <td className="px-4 py-3 text-text-main">{apt.serviceName}</td>}
-                            {!isCompact && <td className="px-4 py-3">{apt.providerName}</td>}
-                            <td className="px-4 py-3">
+                            {!isCompact && <td className="px-4 py-3.5 text-slate-900 font-medium">{apt.serviceName}</td>}
+                            {!isCompact && <td className="px-4 py-3.5">{apt.providerName}</td>}
+                            <td className="px-4 py-3.5">
                               <span 
                                 className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
                                 style={{ 
@@ -1024,7 +1024,7 @@ export default function Dashboard() {
                                 {LABEL_OVERRIDES[apt.status] || APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES]?.label || apt.status}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-4 py-3.5 text-right">
                               <div className="flex justify-end items-center gap-2">
                                 {isCompact ? (
                                   <>
@@ -1137,24 +1137,24 @@ export default function Dashboard() {
             
             <form onSubmit={handleRescheduleSubmit} className="p-4 sm:p-5 space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-700">Ngày khám mới</label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Ngày khám mới</label>
                 <input 
                   type="date" 
                   required
                   value={rescheduleData.newDate}
                   onChange={e => setRescheduleData(prev => ({ ...prev, newDate: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
                 />
               </div>
               
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-slate-700">Giờ khám mới</label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Giờ khám mới</label>
                 <input 
                   type="time" 
                   required
                   value={rescheduleData.newTime}
                   onChange={e => setRescheduleData(prev => ({ ...prev, newTime: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
                 />
               </div>
               

@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useBookingStore } from '../../../store/booking';
-import api from '../../../services/api';
 import { 
   ArrowLeft, 
   Clock, 
-  Calendar as CalendarIcon, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Send, 
   Mail, 
   User, 
   Phone, 
-  Lock, 
   ShieldCheck, 
-  Sparkles,
-  HeartHandshake,
   MessageSquarePlus,
-  Users,
-  ArrowRight
+  ArrowRight,
+  Send,
+  Users
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { vi } from 'date-fns/locale';
 import { useNavigate, useParams } from 'react-router-dom';
 
 const DEFAULT_QUICK_TAGS = [
@@ -42,17 +34,18 @@ export default function PatientForm() {
     patientDraft,
     setPatientDraft
   } = useBookingStore();
+
   const navigate = useNavigate();
   const { slug } = useParams();
   const basePath = slug ? `/booking/${slug}` : '/book';
 
   const showNotificationChannels = bookingFormConfig?.showNotificationChannels !== false;
   const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;
+
   const quickTags = bookingFormConfig?.quickNotesTags && Array.isArray(bookingFormConfig.quickNotesTags) && bookingFormConfig.quickNotesTags.length > 0
     ? bookingFormConfig.quickNotesTags
     : DEFAULT_QUICK_TAGS;
 
-  // Khôi phục từ store để Back/Forward không mất dữ liệu
   const [bookingFor, setBookingFor] = useState<'self' | 'relative'>(patientDraft?.bookingFor || 'self');
   const [formData, setFormData] = useState({
     fullName: patientDraft?.fullName || '',
@@ -61,13 +54,12 @@ export default function PatientForm() {
     telegramId: patientDraft?.telegramId || '',
     notes: patientDraft?.notes || ''
   });
-
+  
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [showAdvancedNotify, setShowAdvancedNotify] = useState(Boolean(patientDraft?.telegramId));
 
-  // Sync draft to store on change
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setPatientDraft({ [field]: value });
@@ -78,16 +70,18 @@ export default function PatientForm() {
     setPatientDraft({ bookingFor: mode });
   };
 
-  // Hold Timer logic
   useEffect(() => {
     if (!holdExpiresAt) return;
+
     const updateTimer = () => {
       const remaining = Math.max(0, Math.floor((holdExpiresAt - Date.now()) / 1000));
       setTimeLeft(remaining);
+      
       if (remaining === 0) {
         setError('Thời gian giữ chỗ đã hết hạn. Vui lòng quay lại chọn lại khung giờ.');
       }
     };
+
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
@@ -136,16 +130,17 @@ export default function PatientForm() {
   const handleToggleTag = (tag: string) => {
     const current = formData.notes;
     let updated = '';
+    
     if (current.includes(tag)) {
       updated = current.replace(tag, '').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim();
     } else {
       updated = current ? `${current}, ${tag}` : tag;
     }
+    
     setFormData(prev => ({ ...prev, notes: updated }));
     setPatientDraft({ notes: updated });
   };
 
-  // Chuyển sang bước 4 (Kiểm tra & Xác nhận) thay vì gọi API ngay
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.fullName.trim() || formData.fullName.trim().length < 2) {
@@ -161,7 +156,6 @@ export default function PatientForm() {
       return;
     }
 
-    // Lưu toàn bộ thông tin bệnh nhân vào store
     setPatientDraft({
       bookingFor,
       fullName: formData.fullName.trim(),
@@ -176,316 +170,333 @@ export default function PatientForm() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Step Header */}
+    <div className="space-y-5 pb-24 sm:pb-0">
       <div className="rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-7 shadow-lg shadow-slate-200/40 relative overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-start gap-3.5">
             <button 
               type="button"
               onClick={() => { setStep(2); navigate(`${basePath}/chon-gio`); }} 
-              className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 transition-colors mt-0.5"
+              className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-colors"
               title="Quay lại chọn giờ"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/60 mb-2">
-                <HeartHandshake className="w-3.5 h-3.5 text-teal-700" />
+            
+            <div className="flex-1">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/60 mb-1.5">
                 Bước 3 / 5
               </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Hồ Sơ Tiếp Đón Chu Đáo
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                Hồ sơ bệnh nhân
               </h2>
-              <p className="text-sm text-slate-500 mt-1 max-w-xl leading-relaxed">
-                Thông tin của bạn giúp bác sĩ và đội ngũ lễ tân chuẩn bị đón tiếp nồng hậu và bảo mật thông tin bệnh án.
+              <p className="text-[13px] text-slate-500 mt-1 max-w-sm leading-relaxed">
+                Thông tin giúp bác sĩ chuẩn bị đón tiếp chu đáo và bảo mật bệnh án của bạn.
               </p>
             </div>
           </div>
-
-          {/* Real-time Hold Badge (Controlled by Admin Config) */}
-          {showHoldCountdown && slotStartTime && (
-            <div className={`px-4 py-2.5 rounded-2xl flex items-center gap-2 border text-xs font-bold shrink-0 self-start sm:self-center ${
-              isWarning 
-                ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' 
-                : 'bg-teal-50 text-teal-800 border-teal-200/80'
-            }`}>
-              <Lock className="w-4 h-4" />
-              <span>Giữ chỗ riêng:</span>
-              <span className="font-mono text-sm">{minutes}:{seconds < 10 ? '0' : ''}{seconds}</span>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* Main Intake Form */}
-      <div className="rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-8 shadow-md shadow-slate-200/30 pb-24 sm:pb-8">
-        <form id="patient-booking-form" onSubmit={handleSubmit} className="space-y-7">
-          {error && (
-            <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex items-start gap-3 animate-in fade-in duration-300">
-              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              <div className="text-xs sm:text-sm text-red-700 font-semibold">{error}</div>
+        {/* Error / Hold Timer Alerts */}
+        {error ? (
+          <div className="mb-6 p-3.5 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-[13px] font-medium flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+              <Clock className="w-4 h-4 text-red-600" />
             </div>
-          )}
+            {error}
+          </div>
+        ) : (
+          showHoldCountdown && holdExpiresAt && timeLeft > 0 && (
+            <div className={`mb-6 p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${isWarning ? 'bg-orange-50 border-orange-100' : 'bg-teal-50 border-teal-100/60'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isWarning ? 'bg-orange-100' : 'bg-teal-100'}`}>
+                  <Clock className={`w-4 h-4 ${isWarning ? 'text-orange-600' : 'text-teal-700'}`} />
+                </div>
+                <div className="flex flex-col">
+                  <span className={`text-[13px] font-bold ${isWarning ? 'text-orange-900' : 'text-teal-900'}`}>
+                    Đang giữ lịch tạm thời
+                  </span>
+                  <span className={`text-[11px] font-medium ${isWarning ? 'text-orange-700' : 'text-teal-700/80'}`}>
+                    Hoàn tất trong thời gian quy định
+                  </span>
+                </div>
+              </div>
+              <div className={`text-lg font-bold tracking-tight pr-1 ${isWarning ? 'text-orange-600 animate-pulse' : 'text-teal-700'}`}>
+                {minutes}:{seconds < 10 ? '0' : ''}{seconds}
+              </div>
+            </div>
+          )
+        )}
 
-          {/* Choice: Self or Relative */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-teal-700" />
-              Lịch khám này dành cho ai?
-            </label>
-            <div className="inline-flex p-1 rounded-2xl bg-slate-100 border border-slate-200/80 max-w-sm w-full">
-              <button
-                type="button"
-                onClick={() => handleBookingForChange('self')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  bookingFor === 'self'
-                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <User className="w-4 h-4 text-teal-700" />
-                <span>Cho chính tôi</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBookingForChange('relative')}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  bookingFor === 'relative'
-                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Users className="w-4 h-4 text-teal-700" />
-                <span>Cho người thân</span>
-              </button>
-            </div>
+        {/* Main Form */}
+        <form id="patient-booking-form" onSubmit={handleSubmit} className="space-y-6">
+          
+          {/* Segmented Control */}
+          <div className="bg-slate-100 p-1 rounded-xl flex relative max-w-[280px]">
+            <div 
+              className="absolute top-1 bottom-1 bg-white rounded-[10px] shadow-sm transition-all duration-300 ease-out border border-slate-200/50"
+              style={{
+                width: 'calc(50% - 4px)',
+                left: bookingFor === 'self' ? '4px' : 'calc(50% + 0px)'
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => handleBookingForChange('self')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[13px] font-bold transition-colors z-10 cursor-pointer ${
+                bookingFor === 'self' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              Cho chính tôi
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBookingForChange('relative')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[13px] font-bold transition-colors z-10 cursor-pointer ${
+                bookingFor === 'relative' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Cho người thân
+            </button>
           </div>
 
-          {/* Section 1: Basic Information */}
-          <div className="space-y-4 pt-2">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <User className="w-4 h-4 text-teal-700" />
-              Thông tin liên hệ người khám
+          {/* Contact Details */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-widest uppercase text-slate-800 border-b border-slate-100 pb-2">
+              Thông tin liên hệ
             </h3>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              {/* Full Name */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">
-                    Họ và tên người khám <span className="text-red-500">*</span>
-                  </label>
-                  {fieldErrors.fullName && (
-                    <span className="text-xs font-semibold text-red-500">{fieldErrors.fullName}</span>
-                  )}
-                </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Họ và tên người khám <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
-                    required
                     type="text"
+                    required
                     placeholder="VD: Nguyễn Văn An"
                     value={formData.fullName}
-                    onChange={e => updateField('fullName', e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10 transition-all outline-none"
+                    onChange={e => {
+                      updateField('fullName', e.target.value);
+                      if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
+                    }}
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                      fieldErrors.fullName 
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
+                        : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
+                    }`}
                   />
                 </div>
+                {fieldErrors.fullName && (
+                  <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.fullName}</p>
+                )}
               </div>
 
-              {/* Phone */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">
-                    Số điện thoại liên hệ <span className="text-red-500">*</span>
-                  </label>
-                  {fieldErrors.phone && (
-                    <span className="text-xs font-semibold text-red-500">{fieldErrors.phone}</span>
-                  )}
-                </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Số điện thoại <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
-                    required
                     type="tel"
-                    placeholder="0912 345 678"
+                    required
+                    placeholder="VD: 0912 345 678"
                     value={formData.phone}
-                    onChange={e => updateField('phone', e.target.value)}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^\d\s.-]/g, '');
+                      updateField('phone', val);
+                      if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: '' }));
+                    }}
                     onBlur={() => handleBlur('phone')}
-                    className="w-full pl-10 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10 transition-all outline-none"
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                      fieldErrors.phone 
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
+                        : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
+                    }`}
                   />
                 </div>
+                {fieldErrors.phone && (
+                  <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.phone}</p>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Section 2: Automated Notification Channels (Controlled by Admin Config) */}
+          {/* Ticket Channels */}
           {showNotificationChannels && (
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-teal-700" />
-                  Kênh nhận vé khám & nhắc hẹn thông minh
+                <h3 className="text-xs font-bold tracking-widest uppercase text-slate-800">
+                  Nhận vé khám & Nhắc hẹn
                 </h3>
-                <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/60">
-                  Tự động gửi
+                <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[10px] font-bold uppercase tracking-wide">
+                  Tự động
                 </span>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                    <span>Email nhận vé khám điện tử & lịch hẹn</span>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Email nhận E-Ticket
                   </label>
-                  {fieldErrors.email && (
-                    <span className="text-xs font-semibold text-red-500">{fieldErrors.email}</span>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      placeholder="VD: nhakhoa.khachhang@gmail.com"
+                      value={formData.email}
+                      onChange={e => {
+                        updateField('email', e.target.value);
+                        if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
+                      }}
+                      onBlur={() => handleBlur('email')}
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                        fieldErrors.email 
+                          ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
+                          : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
+                      }`}
+                    />
+                  </div>
+                  {fieldErrors.email ? (
+                    <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.email}</p>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 px-1 leading-relaxed">
+                      Vé khám điện tử kèm mã QR check-in ưu tiên sẽ được gửi đến email này.
+                    </p>
                   )}
                 </div>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    placeholder="nhakhoa.khachhang@gmail.com"
-                    value={formData.email}
-                    onChange={e => updateField('email', e.target.value)}
-                    onBlur={() => handleBlur('email')}
-                    className="w-full pl-10 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10 transition-all outline-none"
-                  />
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedNotify(!showAdvancedNotify)}
+                    className="group flex items-center gap-2 text-[13px] font-bold text-slate-600 hover:text-teal-700 transition-colors cursor-pointer outline-none"
+                  >
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                      showAdvancedNotify ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+                    }`}>
+                      <Send className="w-3 h-3" />
+                    </div>
+                    <span>{showAdvancedNotify ? "Ẩn tùy chọn Telegram" : "Nhận thông báo qua Telegram (Miễn phí)"}</span>
+                  </button>
+                  
+                  {showAdvancedNotify && (
+                    <div className="mt-3 p-4 rounded-xl bg-slate-50/80 border border-slate-200/60 space-y-2 animate-in fade-in slide-in-from-top-2">
+                      <label className="text-xs font-semibold text-slate-700 block">
+                        Telegram Username hoặc Chat ID
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="VD: @username hoặc Chat ID"
+                        value={formData.telegramId}
+                        onChange={e => updateField('telegramId', e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100 transition-all"
+                      />
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Bạn cũng có thể kết nối với Bot bằng 1 chạm sau khi hoàn tất đặt lịch.
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 pl-1 leading-relaxed">
-                  Vé khám điện tử (E-Ticket) có mã QR check-in ưu tiên sẽ được gửi đến email này để bạn dễ dàng lưu vào điện thoại.
-                </p>
-              </div>
-
-              {/* Optional Telegram Notification */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedNotify(!showAdvancedNotify)}
-                  className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-teal-700 transition-colors flex items-center gap-2 focus:outline-none cursor-pointer"
-                >
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                    showAdvancedNotify ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    <Send className="w-3 h-3" />
-                  </div>
-                  <span>{showAdvancedNotify ? "Thu gọn tùy chọn Telegram" : "Nhận tin nhắn nhắc lịch qua Telegram (Miễn phí & Tức thì)"}</span>
-                </button>
-
-                {showAdvancedNotify && (
-                  <div className="mt-3 p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2.5 animate-in slide-in-from-top-2 duration-300">
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                      Telegram Username hoặc Chat ID
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="VD: @username hoặc Chat ID"
-                      value={formData.telegramId}
-                      onChange={e => updateField('telegramId', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-blue-200 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none"
-                    />
-                    <p className="text-xs text-blue-700 leading-relaxed">
-                      💡 Sau khi hoàn tất đặt lịch, bạn cũng có thể nhấn 1 chạm để kết nối trực tiếp với Bot mà không cần nhập thủ công.
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* Section 3: Health Note & Wishes */}
-          <div className="space-y-4 pt-2">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <MessageSquarePlus className="w-4 h-4 text-teal-700" />
-              Tình trạng răng miệng & Lời nhắn gửi bác sĩ
+          {/* Health Notes Section */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-widest uppercase text-slate-800 border-b border-slate-100 pb-2">
+              Tình trạng & Lời nhắn
             </h3>
-
-            {/* Quick Choice Chips (Configured by Admin) */}
-            {quickTags.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-xs text-slate-500">
-                  Chọn nhanh tình trạng hoặc mong muốn (có thể chọn nhiều):
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {quickTags.map(tag => {
-                    const isActive = formData.notes.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => handleToggleTag(tag)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
-                          isActive
-                            ? 'bg-teal-700 text-white border-teal-700 shadow-2xs'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        {isActive ? `✓ ${tag}` : `+ ${tag}`}
-                      </button>
-                    );
-                  })}
+            
+            <div className="space-y-3">
+              {quickTags.length > 0 && (
+                <div className="space-y-2.5">
+                  <label className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wide">
+                    Chọn nhanh:
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {quickTags.map(tag => {
+                      const isActive = formData.notes.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleToggleTag(tag)}
+                          className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition-all cursor-pointer border ${
+                            isActive
+                              ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          {isActive ? `✓ ${tag}` : `+ ${tag}`}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
+              )}
+              
               <textarea
                 rows={3}
-                placeholder="Bạn có điều gì muốn bác sĩ lưu ý trước không? (Ví dụ: đang ê buốt răng hàm dưới, tiền sử dị ứng thuốc tê, cần khám nhanh...)"
+                placeholder="Bạn có điều gì muốn bác sĩ lưu ý trước không? (Ví dụ: đang ê buốt răng hàm dưới, tiền sử dị ứng thuốc tê...)"
                 value={formData.notes}
                 onChange={e => updateField('notes', e.target.value)}
-                className="w-full p-4 rounded-2xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10 transition-all outline-none resize-y leading-relaxed"
+                className="w-full p-3.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all resize-y leading-relaxed"
               />
             </div>
           </div>
 
-          {/* Privacy & Safe Commitment Banner */}
-          <div className="rounded-2xl bg-teal-50/60 border border-teal-200/60 p-4 sm:p-5 flex items-start gap-3.5">
-            <ShieldCheck className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-600 space-y-1 leading-relaxed">
-              <p className="font-bold text-slate-800">
-                Cam kết bảo mật thông tin y tế tuyệt đối
+          {/* Privacy Notice */}
+          <div className="rounded-xl bg-teal-50/50 border border-teal-100 p-3.5 flex items-start gap-3 mt-2">
+            <ShieldCheck className="w-4 h-4 text-teal-700 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold text-teal-900 text-[12px] uppercase tracking-wide">
+                Bảo mật thông tin y tế
               </p>
-              <p>
-                Dữ liệu cá nhân của bạn chỉ được sử dụng cho mục đích phục vụ chuyên môn khám chữa bệnh tại phòng khám. Tuyệt đối không chia sẻ cho bên thứ ba hoặc gửi cuộc gọi quảng cáo phiền toái.
+              <p className="text-[11px] text-teal-800/80 leading-relaxed">
+                Dữ liệu cá nhân chỉ được sử dụng cho mục đích chuyên môn, tuyệt đối không chia sẻ cho bên thứ ba.
               </p>
             </div>
           </div>
 
-          {/* Confirmation CTA Button */}
-          <div className="pt-4 space-y-3">
+          {/* Desktop CTA */}
+          <div className="hidden sm:block pt-4">
             <button
               type="submit"
-              className="w-full py-4 px-6 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white font-extrabold text-base rounded-2xl shadow-lg shadow-teal-900/20 hover:shadow-xl hover:shadow-teal-900/30 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+              disabled={!!error || (holdExpiresAt && timeLeft === 0)}
+              className="w-full py-3.5 px-6 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Kiểm Tra Thông Tin & Xác Nhận</span>
-              <ArrowRight className="w-5 h-5" />
+              Tiếp tục kiểm tra
+              <ArrowRight className="w-4 h-4" />
             </button>
-            <p className="text-xs text-center text-slate-400">
-              Bạn có thể kiểm tra lại toàn bộ chi tiết lịch khám trước khi tạo lịch chính thức.
-            </p>
           </div>
         </form>
       </div>
 
-      {/* Sticky Mobile Action Bar */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] flex items-center justify-between gap-3">
+      {/* Sticky Mobile Footer */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 p-3.5 bg-white border-t border-slate-200 z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3">
         <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lịch hẹn</span>
-          <span className="text-xs font-bold text-slate-900">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Lịch hẹn</span>
+          <span className="text-[13px] font-extrabold text-slate-900">
             {slotStartTime ? format(new Date(slotStartTime), 'HH:mm - dd/MM') : 'Đang chọn'}
           </span>
-          <span className={`text-[10px] font-semibold flex items-center gap-1 ${isWarning ? 'text-red-600 animate-pulse' : 'text-teal-700'}`}>
-            <Clock className="w-3 h-3" /> Giữ chỗ: {minutes}:{seconds < 10 ? '0' : ''}{seconds}
+          <span className={`text-[11px] font-bold flex items-center gap-1 mt-0.5 ${isWarning ? 'text-orange-600 animate-pulse' : 'text-teal-700'}`}>
+            <Clock className="w-3.5 h-3.5" /> Giữ chỗ: {minutes}:{seconds < 10 ? '0' : ''}{seconds}
           </span>
         </div>
-
         <button
           type="submit"
           form="patient-booking-form"
-          className="py-3 px-5 bg-teal-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer"
+          disabled={!!error || (holdExpiresAt && timeLeft === 0)}
+          className="flex-1 max-w-[140px] py-3 px-4 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-bold text-[13px] rounded-xl shadow-md shadow-teal-900/20 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
         >
-          <span>Tiếp tục</span>
+          Tiếp tục
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

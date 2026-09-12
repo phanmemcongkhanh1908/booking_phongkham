@@ -274,9 +274,9 @@ export default function Settings() {
   useEffect(() => {
     api.get('/admin/settings').then(res => {
       const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner } = res.data.data || {};
-      if (telegramToken) setTelegramToken(telegramToken);
-      if (telegramChatId) setTelegramChatId(telegramChatId);
-      if (telegramBotUsername) setTelegramBotUsername(telegramBotUsername);
+      if (telegramToken) setTelegramToken(prev => prev === telegramToken ? prev : telegramToken);
+      if (telegramChatId) setTelegramChatId(prev => prev === telegramChatId ? prev : telegramChatId);
+      if (telegramBotUsername) setTelegramBotUsername(prev => prev === telegramBotUsername ? prev : telegramBotUsername);
       if (clinicProfile) setClinicProfile(typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile);
       if (dbAnnouncementBanner) setAnnouncementBanner(typeof dbAnnouncementBanner === 'string' ? JSON.parse(dbAnnouncementBanner) : dbAnnouncementBanner);
       if (dbBookingFormConfig) {
@@ -317,7 +317,7 @@ export default function Settings() {
     setIsConnectingGoogle(true);
     setGoogleStatusMsg(null);
     try {
-      const accessToken = await connectGoogleStore();
+      const { accessToken } = await connectGoogleStore();
       
       // Try finding or creating the clinic's Google Sheet automatically
       try {
@@ -536,7 +536,7 @@ export default function Settings() {
               </div>
             )}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-main">Telegram Bot Token</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Telegram Bot Token</label>
               <Input 
                 type="text" 
                 placeholder="VD: 7123456789:AAHq..." 
@@ -548,7 +548,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-main">Admin Chat ID (Nhận thông báo khi có lịch mới)</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Admin Chat ID (Nhận thông báo khi có lịch mới)</label>
               <Input 
                 type="text" 
                 placeholder="VD: 123456789" 
@@ -560,7 +560,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-main">Bot Username (Bỏ chữ @)</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Bot Username (Bỏ chữ @)</label>
               <Input 
                 type="text" 
                 placeholder="VD: NhaKhoaSmartBot" 
@@ -643,7 +643,7 @@ export default function Settings() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
               <div className="sm:col-span-2 space-y-1">
-                <label className="text-[11px] font-semibold text-text-main">Máy chủ SMTP (Host)</label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Máy chủ SMTP (Host)</label>
                 <Input 
                   type="text" 
                   placeholder="VD: smtp.gmail.com" 
@@ -653,7 +653,7 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-text-main">Cổng (Port)</label>
+                <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Cổng (Port)</label>
                 <Input 
                   type="number" 
                   placeholder="587 hoặc 465" 
@@ -665,7 +665,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-text-main">Tài khoản SMTP (Email gửi)</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tài khoản SMTP (Email gửi)</label>
               <Input 
                 type="email" 
                 placeholder="VD: phongkham.nhakhoa@gmail.com" 
@@ -676,7 +676,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-text-main">Mật khẩu ứng dụng (App Password)</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Mật khẩu ứng dụng (App Password)</label>
               <Input 
                 type="password" 
                 placeholder="Mật khẩu 16 ký tự Gmail hoặc SMTP pass" 
@@ -687,7 +687,7 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-text-main">Tên người gửi hiển thị (From Name)</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên người gửi hiển thị (From Name)</label>
               <Input 
                 type="text" 
                 placeholder="VD: Nha Khoa Dental Smart <phongkham@gmail.com>" 
@@ -758,7 +758,7 @@ export default function Settings() {
             {announcementBanner.isVisible && (
               <div className="space-y-4 border p-4 rounded-lg bg-slate-50/50">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-text-main">Nội dung thông báo (hỗ trợ Emoji)</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Nội dung thông báo (hỗ trợ Emoji)</label>
                   <Input 
                     type="text" 
                     placeholder="VD: 📢 Nha khoa nghỉ lễ Quốc Khánh từ 01/09 đến 03/09. Xin cảm ơn quý khách!" 
@@ -767,7 +767,7 @@ export default function Settings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-text-main">Màu sắc (Mức độ)</label>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Màu sắc (Mức độ)</label>
                   <div className="flex flex-wrap gap-3">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="radio" name="bannerType" value="info" checked={announcementBanner.type === 'info'} onChange={e => setAnnouncementBanner({...announcementBanner, type: e.target.value})} />
@@ -802,7 +802,7 @@ export default function Settings() {
           <form className="space-y-4" onSubmit={handleSaveClinic}>
             {clinicMsg && <div className="text-sm text-primary bg-mint p-2 rounded">{clinicMsg}</div>}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Tên phòng khám</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên phòng khám</label>
               <Input 
                 type="text" 
                 placeholder="VD: Nha khoa Lê Phương" 
@@ -823,7 +823,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Bác sĩ phụ trách</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Bác sĩ phụ trách</label>
               <Input 
                 type="text" 
                 placeholder="VD: Lê Thị Diễm Phương" 
@@ -832,7 +832,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Địa chỉ</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Địa chỉ</label>
               <Input 
                 type="text" 
                 placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5, TP.HCM" 
@@ -841,7 +841,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Hotline</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Hotline</label>
               <Input 
                 type="text" 
                 placeholder="VD: 0901 234 567" 
@@ -850,7 +850,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main">Giờ làm việc</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giờ làm việc</label>
               <Input 
                 type="text" 
                 placeholder="VD: 08:00 - 20:00 (Thứ 2 - Thứ 7)" 

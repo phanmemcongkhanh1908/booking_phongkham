@@ -128,7 +128,7 @@ export default function ExportAppointmentsModal({
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Từ ngày</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Từ ngày</label>
               <Input 
                 type="date" 
                 required 
@@ -137,7 +137,7 @@ export default function ExportAppointmentsModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Đến ngày</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Đến ngày</label>
               <Input 
                 type="date" 
                 required 

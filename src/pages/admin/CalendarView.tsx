@@ -358,9 +358,9 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                 <div className="pt-3 border-t border-border-subtle space-y-3">
                   <h4 className="text-xs sm:text-sm font-bold text-text-main">Lên lịch hẹn tiếp theo</h4>
                   <div>
-                    <label className="text-xs font-semibold text-text-muted mb-1 block">Dịch vụ</label>
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Dịch vụ</label>
                     <select 
-                      className="w-full text-xs sm:text-sm border-border-subtle rounded-xl shadow-2xs focus:border-primary focus:ring-primary p-2"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                       value={nextService}
                       onChange={e => setNextService(e.target.value)}
                     >
@@ -369,12 +369,12 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
-                      <label className="text-xs font-semibold text-text-muted mb-1 block">Ngày</label>
-                      <Input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className="h-9 text-xs sm:text-sm" />
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Ngày</label>
+                      <Input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)}  />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-text-muted mb-1 block">Giờ</label>
-                      <Input type="time" value={nextTime} onChange={e => setNextTime(e.target.value)} className="h-9 text-xs sm:text-sm" />
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giờ</label>
+                      <Input type="time" value={nextTime} onChange={e => setNextTime(e.target.value)}  />
                     </div>
                   </div>
                   <div className="flex gap-2 pt-2">
@@ -403,7 +403,7 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                 <Input placeholder="Tên khách hàng" value={quickBookPatient} onChange={e => setQuickBookPatient(e.target.value)} />
                 <Input placeholder="Số điện thoại" value={quickBookPhone} onChange={e => setQuickBookPhone(e.target.value)} />
                 <select 
-                  className="w-full text-sm border-border-subtle rounded-md shadow-soft focus:border-primary focus:ring-primary"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                   value={quickBookService}
                   onChange={e => setQuickBookService(e.target.value)}
                 >
