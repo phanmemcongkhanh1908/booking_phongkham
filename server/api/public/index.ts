@@ -6,9 +6,10 @@ import crypto from "crypto";
 import { db } from "../../db/index.js";
 import { appointmentHolds, appointments, patients, services, providers } from "../../db/schema.js";
 import { HoldSlotSchema, BookAppointmentSchema } from "../../../shared/schemas.js";
-import { eq, and, gte, lt, gt, sql } from "drizzle-orm";
+import { eq, and, gte, lt, gt, sql, inArray, desc } from "drizzle-orm";
 import { ConflictError, BadRequestError, NotFoundError, ForbiddenError } from "../../core/errors.js";
 import { sendNewAppointmentAlert, getTelegramBotUsername } from "../../core/telegram.js";
+import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
 import { savePatientContact } from "../../services/patientContact.js";
 
@@ -141,13 +142,18 @@ publicRouter.get("/availability", async (req, res, next) => {
   }
 });
 
+
 // [M01] Giữ chỗ (Hold Slot) 5 phút
 publicRouter.post("/appointments/hold", async (req, res, next) => {
   try {
     const data = HoldSlotSchema.parse(req.body);
     const startAt = new Date(data.startAt);
     const endAt = new Date(data.endAt);
-    const expiresAt = addMinutes(new Date(), 5); // Hold 5 mins
+    const expiresAt = addMinutes(new Date(), 10); // Hold 10 mins
+    
+    
+    
+    
 
     // SERIALIZABLE Transaction to prevent double holding
     const holdResult = await db.transaction(async (tx) => {
@@ -226,7 +232,7 @@ publicRouter.post("/appointments", async (req, res, next) => {
       }
 
       // 2. Find or Create Patient
-      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, data.phone)).limit(1);
+      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, data.phone.replace(/\D/g, '').replace(/\D/g, ''))).limit(1);
       let patientId;
 
       
@@ -267,7 +273,7 @@ publicRouter.post("/appointments", async (req, res, next) => {
       } else {
         const newPatient = await tx.insert(patients).values({
           fullName: data.fullName,
-          phone: data.phone,
+          phone: data.phone.replace(/\D/g, ''),
           dob: data.dob,
           gender: data.gender,
           telegramId: data.telegramId || undefined,
@@ -309,7 +315,7 @@ publicRouter.post("/appointments", async (req, res, next) => {
     }, { isolationLevel: "serializable" });
 
     // Save contact info mapping (email & telegramId)
-    await savePatientContact(bookingResult.patientId, data.phone, {
+    await savePatientContact(bookingResult.patientId, data.phone.replace(/\D/g, ''), {
       email: data.email,
       telegramId: data.telegramId,
     });
@@ -380,6 +386,124 @@ publicRouter.post("/appointments", async (req, res, next) => {
   }
 });
 
+// Tra cứu thông tin bệnh nhân theo số điện thoại (Quick-Recall xác thực chính xác)
+publicRouter.get("/patients/lookup", async (req, res, next) => {
+  try {
+    return res.json({
+      success: true,
+      exists: false,
+      data: null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Endpoint kiểm tra số điện thoại có tồn tại hay không (KHÔNG lộ thông tin cá nhân)
+publicRouter.get("/patients/check", async (req, res, next) => {
+  try {
+    const rawPhone = String(req.query.phone || "").trim();
+    if (!rawPhone) return res.json({ success: true, exists: false });
+    const cleaned = rawPhone.replace(/\D/g, "");
+    if (cleaned.length < 9) return res.json({ success: true, exists: false });
+    const variants = new Set<string>();
+    variants.add(cleaned);
+    if (cleaned.startsWith("84")) {
+      variants.add("0" + cleaned.slice(2)); variants.add(cleaned.slice(2));
+    } else if (cleaned.startsWith("0")) {
+      variants.add("84" + cleaned.slice(1)); variants.add(cleaned.slice(1));
+    } else {
+      variants.add("0" + cleaned); variants.add("84" + cleaned);
+    }
+    const allPatients = await db.select().from(patients);
+    const matched = allPatients.find((p: any) => {
+      if (!p.phone) return false;
+      return variants.has(String(p.phone).replace(/\D/g, ""));
+    });
+    return res.json({ success: true, exists: !!matched });
+  } catch (error) { next(error); }
+});
+
+// Endpoint xác thực khách hàng cũ bằng SĐT + Họ tên (Fuzzy Match)
+publicRouter.post("/patients/verify", async (req, res, next) => {
+  try {
+    const { phone, fullName } = req.body;
+    if (!phone || !fullName) return res.json({ success: false, match: false });
+
+    const rawPhone = String(phone).trim();
+    const cleaned = rawPhone.replace(/\D/g, "");
+    const variants = new Set<string>();
+    variants.add(cleaned);
+    if (cleaned.startsWith("84")) {
+      variants.add("0" + cleaned.slice(2)); variants.add(cleaned.slice(2));
+    } else if (cleaned.startsWith("0")) {
+      variants.add("84" + cleaned.slice(1)); variants.add(cleaned.slice(1));
+    } else {
+      variants.add("0" + cleaned); variants.add("84" + cleaned);
+    }
+
+    const pts = await db.select().from(patients);
+    let matchedPatient = null;
+
+    for (const p of pts) {
+      if (!p.phone) continue;
+      if (variants.has(String(p.phone).replace(/\D/g, ""))) {
+        const pName = normalizeName(p.fullName);
+        const searchName = normalizeName(fullName);
+        if (pName && searchName && (pName === searchName)) { // STRICT MATCH
+          matchedPatient = p;
+          break;
+        }
+      }
+    }
+
+    if (!matchedPatient) {
+      return res.json({ success: true, match: false });
+    }
+
+    let notesText = "";
+    if (matchedPatient.notes) {
+      try {
+        const parsed = JSON.parse(matchedPatient.notes);
+        notesText = parsed.text || "";
+      } catch { notesText = matchedPatient.notes; }
+    }
+    let email = matchedPatient.email || "";
+    if (!email && notesText) {
+      const emailMatch = notesText.match(/Email:\s*([^\s|]+)/i);
+      if (emailMatch) email = emailMatch[1].trim();
+    }
+    if (notesText) {
+      notesText = notesText.replace(/\|\s*Email:\s*[^\s|]+/gi, "").replace(/Email:\s*[^\s|]+/gi, "").trim();
+    }
+
+    // Tìm lịch sử khám gần nhất để gợi ý dịch vụ
+    const aptHistory = await db.select().from(appointments).where(eq(appointments.patientId, matchedPatient.id)).orderBy(desc(appointments.startAt));
+    let lastServiceId = null;
+    let lastServiceName = null;
+    if (aptHistory.length > 0 && aptHistory[0].serviceId) {
+      lastServiceId = aptHistory[0].serviceId;
+      const s = await db.select().from(services).where(eq(services.id, lastServiceId)).limit(1);
+      if (s.length > 0) lastServiceName = s[0].name;
+    }
+
+    return res.json({
+      success: true,
+      match: true,
+      data: {
+        id: matchedPatient.id,
+        fullName: matchedPatient.fullName,
+        phone: matchedPatient.phone,
+        email: email,
+        notes: notesText,
+        lastServiceId,
+        lastServiceName
+      }
+    });
+
+  } catch (error) { next(error); }
+});
+
 // Endpoint cho phép bệnh nhân đăng ký nhận email / liên kết telegram hoặc gửi lại thông báo
 
 publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
@@ -444,6 +568,12 @@ publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) 
       if (settingRes.length === 0) {
         settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
       }
+      if (settingRes.length === 0) {
+        settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
+      }
+      if (settingRes.length === 0) {
+        settingRes = await db.select().from(settings).where(eq(settings.key, "clinicProfile")).limit(1);
+      }
       let clinicProfile = settingRes.length > 0 ? settingRes[0].value : null;
       if (typeof clinicProfile === "string") {
         try {
@@ -455,6 +585,9 @@ publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) 
       }
 
       let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);
+      if (formConfigRes.length === 0) {
+        formConfigRes = await db.select().from(settings).where(eq(settings.key, "bookingFormConfig")).limit(1);
+      }
       let bookingFormConfig = formConfigRes.length > 0 ? formConfigRes[0].value : null;
       if (typeof bookingFormConfig === "string") {
         try {
@@ -465,6 +598,9 @@ publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) 
       const botUsername = await getTelegramBotUsername();
 
       let bannerRes = await db.select().from(settings).where(eq(settings.id, "announcementBanner")).limit(1);
+      if (bannerRes.length === 0) {
+        bannerRes = await db.select().from(settings).where(eq(settings.key, "announcementBanner")).limit(1);
+      }
       let announcementBanner = null;
       if (bannerRes.length > 0) {
         announcementBanner = typeof bannerRes[0].value === 'string' ? JSON.parse(bannerRes[0].value) : bannerRes[0].value;
@@ -498,15 +634,13 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
         status: appointments.status,
         startAt: appointments.startAt,
         endAt: appointments.endAt,
+        serviceId: appointments.serviceId,
         serviceName: services.name,
-        providerName: providers.name,
-        patientName: patients.fullName,
-        patientPhone: patients.phone
+        providerName: providers.name
       })
       .from(appointments)
       .leftJoin(services, eq(appointments.serviceId, services.id))
       .leftJoin(providers, eq(appointments.providerId, providers.id))
-      .leftJoin(patients, eq(appointments.patientId, patients.id))
       .where(eq(appointments.id, id))
       .limit(1);
 
@@ -515,6 +649,219 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
     }
 
     res.json({ success: true, data: results[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+function normalizeName(str: string) {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+publicRouter.post("/appointments/lookup", async (req, res, next) => {
+  try {
+    const { phone, code, fullName, pin } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: { message: "Vui lòng cung cấp số điện thoại" } });
+    }
+    if (!code && !fullName) {
+      return res.status(400).json({ success: false, error: { message: "Vui lòng cung cấp Mã lịch hẹn hoặc Họ tên để xác thực" } });
+    }
+    
+    // Tìm patient dựa trên phone
+    const pts = await db.select().from(patients).where(eq(patients.phone, phone.replace(/\D/g, '')));
+    if (pts.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+    
+    const patientIds = pts.map(p => p.id);
+    
+    // Tìm các cuộc hẹn của patient này
+    let query = db.select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      status: appointments.status,
+      startAt: appointments.startAt,
+      endAt: appointments.endAt,
+      serviceId: appointments.serviceId,
+      serviceName: services.name,
+      providerName: providers.name,
+      cancelReason: appointments.cancelReason
+    })
+    .from(appointments)
+    .leftJoin(services, eq(appointments.serviceId, services.id))
+    .leftJoin(providers, eq(appointments.providerId, providers.id))
+    .where(inArray(appointments.patientId, patientIds));
+    
+    const results = await query;
+    let finalResults = results;
+    let patientDob = null;
+    
+    // Lọc theo code hoặc fullName
+    if (code) {
+      finalResults = results.filter(r => r.id.includes(code) || r.id === code);
+    } else if (fullName) {
+      const inputNameNorm = normalizeName(fullName);
+      const matchedPatient = pts.find(p => normalizeName(p.fullName) === inputNameNorm);
+      
+      if (!matchedPatient) {
+        return res.status(403).json({ success: false, error: { message: "Họ tên không khớp với số điện thoại đã đăng ký. Vui lòng kiểm tra lại để bảo mật thông tin." } });
+      }
+      
+      patientDob = matchedPatient.dob;
+      finalResults = results.filter(r => r.patientId === matchedPatient.id);
+    }
+    
+    if (code) {
+      // If looked up by exact code, just return it
+      return res.json({ success: true, data: finalResults.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()) });
+    }
+    
+    const now = new Date();
+    let upcoming = [];
+    let past = [];
+    
+    for (const r of finalResults) {
+      if (new Date(r.startAt).getTime() < now.getTime() - 24 * 60 * 60 * 1000) { // older than yesterday
+        past.push(r);
+      } else {
+        upcoming.push(r);
+      }
+    }
+    
+    if (past.length > 0) {
+      if (pin) {
+        let isPinValid = false;
+        const pinClean = String(pin).trim();
+        
+        if (patientDob && patientDob.includes(pinClean)) {
+          isPinValid = true;
+        } else {
+          if (finalResults.some(r => r.id.slice(-4) === pinClean)) {
+             isPinValid = true;
+          }
+        }
+        
+        if (!isPinValid) {
+           return res.status(403).json({ success: false, error: { message: "Mã PIN không đúng. Vui lòng nhập Năm sinh (VD: 1990) hoặc 4 số cuối mã lịch hẹn." } });
+        }
+      } else {
+        return res.json({ 
+          success: true, 
+          data: upcoming.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()),
+          hasHistory: true 
+        });
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      data: finalResults.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()),
+      hasHistory: false
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { phone } = req.body;
+    
+    if (!phone) {
+      return res.status(400).json({ success: false, error: { message: "Cần xác thực bằng số điện thoại để hủy lịch" } });
+    }
+    
+    const apts = await db.select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      status: appointments.status,
+      providerId: appointments.providerId,
+      startAt: appointments.startAt
+    }).from(appointments).where(eq(appointments.id, id)).limit(1);
+    
+    if (apts.length === 0) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
+    }
+    
+    const pt = await db.select().from(patients).where(eq(patients.id, apts[0].patientId)).limit(1);
+    if (pt.length === 0 || pt[0].phone !== phone) {
+      return res.status(403).json({ success: false, error: { message: "Số điện thoại không khớp với hồ sơ đặt lịch" } });
+    }
+    
+    if (apts[0].status !== 'REQUESTED' && apts[0].status !== 'PENDING' && apts[0].status !== 'CONFIRMED') {
+      return res.status(400).json({ success: false, error: { message: "Không thể hủy lịch ở trạng thái hiện tại" } });
+    }
+    
+    await db.update(appointments).set({ status: 'CANCEL_PATIENT' }).where(eq(appointments.id, id));
+    
+    import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
+      realtimeNotification.emitBookingCreated({ id, action: 'cancel' });
+    });
+    
+    res.json({ success: true, message: "Hủy lịch thành công" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { phone, newDate, newTime, newEndAt } = req.body;
+    
+    if (!phone || !newDate || !newTime) {
+      return res.status(400).json({ success: false, error: { message: "Cần xác thực bằng số điện thoại và cung cấp ngày giờ mới" } });
+    }
+    
+    const apts = await db.select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      status: appointments.status,
+      providerId: appointments.providerId,
+      startAt: appointments.startAt
+    }).from(appointments).where(eq(appointments.id, id)).limit(1);
+    
+    if (apts.length === 0) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
+    }
+    
+    const pt = await db.select().from(patients).where(eq(patients.id, apts[0].patientId)).limit(1);
+    if (pt.length === 0 || pt[0].phone !== phone) {
+      return res.status(403).json({ success: false, error: { message: "Số điện thoại không khớp với hồ sơ đặt lịch" } });
+    }
+    
+    if (apts[0].status !== 'REQUESTED' && apts[0].status !== 'PENDING' && apts[0].status !== 'CONFIRMED') {
+      return res.status(400).json({ success: false, error: { message: "Không thể dời lịch ở trạng thái hiện tại" } });
+    }
+    
+    const startAt = new Date(`${newDate}T${newTime}:00`);
+    const endAt = newEndAt ? new Date(newEndAt) : new Date(startAt.getTime() + 30 * 60000);
+    
+    // Check overlap
+    const occupiedSlots = await getProviderOccupiedSlots(apts[0].providerId || (await db.select().from(providers).limit(1))[0].id, startAt);
+    // Remove the current appointment from occupied to avoid self-conflict
+    const filteredOccupied = occupiedSlots.filter(o => o.type !== 'APPOINTMENT' || Math.abs(o.startAt.getTime() - new Date(apts[0].startAt).getTime()) > 1000);
+    if (isSlotConflict(startAt, endAt, filteredOccupied)) {
+       return res.status(400).json({ success: false, error: { message: "Khung giờ này đã có người đặt, vui lòng chọn giờ khác." } });
+    }
+    
+    await db.update(appointments).set({ startAt: startAt.toISOString(), endAt: endAt.toISOString(), status: 'REQUESTED' }).where(eq(appointments.id, id));
+    
+    import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
+      realtimeNotification.emitBookingCreated({ id, action: 'reschedule' });
+    });
+    
+    res.json({ success: true, message: "Dời lịch thành công, đang chờ phòng khám xác nhận lại" });
   } catch (error) {
     next(error);
   }

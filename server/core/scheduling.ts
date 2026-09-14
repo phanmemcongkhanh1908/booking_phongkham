@@ -1,6 +1,6 @@
   import { db } from "../db/index.js";
 import { appointments, appointmentHolds, providers, services, settings } from "../db/schema.js";
-import { and, or, eq, gte, lt, notInArray } from "drizzle-orm";
+import { and, or, eq, gte, lt, gt, notInArray } from "drizzle-orm";
 import { startOfDay, endOfDay, addMinutes, parse, format, isBefore, isAfter, isEqual } from "date-fns";
 import { OccupiedSlot, AvailableSlot, WorkingHours } from "../../shared/scheduling.js";
 import { BadRequestError } from "./errors.js";
@@ -26,8 +26,8 @@ export async function getProviderOccupiedSlots(providerId: string, targetDate: D
     .where(
       and(
         eq(appointments.providerId, providerId),
-        gte(appointments.startAt, startDay),
         lt(appointments.startAt, endDay),
+        gt(appointments.endAt, startDay),
         notInArray(appointments.status, ["CANCELLED", "NO_SHOW", "CANCEL_PATIENT", "CANCEL_CLINIC"])
       )
     );
@@ -43,19 +43,19 @@ export async function getProviderOccupiedSlots(providerId: string, targetDate: D
       and(
         eq(appointmentHolds.providerId, providerId),
         gte(appointmentHolds.expiresAt, new Date()), // Chỉ lấy Hold chưa hết hạn
-        gte(appointmentHolds.startAt, startDay),
-        lt(appointmentHolds.startAt, endDay)
+        lt(appointmentHolds.startAt, endDay),
+        gt(appointmentHolds.endAt, startDay)
       )
     );
 
   const occupied: OccupiedSlot[] = [];
   
   bookedAppointments.forEach((a) => {
-    occupied.push({ startAt: a.startAt, endAt: a.endAt, type: "APPOINTMENT" });
+    occupied.push({ startAt: new Date(a.startAt), endAt: new Date(a.endAt), type: "APPOINTMENT" });
   });
   
   activeHolds.forEach((h) => {
-    occupied.push({ startAt: h.startAt, endAt: h.endAt, type: "HOLD" });
+    occupied.push({ startAt: new Date(h.startAt), endAt: new Date(h.endAt), type: "HOLD" });
   });
 
   // Sort by start time
@@ -63,7 +63,7 @@ export async function getProviderOccupiedSlots(providerId: string, targetDate: D
 }
 
 // Kiểm tra xem một Slot có bị đè lên bất kỳ khoảng Occupied nào không
-function isSlotConflict(slotStart: Date, slotEnd: Date, occupiedSlots: OccupiedSlot[]): boolean {
+export function isSlotConflict(slotStart: Date, slotEnd: Date, occupiedSlots: OccupiedSlot[]): boolean {
   for (const occ of occupiedSlots) {
     // Nếu khoảng thời gian A bắt đầu trước khi B kết thúc và kết thúc sau khi B bắt đầu -> CONFLICT
     if (isBefore(slotStart, occ.endAt) && isAfter(slotEnd, occ.startAt)) {

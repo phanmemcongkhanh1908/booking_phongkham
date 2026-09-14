@@ -17,6 +17,7 @@ import PatientForm from './components/PatientForm';
 import BookingConfirmation from './components/BookingConfirmation';
 import BookingSummaryCard from './components/BookingSummaryCard';
 import MobileSummaryDrawer from './components/MobileSummaryDrawer';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import SimpleBookingForm from './components/SimpleBookingForm';
 
 const SuccessView = React.lazy(() => import('./components/SuccessView'));
@@ -171,6 +172,7 @@ export default function Booking() {
               </a>
             )}
 
+            <PWAInstallButton />
             <Link
               to="/admin/login"
               className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"

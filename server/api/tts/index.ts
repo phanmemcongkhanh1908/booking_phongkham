@@ -4,13 +4,13 @@ import { getTtsStatus, generateAudio, getAudioFilePath } from "../../services/tt
 
 const ttsRouter = Router();
 
-// Lấy trạng thái của các TTS providers (có public/auth không tuỳ yêu cầu, auth cho an toàn)
-ttsRouter.get("/status", requireAuth, (req, res) => {
+// Lấy trạng thái của các TTS providers
+ttsRouter.get("/status", (req, res) => {
   res.json({ success: true, data: getTtsStatus() });
 });
 
-// Endpoint để đọc một đoạn text bất kỳ (phục vụ test)
-ttsRouter.post("/speak", requireAuth, async (req, res) => {
+// Endpoint để đọc một đoạn text bất kỳ
+ttsRouter.post("/speak", async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) {

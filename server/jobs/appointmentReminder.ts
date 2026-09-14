@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import { db } from "../db/index.js";
 import { appointments } from "../db/schema.js";
-import { and, gte, lte, eq } from "drizzle-orm";
+import { and, gte, lte, eq, isNull } from "drizzle-orm";
 import { remindPatientAppointment } from "../services/patientNotification.js";
+import { checkExpiredWaitlistOffers } from "./waitlistMatcher.js";
 import { addHours, subMinutes, addMinutes } from "date-fns";
 
 let reminderCronJob: any | null = null;
@@ -15,6 +16,7 @@ export function initReminderCronJob() {
   reminderCronJob = cron.schedule("*/15 * * * *", async () => {
     try {
       console.log("[ReminderCron] Bắt đầu quét lịch hẹn ngày mai...");
+      await checkExpiredWaitlistOffers(); // Clean up expired waitlist offers
       
       const now = new Date();
       // Target window is 24 hours from now
@@ -34,7 +36,8 @@ export function initReminderCronJob() {
         and(
           eq(appointments.status, "CONFIRMED"),
           gte(appointments.startAt, windowStart),
-          lte(appointments.startAt, windowEnd)
+          lte(appointments.startAt, windowEnd),
+          isNull(appointments.reminderSentAt)
         )
       );
 
@@ -45,6 +48,11 @@ export function initReminderCronJob() {
           // Send reminder
           console.log(`[ReminderCron] Gửi nhắc nhở cho lịch hẹn ${apt.id}...`);
           await remindPatientAppointment(apt.id);
+          
+          // Mark as sent
+          await db.update(appointments)
+            .set({ reminderSentAt: new Date() })
+            .where(eq(appointments.id, apt.id));
         }
       } else {
         console.log("[ReminderCron] Không có lịch hẹn nào cần nhắc nhở trong khung giờ này.");

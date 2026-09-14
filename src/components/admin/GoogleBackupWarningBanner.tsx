@@ -129,7 +129,7 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
   // 1. If Connected: Show clean reassurance status bar
   if (isConnected) {
     return (
-      <div className="mb-6 rounded-2xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-emerald-50/90 p-4 shadow-xs text-slate-800 transition-all">
+      <div className="mb-6 rounded-2xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-emerald-50/90 p-4 shadow-xs text-slate-800 transition-all print:hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -197,7 +197,7 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
   // 2. If warning was temporarily dismissed for this session
   if (warningDismissed) {
     return (
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:px-4 sm:py-2.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 shadow-2xs">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:px-4 sm:py-2.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 shadow-2xs print:hidden">
         <div className="flex items-start sm:items-center gap-2 min-w-0">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
           <span className="leading-snug">
@@ -229,7 +229,7 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
 
   // 3. Main Warning Banner: Admin has not connected Google yet
   return (
-    <div className={`mb-6 rounded-2xl border-2 p-4 sm:p-5 shadow-sm relative transition-all ${isClinicAdmin ? 'border-rose-400 bg-gradient-to-br from-rose-50 via-white to-rose-50/60 text-slate-900' : 'border-amber-300 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 text-slate-800'}`}>
+    <div className={`mb-6 rounded-2xl border-2 p-4 sm:p-5 shadow-sm relative transition-all print:hidden ${isClinicAdmin ? 'border-rose-400 bg-gradient-to-br from-rose-50 via-white to-rose-50/60 text-slate-900' : 'border-amber-300 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 text-slate-800'}`}>
       {/* Dismiss button */}
       {!isClinicAdmin && (
         <button

@@ -8,6 +8,7 @@ export const AppointmentQuerySchema = z.object({
 });
 
 export const UpdateStatusSchema = z.object({
+  cancelReason: z.string().optional(),
   status: z.enum([
     "REQUESTED",
     "PENDING",

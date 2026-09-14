@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../../store/auth';
 import { useVoiceStore } from '../../store/voiceStore';
+import { useBroadcastStore } from '../../store/broadcastStore';
 import { ServerSpeechEngine } from '../../services/speech/ServerSpeechEngine';
 import { usePermissions } from '../../hooks/usePermissions';
 import api from '../../services/api';
@@ -143,16 +144,7 @@ export default function Dashboard() {
           
           if (newAppts.length > 0) {
             newAppts.forEach((appt: any) => {
-              const dateStr = format(new Date(appt.startAt), 'dd/MM');
-              const timeStr = format(new Date(appt.startAt), 'HH:mm');
-              const msgText = `Có khách hàng tên ${appt.patientName} đã đặt hẹn dịch vụ ${appt.serviceName} vào lúc ${timeStr} ngày ${dateStr}.`;
-              
-              addToast('Lịch hẹn mới', msgText, 'new');
-              import('../../services/speech/TTSQueueManager').then(m => m.TTSQueueManager.enqueue('msg_'+Date.now(), msgText));
-              
-              if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification('Lịch hẹn mới', { body: msgText, icon: '/pwa-192x192.png' });
-              }
+              useBroadcastStore.getState().handleIncomingBooking(appt);
             });
           }
         }
@@ -252,6 +244,7 @@ export default function Dashboard() {
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
       await api.patch(`/appointments/${id}/status`, { status: newStatus });
+      useBroadcastStore.getState().dismissAppointment(id);
       fetchAppointments();
     } catch (error) {
       alert("Không thể cập nhật trạng thái");
@@ -343,22 +336,8 @@ export default function Dashboard() {
     return true;
   });
 
-  const handleScan = async (data: string) => {
-    try {
-      const parsedData = JSON.parse(data);
-      if (parsedData && parsedData.type === 'checkin' && parsedData.id) {
-        setShowScanner(false);
-        setLoading(true);
-        // Automatically mark as checked in
-        await api.patch(`/appointments/${parsedData.id}/status`, { status: 'CHECKED_IN' });
-        fetchAppointments();
-        alert('Check-in thành công!');
-      } else {
-        alert('Mã QR không hợp lệ!');
-      }
-    } catch (e) {
-      alert('Không thể đọc mã QR. Hãy chắc chắn đây là mã từ vé đặt lịch.');
-    }
+  const handleScan = (aptId: string) => {
+    fetchAppointments();
   };
   const isCompact = bookingFormConfig?.uiVersion === "compact";
 
@@ -368,6 +347,7 @@ export default function Dashboard() {
       {showScanner && (
         <QrScanner 
           onScan={handleScan}
+          onSuccess={fetchAppointments}
           onClose={() => setShowScanner(false)}
         />
       )}
@@ -569,9 +549,9 @@ export default function Dashboard() {
       </header>
 
       
-      <main className="flex-1 p-3.5 sm:p-6 pb-24 md:pb-6 max-w-7xl mx-auto w-full relative">
+      <main className="flex-1 p-3.5 sm:p-6 pb-24 md:pb-6 max-w-7xl mx-auto w-full relative print:p-0 print:m-0 print:max-w-none">
         {user?.tenantId && !isConnected && (
-          <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center pt-20 px-4">
+          <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center pt-20 px-4 print:hidden">
              <div className="w-full max-w-3xl shadow-2xl rounded-2xl overflow-hidden ring-4 ring-white relative bg-white">
                 <GoogleBackupWarningBanner 
                   appointments={appointments}
@@ -590,7 +570,7 @@ export default function Dashboard() {
         )}
 
         {showStorageReminder && user?.tenantId && isConnected && (
-          <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden relative">
+          <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 shadow-sm overflow-hidden relative print:hidden">
             <button 
               onClick={dismissStorageReminder}
               className="absolute top-3 right-3 p-1 text-blue-400 hover:text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
@@ -920,10 +900,13 @@ export default function Dashboard() {
                                 {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
                                   <>
                                     <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95">Đổi Lịch</button>
-                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
+                                    <button onClick={() => setCancelModalData({ isOpen: true, appointmentId: apt.id, reason: '' })} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
                                   </>
                                 )}
                                 {apt.status === 'CHECKED_IN' && (
+                                  <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-purple-500 text-white hover:bg-purple-600 active:scale-95">Khám</button>
+                                )}
+                                {apt.status === 'IN_SERVICE' && (
                                   <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-teal-500 text-white hover:bg-teal-600 active:scale-95">Hoàn Thành</button>
                                 )}
                               </>
@@ -938,7 +921,7 @@ export default function Dashboard() {
                                 {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
                                   <>
                                     <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95">Đổi Lịch</button>
-                                    <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
+                                    <button onClick={() => setCancelModalData({ isOpen: true, appointmentId: apt.id, reason: '' })} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 active:scale-95">Hủy</button>
                                   </>
                                 )}
                                 {apt.status === 'CHECKED_IN' && (
@@ -1037,10 +1020,13 @@ export default function Dashboard() {
                                     {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
                                       <>
                                         <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200">Đổi Lịch</button>
-                                        <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Hủy</button>
+                                        <button onClick={() => setCancelModalData({ isOpen: true, appointmentId: apt.id, reason: '' })} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Hủy</button>
                                       </>
                                     )}
                                     {apt.status === 'CHECKED_IN' && (
+                                      <button onClick={() => handleUpdateStatus(apt.id, 'IN_SERVICE')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-purple-500 text-white hover:bg-purple-600 border border-transparent">Khám</button>
+                                    )}
+                                    {apt.status === 'IN_SERVICE' && (
                                       <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-teal-500 text-white hover:bg-teal-600 border border-transparent">Hoàn Thành</button>
                                     )}
                                   </>
@@ -1055,7 +1041,7 @@ export default function Dashboard() {
                                     {(apt.status === 'REQUESTED' || apt.status === 'CONFIRMED') && (
                                       <>
                                         <button onClick={() => setRescheduleData({ isOpen: true, appointment: apt, newDate: format(new Date(apt.startAt), 'yyyy-MM-dd'), newTime: format(new Date(apt.startAt), 'HH:mm') })} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border-transparent hover:border-current/10">Đổi Lịch</button>
-                                        <button onClick={() => handleUpdateStatus(apt.id, 'CANCEL_CLINIC')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
+                                        <button onClick={() => setCancelModalData({ isOpen: true, appointmentId: apt.id, reason: '' })} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-red-50 text-red-700 hover:bg-red-100 border-transparent hover:border-current/10">Hủy Lịch</button>
                                       </>
                                     )}
                                     {apt.status === 'CHECKED_IN' && (
@@ -1118,6 +1104,46 @@ export default function Dashboard() {
         </div>
       </main>
 
+      
+      {/* Cancel Modal */}
+      {cancelModalData.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100 p-6">
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Hủy lịch hẹn</h3>
+            <p className="text-sm text-slate-500 mb-4">Vui lòng nhập lý do hủy lịch để thông báo cho khách hàng.</p>
+            <textarea
+              className="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all resize-none text-sm"
+              placeholder="Ví dụ: Bác sĩ có ca mổ cấp cứu đột xuất..."
+              value={cancelModalData.reason}
+              onChange={(e) => setCancelModalData(prev => ({...prev, reason: e.target.value}))}
+            ></textarea>
+            <div className="flex justify-end gap-3 mt-6">
+              <button 
+                onClick={() => setCancelModalData({ isOpen: false, appointmentId: null, reason: '' })} 
+                className="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-medium transition-colors text-sm"
+              >
+                Đóng
+              </button>
+              <button 
+                onClick={() => {
+                  if (!cancelModalData.reason.trim()) {
+                    toast.error("Vui lòng nhập lý do hủy");
+                    return;
+                  }
+                  if (cancelModalData.appointmentId) {
+                    handleUpdateStatus(cancelModalData.appointmentId, 'CANCEL_CLINIC', cancelModalData.reason);
+                    setCancelModalData({ isOpen: false, appointmentId: null, reason: '' });
+                  }
+                }} 
+                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-xl font-medium transition-colors text-sm"
+              >
+                Xác nhận Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reschedule Modal */}
       {rescheduleData.isOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1141,7 +1167,7 @@ export default function Dashboard() {
                 <input 
                   type="date" 
                   required
-                  value={rescheduleData.newDate}
+                  value={rescheduleData.newDate || ''}
                   onChange={e => setRescheduleData(prev => ({ ...prev, newDate: e.target.value }))}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
                 />
@@ -1152,7 +1178,7 @@ export default function Dashboard() {
                 <input 
                   type="time" 
                   required
-                  value={rescheduleData.newTime}
+                  value={rescheduleData.newTime || ''}
                   onChange={e => setRescheduleData(prev => ({ ...prev, newTime: e.target.value }))}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
                 />
@@ -1180,7 +1206,7 @@ export default function Dashboard() {
 
       
       {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)] print:hidden">
         <div className="flex items-center justify-start sm:justify-around px-2 h-16 overflow-x-auto gap-2">
           {hasPermission('appointment.view') && (
             <button 
@@ -1241,7 +1267,7 @@ export default function Dashboard() {
 
       <IdleTimeoutManager />
       {/* Floating Toast Message System */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none print:hidden">
         {toasts.map((t) => (
           <div
             key={t.id}

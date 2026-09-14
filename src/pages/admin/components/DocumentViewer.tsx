@@ -250,7 +250,7 @@ export default function DocumentViewer({
                   <div className="space-y-3">
                     <label className="text-sm font-bold text-text-main block">Tài khoản Telegram</label>
                     <Input 
-                      value={telegramIdInput} 
+                      value={telegramIdInput || ''} 
                       onChange={e => setTelegramIdInput(e.target.value)} 
                       placeholder="VD: @username hoặc Chat ID" 
                       className="bg-bg-base text-sm" 

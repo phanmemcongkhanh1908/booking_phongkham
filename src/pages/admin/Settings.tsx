@@ -540,7 +540,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 7123456789:AAHq..." 
-                value={telegramToken} 
+                value={telegramToken || ''} 
                 onChange={e => setTelegramToken(e.target.value)} 
                 className="text-xs"
               />
@@ -552,7 +552,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 123456789" 
-                value={telegramChatId} 
+                value={telegramChatId || ''} 
                 onChange={e => setTelegramChatId(e.target.value)} 
                 className="text-xs"
               />
@@ -564,7 +564,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: NhaKhoaSmartBot" 
-                value={telegramBotUsername} 
+                value={telegramBotUsername || ''} 
                 onChange={e => setTelegramBotUsername(e.target.value)} 
                 className="text-xs"
               />
@@ -647,7 +647,7 @@ export default function Settings() {
                 <Input 
                   type="text" 
                   placeholder="VD: smtp.gmail.com" 
-                  value={emailConfig.host} 
+                  value={emailConfig.host || ''} 
                   onChange={e => setEmailConfig({ ...emailConfig, host: e.target.value })} 
                   className="text-xs h-8"
                 />
@@ -657,7 +657,7 @@ export default function Settings() {
                 <Input 
                   type="number" 
                   placeholder="587 hoặc 465" 
-                  value={emailConfig.port} 
+                  value={emailConfig.port || ''} 
                   onChange={e => setEmailConfig({ ...emailConfig, port: parseInt(e.target.value) || 587 })} 
                   className="text-xs h-8"
                 />
@@ -669,7 +669,7 @@ export default function Settings() {
               <Input 
                 type="email" 
                 placeholder="VD: phongkham.nhakhoa@gmail.com" 
-                value={emailConfig.user} 
+                value={emailConfig.user || ''} 
                 onChange={e => setEmailConfig({ ...emailConfig, user: e.target.value })} 
                 className="text-xs h-8"
               />
@@ -680,7 +680,7 @@ export default function Settings() {
               <Input 
                 type="password" 
                 placeholder="Mật khẩu 16 ký tự Gmail hoặc SMTP pass" 
-                value={emailConfig.pass} 
+                value={emailConfig.pass || ''} 
                 onChange={e => setEmailConfig({ ...emailConfig, pass: e.target.value })} 
                 className="text-xs h-8"
               />
@@ -691,7 +691,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: Nha Khoa Dental Smart <phongkham@gmail.com>" 
-                value={emailConfig.from} 
+                value={emailConfig.from || ''} 
                 onChange={e => setEmailConfig({ ...emailConfig, from: e.target.value })} 
                 className="text-xs h-8"
               />
@@ -702,7 +702,7 @@ export default function Settings() {
               <Input 
                 type="email" 
                 placeholder="Email nhận thư thử nghiệm..." 
-                value={testRecipient} 
+                value={testRecipient || ''} 
                 onChange={e => setTestRecipient(e.target.value)} 
                 className="text-xs h-8 flex-1 w-full"
               />
@@ -762,7 +762,7 @@ export default function Settings() {
                   <Input 
                     type="text" 
                     placeholder="VD: 📢 Nha khoa nghỉ lễ Quốc Khánh từ 01/09 đến 03/09. Xin cảm ơn quý khách!" 
-                    value={announcementBanner.message} 
+                    value={announcementBanner.message || ''} 
                     onChange={e => setAnnouncementBanner({...announcementBanner, message: e.target.value})} 
                   />
                 </div>
@@ -806,7 +806,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: Nha khoa Lê Phương" 
-                value={clinicProfile.clinicName} 
+                value={clinicProfile.clinicName || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, clinicName: e.target.value})} 
               />
             </div>
@@ -827,7 +827,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: Lê Thị Diễm Phương" 
-                value={clinicProfile.doctorName} 
+                value={clinicProfile.doctorName || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, doctorName: e.target.value})} 
               />
             </div>
@@ -836,7 +836,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5, TP.HCM" 
-                value={clinicProfile.address} 
+                value={clinicProfile.address || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} 
               />
             </div>
@@ -845,7 +845,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 0901 234 567" 
-                value={clinicProfile.phone} 
+                value={clinicProfile.phone || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, phone: e.target.value})} 
               />
             </div>
@@ -854,7 +854,7 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 08:00 - 20:00 (Thứ 2 - Thứ 7)" 
-                value={clinicProfile.workingHours} 
+                value={clinicProfile.workingHours || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, workingHours: e.target.value})} 
               />
             </div>
@@ -1107,7 +1107,7 @@ export default function Settings() {
                   <Input
                     type="text"
                     placeholder="VD: Đang mang thai, Sợ tiêm, Khám cùng người thân, Răng nhạy cảm..."
-                    value={newTagInput}
+                    value={newTagInput || ''}
                     onChange={e => setNewTagInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
@@ -1356,7 +1356,7 @@ export default function Settings() {
                 <Input
                   type="text"
                   placeholder="Nhập XOA DU LIEU để xác nhận"
-                  value={wipeConfirmInput}
+                  value={wipeConfirmInput || ''}
                   onChange={(e) => setWipeConfirmInput(e.target.value)}
                   disabled={isWiping}
                   className="w-full text-sm border-red-300 focus:border-red-500 focus:ring-red-500"
@@ -1608,7 +1608,7 @@ export default function Settings() {
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2">
                       <Input
                         placeholder="Nhập ID Spreadsheet nếu muốn thay đổi..."
-                        value={manualSheetInput}
+                        value={manualSheetInput || ''}
                         onChange={(e) => setManualSheetInput(e.target.value)}
                         className="text-xs h-8 flex-1 w-full"
                       />

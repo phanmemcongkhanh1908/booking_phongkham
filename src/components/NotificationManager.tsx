@@ -4,13 +4,30 @@ import { useAuthStore } from '../store/auth';
 import { differenceInMinutes, parseISO } from 'date-fns';
 import api from '../services/api';
 import { useRealtimeBooking } from '../hooks/useRealtimeBooking';
+import { useBroadcastStore } from '../store/broadcastStore';
+import BroadcastAlertBar from './BroadcastAlertBar';
+import { useLocation } from 'react-router-dom';
 
 export default function NotificationManager() {
   const token = useAuthStore(state => state.token);
+  const location = useLocation();
   
-  // Attach SSE for real-time booking notifications & TTS
+  // Attach SSE for real-time booking notifications & TTS broadcast
   useRealtimeBooking();
 
+
+  // Smart Reminder Loop: Checks unacknowledged/unconfirmed bookings every 4 seconds
+  useEffect(() => {
+    if (!token) return;
+
+    const interval = setInterval(() => {
+      useBroadcastStore.getState().checkAndTriggerReminders();
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
+  // Upcoming appointment checks (15m reminder)
   useEffect(() => {
     const checkUpcomingAppointments = async () => {
       const now = new Date();
@@ -43,25 +60,27 @@ export default function NotificationManager() {
         // PATIENT MODE: Check local storage
         const myApptsStr = localStorage.getItem('myAppointments');
         if (myApptsStr) {
-          const myAppts = JSON.parse(myApptsStr);
-          myAppts.forEach((apt: any) => {
-            const diff = differenceInMinutes(parseISO(apt.startAt), now);
-            if (diff > 0 && diff <= 60) {
-              const notifKey = `notif_patient_${apt.id}_${diff <= 15 ? '15m' : '1h'}`;
-              if (!sessionStorage.getItem(notifKey)) {
-                toast.success(`Bạn có lịch hẹn khám nha khoa sắp tới lúc ${formatTime(apt.startAt)}!`, {
-                  icon: '🏥',
-                  duration: 10000,
-                  style: {
-                    background: '#f8fafc',
-                    color: '#0f172a',
-                    border: '1px solid #e2e8f0'
-                  },
-                });
-                sessionStorage.setItem(notifKey, 'true');
+          try {
+            const myAppts = JSON.parse(myApptsStr);
+            myAppts.forEach((apt: any) => {
+              const diff = differenceInMinutes(parseISO(apt.startAt), now);
+              if (diff > 0 && diff <= 60) {
+                const notifKey = `notif_patient_${apt.id}_${diff <= 15 ? '15m' : '1h'}`;
+                if (!sessionStorage.getItem(notifKey)) {
+                  toast.success(`Bạn có lịch hẹn khám nha khoa sắp tới lúc ${formatTime(apt.startAt)}!`, {
+                    icon: '🏥',
+                    duration: 10000,
+                    style: {
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      border: '1px solid #e2e8f0'
+                    },
+                  });
+                  sessionStorage.setItem(notifKey, 'true');
+                }
               }
-            }
-          });
+            });
+          } catch {}
         }
       }
     };
@@ -83,5 +102,10 @@ export default function NotificationManager() {
     return () => clearInterval(interval);
   }, [token]);
 
-  return <Toaster position="top-right" />;
+  return (
+    <>
+      <Toaster position="top-right" />
+      {location.pathname.startsWith('/admin') && <BroadcastAlertBar />}
+    </>
+  );
 }

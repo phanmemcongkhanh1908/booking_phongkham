@@ -27,6 +27,7 @@ interface Service {
   showPrice?: boolean;
   isHot?: boolean;
   isFree?: boolean;
+  tags?: string[];
 }
 
 export default function ServiceSelection() {
@@ -88,15 +89,28 @@ export default function ServiceSelection() {
     { key: 'treatment', label: 'Điều trị & Phẫu thuật' }
   ], []);
 
+  const extendedServices = useMemo(() => {
+    // Idea 4: Enhance services with premium tags dynamically for demo
+    return services.map(s => {
+      let tags: string[] = [];
+      if (s.name.toLowerCase().includes('khám') || s.name.toLowerCase().includes('tư vấn')) tags = ['Miễn phí', 'Nhanh chóng'];
+      else if (s.name.toLowerCase().includes('nhổ răng') || s.name.toLowerCase().includes('tiểu phẫu')) tags = ['Không đau', 'Công nghệ Piezotome'];
+      else if (s.name.toLowerCase().includes('tẩy trắng') || s.name.toLowerCase().includes('thẩm mỹ')) tags = ['Best Seller', 'Trả góp 0%'];
+      else if (s.name.toLowerCase().includes('niềng răng') || s.name.toLowerCase().includes('implant')) tags = ['Chuyên sâu', 'Bảo hành trọn đời'];
+      else tags = ['Chuẩn Y khoa'];
+      return { ...s, tags: s.tags || tags };
+    });
+  }, [services]);
+
   const filteredServices = useMemo(() => {
-    return services.filter(svc => {
+    return extendedServices.filter(svc => {
       const matchSearch = svc.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchSearch) return false;
       if (selectedCategory === 'all') return true;
       const cat = getCategory(svc.name);
       return cat.key === selectedCategory;
     });
-  }, [services, searchQuery, selectedCategory]);
+  }, [extendedServices, searchQuery, selectedCategory]);
 
   const handleSelectService = (svc: Service) => {
     if (currentServiceId && currentServiceId !== svc.id) {
@@ -164,7 +178,7 @@ export default function ServiceSelection() {
               <input 
                 type="text"
                 placeholder="Tìm kiếm dịch vụ..."
-                value={searchQuery}
+                value={searchQuery || ''}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-sm placeholder:text-slate-400 focus:bg-white focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all outline-none"
               />
@@ -273,6 +287,15 @@ export default function ServiceSelection() {
                   <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-teal-800 transition-colors leading-snug">
                     {svc.name}
                   </h3>
+                  {svc.tags && svc.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {svc.tags.map((tag: string, i: number) => (
+                        <span key={i} className="px-2 py-0.5 bg-teal-50 text-teal-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-teal-100">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
                     {svc.description || 'Quy trình vô trùng y khoa khép kín, được thực hiện bởi bác sĩ giàu kinh nghiệm.'}
                   </p>

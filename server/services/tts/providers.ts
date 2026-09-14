@@ -5,16 +5,90 @@ import path from "path";
 
 const execAsync = promisify(exec);
 
-export type Provider = "google" | "fpt" | "viettel" | "piper";
+export type Provider = "google" | "google_public" | "fpt" | "viettel" | "piper";
 
 export interface TTSProvider {
   name: Provider;
+  displayName: string;
   generate(text: string, outputPath: string): Promise<void>;
   isConfigured(): boolean;
 }
 
+function splitTextIntoSafeChunks(text: string, maxLen: number = 180): string[] {
+  if (text.length <= maxLen) return [text];
+  const sentences = text.split(/([.,!?;\n]+)/);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (let i = 0; i < sentences.length; i++) {
+    const part = sentences[i];
+    if ((current + part).length <= maxLen) {
+      current += part;
+    } else {
+      if (current.trim()) chunks.push(current.trim());
+      if (part.length > maxLen) {
+        const words = part.split(" ");
+        let sub = "";
+        for (const w of words) {
+          if ((sub + " " + w).length <= maxLen) {
+            sub = sub ? `${sub} ${w}` : w;
+          } else {
+            if (sub.trim()) chunks.push(sub.trim());
+            sub = w;
+          }
+        }
+        current = sub;
+      } else {
+        current = part;
+      }
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+export class GooglePublicTTSProvider implements TTSProvider {
+  name: Provider = "google_public";
+  displayName = "Google Voice Tiếng Việt Chuẩn (Tất cả thiết bị)";
+
+  isConfigured() {
+    return true; // Luôn sẵn sàng hoạt động độc lập mọi thiết bị
+  }
+
+  async generate(text: string, outputPath: string) {
+    const chunks = splitTextIntoSafeChunks(text, 180);
+    const audioBuffers: Buffer[] = [];
+
+    for (const chunk of chunks) {
+      if (!chunk.trim()) continue;
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=${encodeURIComponent(chunk.trim())}`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://translate.google.com/"
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Google Public TTS failed: ${res.status}`);
+      }
+
+      const ab = await res.arrayBuffer();
+      audioBuffers.push(Buffer.from(ab));
+    }
+
+    if (audioBuffers.length === 0) {
+      throw new Error("Không thể tạo dữ liệu âm thanh");
+    }
+
+    const combined = Buffer.concat(audioBuffers);
+    fs.writeFileSync(outputPath, combined);
+  }
+}
+
 export class GoogleTTSProvider implements TTSProvider {
   name: Provider = "google";
+  displayName = "Google Cloud Wavenet TTS (Cloud API)";
 
   isConfigured() {
     return !!process.env.GOOGLE_TTS_API_KEY;
@@ -50,6 +124,7 @@ export class GoogleTTSProvider implements TTSProvider {
 
 export class FptTTSProvider implements TTSProvider {
   name: Provider = "fpt";
+  displayName = "FPT.AI Voice Tiếng Việt";
 
   isConfigured() {
     return !!process.env.FPT_TTS_API_KEY;
@@ -101,6 +176,7 @@ export class FptTTSProvider implements TTSProvider {
 
 export class ViettelTTSProvider implements TTSProvider {
   name: Provider = "viettel";
+  displayName = "Viettel AI Voice Tiếng Việt";
 
   isConfigured() {
     return !!process.env.VIETTEL_TTS_TOKEN;
@@ -136,6 +212,7 @@ export class ViettelTTSProvider implements TTSProvider {
 
 export class PiperTTSProvider implements TTSProvider {
   name: Provider = "piper";
+  displayName = "Piper Offline Neural Voice";
 
   isConfigured() {
     return !!process.env.PIPER_MODEL && !!process.env.PIPER_BIN;

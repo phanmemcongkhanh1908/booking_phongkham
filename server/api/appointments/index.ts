@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { appointments, patients, providers, services, settings } from "../../db/schema.js";
 import { sendPatientReminder } from "../../core/telegram.js";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, or, like, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
 import { AppointmentQuerySchema, UpdateStatusSchema } from "../../../shared/appointment.js";
 import { NotFoundError, BadRequestError } from "../../core/errors.js";
@@ -11,6 +11,7 @@ import { safeFormatDate } from "../../utils/dateFormat.js";
 import { sendWebPush } from "../../services/notification.js";
 import { triggerWaitlistMatching } from "../../jobs/waitlistMatcher.js";
 import { generateRecall } from "../../jobs/recallGenerator.js";
+import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
 
 const appointmentRouter = Router();
@@ -75,8 +76,8 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
 // Helper: Kiểm tra tính hợp lệ của State Machine
 const isValidTransition = (current: string, next: string): boolean => {
   const allowedTransitions: Record<string, string[]> = {
-    "PENDING": ["REQUESTED", "CONFIRMED", "CANCEL_PATIENT", "CANCEL_CLINIC"],
-    "REQUESTED": ["CONFIRMED", "CANCEL_CLINIC", "CANCEL_PATIENT"],
+    "PENDING": ["REQUESTED", "CONFIRMED", "CHECKED_IN", "CANCEL_PATIENT", "CANCEL_CLINIC"],
+    "REQUESTED": ["CONFIRMED", "CHECKED_IN", "CANCEL_CLINIC", "CANCEL_PATIENT"],
     "CONFIRMED": ["CHECKED_IN", "NO_SHOW", "CANCEL_PATIENT", "CANCEL_CLINIC", "RESCHEDULED"],
     "CHECKED_IN": ["IN_SERVICE", "CANCEL_PATIENT", "CANCEL_CLINIC"],
     "IN_SERVICE": ["COMPLETED"],
@@ -90,6 +91,96 @@ const isValidTransition = (current: string, next: string): boolean => {
   const allowed = allowedTransitions[current] || [];
   return allowed.includes(next);
 };
+
+// Tra cứu nhanh lịch hẹn cho Check-in (theo ID hoặc số điện thoại)
+appointmentRouter.get("/lookup/:term", requirePermission("appointment.view"), async (req, res, next) => {
+  try {
+    const term = req.params.term.trim();
+    if (!term) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const cleanTerm = term.replace(/\D/g, '');
+
+    const conditions = [
+      eq(appointments.id, term),
+      like(appointments.id, `%${term}%`)
+    ];
+
+    if (cleanTerm.length >= 3) {
+      conditions.push(like(patients.phone, `%${cleanTerm}%`));
+    }
+    if (term.length >= 2) {
+      conditions.push(like(patients.fullName, `%${term}%`));
+    }
+
+    const results = await db
+      .select({
+        id: appointments.id,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        status: appointments.status,
+        patientId: patients.id,
+        patientName: patients.fullName,
+        patientPhone: patients.phone,
+        providerName: providers.name,
+        serviceName: services.name,
+        price: services.price,
+        durationMins: services.durationMins,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .where(or(...conditions))
+      .orderBy(desc(appointments.startAt))
+      .limit(10);
+
+    res.json({
+      success: true,
+      data: results,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lấy chi tiết 1 lịch hẹn theo ID
+appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const results = await db
+      .select({
+        id: appointments.id,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        status: appointments.status,
+        patientId: patients.id,
+        patientName: patients.fullName,
+        patientPhone: patients.phone,
+        debt: patients.debt,
+        allergies: patients.allergies,
+        providerName: providers.name,
+        serviceName: services.name,
+        price: services.price,
+        durationMins: services.durationMins,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .where(eq(appointments.id, id))
+      .limit(1);
+
+    if (results.length === 0) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
+    }
+
+    res.json({ success: true, data: results[0] });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // [M02] Đặt lịch trực tiếp (Admin/Receptionist)
 appointmentRouter.post("/next", requirePermission("appointment.create"), async (req, res, next) => {
@@ -106,6 +197,10 @@ appointmentRouter.post("/next", requirePermission("appointment.create"), async (
       } else {
         throw new BadRequestError("Không có bác sĩ nào trong hệ thống");
       }
+    }
+    const occupiedSlots = await getProviderOccupiedSlots(providerId, new Date(startAt));
+    if (isSlotConflict(new Date(startAt), new Date(endAt), occupiedSlots)) {
+      throw new BadRequestError("Khung giờ này đã bị đụng lịch. Vui lòng chọn giờ khác.");
     }
 
     const newAppointment = await db.insert(appointments).values({
@@ -134,13 +229,13 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
     }
 
     const bookingResult = await db.transaction(async (tx) => {
-      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, phone)).limit(1);
+      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, phone.replace(/\D/g, ''))).limit(1);
       let patientId = '';
 
       if (patientRecords.length === 0) {
         const newPatient = await tx.insert(patients).values({
           fullName: patientName,
-          phone: phone,
+          phone: phone.replace(/\D/g, ''),
         }).returning();
         patientId = newPatient[0].id;
       } else {
@@ -150,6 +245,11 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
       const providerRecords = await tx.select().from(providers).limit(1);
       if (providerRecords.length === 0) {
         throw new BadRequestError("Không có bác sĩ nào trong hệ thống");
+      }
+      
+      const occupiedSlots = await getProviderOccupiedSlots(providerRecords[0].id, new Date(startAt));
+      if (isSlotConflict(new Date(startAt), new Date(endAt), occupiedSlots)) {
+        throw new BadRequestError("Khung giờ này đã bị đụng lịch. Vui lòng chọn giờ khác.");
       }
 
       const newAppointment = await tx.insert(appointments).values({
@@ -195,7 +295,7 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
 appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
-    const { status: nextStatus } = UpdateStatusSchema.parse(req.body);
+    const { status: nextStatus, cancelReason } = UpdateStatusSchema.parse(req.body);
 
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
     if (existing.length === 0) {
@@ -214,11 +314,12 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
       throw new BadRequestError(`Không thể chuyển trạng thái từ ${currentStatus} sang ${nextStatus}`);
     }
 
+    const updateData: any = { status: nextStatus, updatedAt: new Date() };
+    if (cancelReason && nextStatus === "CANCEL_CLINIC") {
+      updateData.cancelReason = cancelReason;
+    }
     const updated = await db.update(appointments)
-      .set({ 
-        status: nextStatus, 
-        updatedAt: new Date() 
-      })
+      .set(updateData)
       .where(eq(appointments.id, appointmentId))
       .returning();
 
@@ -241,11 +342,11 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
         const timeStr = safeFormatDate(appointment.startAt, "HH:mm dd/MM/yyyy");
         await sendWebPush(appointment.patientId, {
           title: "Lịch hẹn đã bị hủy",
-          body: `Lịch hẹn của bạn vào lúc ${timeStr} đã bị hủy bởi phòng khám.`,
+          body: `Lịch hẹn của bạn vào lúc ${timeStr} đã bị hủy. ${cancelReason ? 'Lý do: ' + cancelReason : ''}`,
         });
       }
       // Tự động thông báo hủy qua Telegram / Email cho bệnh nhân
-      notifyPatientAppointment(appointment.id, "CANCELLED").catch(console.error);
+      notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
       
       // Trigger Waitlist Engine
       triggerWaitlistMatching(appointment).catch(console.error);

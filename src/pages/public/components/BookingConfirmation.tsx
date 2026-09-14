@@ -106,14 +106,8 @@ export default function BookingConfirmation() {
       if (res.data.success) {
         const appointmentData = res.data.data;
         if (appointmentData && appointmentData.appointmentId) {
-          const myAppts = JSON.parse(localStorage.getItem('myAppointments') || '[]');
-          myAppts.push({
-            id: appointmentData.appointmentId,
-            startAt: slotStartTime,
-            email: patientDraft.email ? patientDraft.email.trim() : undefined
-          });
-          localStorage.setItem('myAppointments', JSON.stringify(myAppts));
-
+          localStorage.setItem('verifiedPatient', JSON.stringify({ phone: patientDraft.phone.trim(), fullName: patientDraft.fullName.trim() }));
+          
           useBookingStore.getState().setAppointmentSuccess(
             appointmentData.appointmentId,
             patientDraft.fullName,

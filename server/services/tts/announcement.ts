@@ -46,8 +46,33 @@ export function generateVietnameseAnnouncement(payload: any): string {
   const dateSpoken = `ngày ${day} tháng ${month} năm ${year}`;
 
   if (providerName) {
-    return `Có khách hàng mới đặt lịch. Khách hàng ${patientName}. Dịch vụ ${serviceName}. Bác sĩ ${providerName}. Thời gian hẹn ${timeSpoken}, ${dateSpoken}.`;
+    return `Thông báo: Có khách hàng mới đặt lịch. Khách hàng ${patientName}. Dịch vụ ${serviceName}. Bác sĩ ${providerName}. Thời gian hẹn ${timeSpoken}, ${dateSpoken}.`;
   } else {
-    return `Có khách hàng mới đặt lịch. Khách hàng ${patientName}. Dịch vụ ${serviceName}. Thời gian hẹn ${timeSpoken}, ${dateSpoken}.`;
+    return `Thông báo: Có khách hàng mới đặt lịch. Khách hàng ${patientName}. Dịch vụ ${serviceName}. Thời gian hẹn ${timeSpoken}, ${dateSpoken}.`;
   }
+}
+
+export function generateVietnameseReminderAnnouncement(payload: any, reminderCount: number = 1): string {
+  const patientName = sanitizeForSpeech(payload.patientName || "không xác định");
+  const serviceName = sanitizeForSpeech(payload.serviceName || "khám nha khoa");
+  
+  let timeSpoken = "hôm nay";
+  try {
+    if (payload.startAt) {
+      const startDate = new Date(payload.startAt);
+      const optionsTime: Intl.DateTimeFormatOptions = { 
+        hour: 'numeric', minute: 'numeric', 
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour12: false 
+      };
+      const timeStr = new Intl.DateTimeFormat('vi-VN', optionsTime).format(startDate);
+      const [h, m] = timeStr.split(':');
+      const hNum = parseInt(h, 10);
+      const mNum = parseInt(m, 10);
+      timeSpoken = mNum === 0 ? `${hNum} giờ` : `${hNum} giờ ${mNum} phút`;
+    }
+  } catch {}
+
+  const countStr = reminderCount > 1 ? ` lần ${reminderCount}` : '';
+  return `Nhắc nhở${countStr}: Có lịch hẹn của khách hàng ${patientName}, đặt dịch vụ ${serviceName} lúc ${timeSpoken} chưa được chốt lịch. Quản lý phòng khám vui lòng kiểm tra và xác nhận ngay.`;
 }

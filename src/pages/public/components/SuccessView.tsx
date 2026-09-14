@@ -21,7 +21,8 @@ import {
   CalendarPlus
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
-import { toPng } from 'html-to-image';
+import { toPng } from "html-to-image";
+import { PushNotificationPrompt } from "./PushNotificationPrompt";
 import { format, addMinutes } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import api from '../../../services/api';
@@ -282,7 +283,7 @@ export default function SuccessView() {
           {/* QR Code Express Check-in Section */}
           <div className="p-6 bg-slate-50/90 flex flex-col items-center justify-center text-center space-y-3">
             <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200/80">
-              <QRCodeCanvas value={qrData} size={128} level="M" />
+              <QRCodeCanvas value={qrData || ''} size={128} level="M" />
             </div>
             <div>
               <p className="text-xs font-bold text-slate-800">
@@ -332,7 +333,7 @@ export default function SuccessView() {
             <input 
               type="email" 
               placeholder="Nhập địa chỉ email của bạn..." 
-              value={emailInput}
+              value={emailInput || ''}
               onChange={e => setEmailInput(e.target.value)}
               className="text-xs sm:text-sm h-10 px-3.5 rounded-xl border border-slate-200 bg-white flex-1 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/10"
               required
@@ -384,15 +385,25 @@ export default function SuccessView() {
         <ul className="space-y-2 text-xs text-slate-600 leading-relaxed">
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" />
-            <span>Quý khách nên đến trước giờ hẹn <strong>5 – 10 phút</strong> để nhân viên lễ tân hỗ trợ kiểm tra thông tin và chuẩn bị hồ sơ y tế tốt nhất.</span>
+            <span>Vui lòng mang theo <strong>CCCD / Căn cước</strong> hoặc <strong>BHYT</strong> (nếu có) để đối chiếu thông tin và làm thủ tục hành chính nhanh chóng.</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" />
-            <span>Nếu cần dời lịch hoặc có việc đột xuất, quý khách có thể liên hệ số hotline <strong>{phone || 'của phòng khám'}</strong> để được hỗ trợ chuyển sang khung giờ khác hoàn toàn miễn phí.</span>
+            <span>Quý khách nên có mặt trước giờ hẹn <strong>10 phút</strong> để nhân viên lễ tân hỗ trợ chuẩn bị hồ sơ y tế tốt nhất.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" />
+            <span>Vì lý do chuyên môn, nếu quý khách đến trễ quá 15 phút, phòng khám có thể sẽ linh động sắp xếp khung giờ tiếp theo để không ảnh hưởng đến bệnh nhân khác.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" />
+            <span>Nếu có thay đổi, vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> qua hotline <strong>{phone || 'phòng khám'}</strong>.</span>
           </li>
         </ul>
       </div>
 
+      <PushNotificationPrompt phone={patientPhone || ''} />
+      
       {/* Action Navigation */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
         <button
@@ -401,6 +412,13 @@ export default function SuccessView() {
           className="flex-1 py-3.5 px-6 rounded-2xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-sm shadow-md transition-colors text-center cursor-pointer"
         >
           Đặt thêm lịch hẹn mới
+        </button>
+        <button
+          type="button"
+          onClick={() => window.location.href = '/lich-hen-cua-toi'}
+          className="flex-1 py-3.5 px-6 rounded-2xl bg-white border-2 border-teal-600 text-teal-700 hover:bg-teal-50 font-extrabold text-sm shadow-sm transition-colors text-center cursor-pointer"
+        >
+          Tra cứu & Quản lý lịch
         </button>
       </div>
     </div>

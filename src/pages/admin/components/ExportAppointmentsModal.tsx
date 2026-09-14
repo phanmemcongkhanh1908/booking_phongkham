@@ -132,7 +132,7 @@ export default function ExportAppointmentsModal({
               <Input 
                 type="date" 
                 required 
-                value={startDate}
+                value={startDate || ''}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
@@ -141,7 +141,7 @@ export default function ExportAppointmentsModal({
               <Input 
                 type="date" 
                 required 
-                value={endDate}
+                value={endDate || ''}
                 onChange={(e) => setEndDate(e.target.value)}
                 min={startDate}
               />

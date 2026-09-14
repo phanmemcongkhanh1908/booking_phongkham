@@ -1,10 +1,11 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { GoogleTTSProvider, FptTTSProvider, ViettelTTSProvider, PiperTTSProvider, TTSProvider, Provider } from "./providers.js";
+import { GoogleTTSProvider, GooglePublicTTSProvider, FptTTSProvider, ViettelTTSProvider, PiperTTSProvider, TTSProvider, Provider } from "./providers.js";
 
 const providers: Record<Provider, TTSProvider> = {
   google: new GoogleTTSProvider(),
+  google_public: new GooglePublicTTSProvider(),
   fpt: new FptTTSProvider(),
   viettel: new ViettelTTSProvider(),
   piper: new PiperTTSProvider(),
@@ -18,7 +19,10 @@ if (!fs.existsSync(CACHE_DIR)) {
 }
 
 function getActiveProviders(): TTSProvider[] {
-  const envProviders = (process.env.TTS_PROVIDER || "").split(",").map(p => p.trim().toLowerCase() as Provider);
+  const envProviders = (process.env.TTS_PROVIDER || "")
+    .split(",")
+    .map(p => p.trim().toLowerCase() as Provider)
+    .filter(Boolean);
   
   const active: TTSProvider[] = [];
   for (const p of envProviders) {
@@ -26,6 +30,17 @@ function getActiveProviders(): TTSProvider[] {
       active.push(providers[p]);
     }
   }
+
+  // Tự động kích hoạt các nhà cung cấp sẵn sàng, luôn có GooglePublicTTS làm chuẩn độc lập thiết bị
+  if (active.length === 0) {
+    if (providers.google.isConfigured()) active.push(providers.google);
+    if (providers.fpt.isConfigured()) active.push(providers.fpt);
+    if (providers.viettel.isConfigured()) active.push(providers.viettel);
+    if (providers.piper.isConfigured()) active.push(providers.piper);
+    // Luôn có Google Public Voice chuẩn tiếng Việt mọi thiết bị
+    active.push(providers.google_public);
+  }
+
   return active;
 }
 
@@ -33,7 +48,7 @@ export function getTtsStatus() {
   const active = getActiveProviders();
   return {
     enabled: active.length > 0,
-    providers: active.map(p => p.name)
+    providers: active.map(p => p.displayName || p.name)
   };
 }
 

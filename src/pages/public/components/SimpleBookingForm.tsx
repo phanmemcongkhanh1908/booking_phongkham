@@ -49,7 +49,14 @@ export default function SimpleBookingForm() {
     notes: '',
   });
   
+  const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'new' | 'existing_unverified' | 'verified'>('idle');
+  const [verifyName, setVerifyName] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [lastServiceId, setLastServiceId] = useState<string | null>(null);
+  const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeSession, setActiveSession] = useState<{ token: string, startAt: string, endAt: string, expiresAt: number } | null>(null);
   
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const setStepStore = useBookingStore(s => s.setStep);
@@ -91,6 +98,81 @@ export default function SimpleBookingForm() {
     });
   }, [selectedService, selectedDate]);
 
+  useEffect(() => {
+    const rawClean = formData.phone.replace(/\D/g, '');
+    const isValid = /^\d{10,11}$/.test(rawClean);
+    
+    if (!isValid) {
+      setPhoneStatus('idle');
+      return;
+    }
+    
+    if (phoneStatus === 'verified') return;
+
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    
+    checkTimerRef.current = setTimeout(async () => {
+      setPhoneStatus('checking');
+      try {
+        const res = await api.get('/public/patients/check', {
+          params: { phone: rawClean }
+        });
+        if (res.data?.success) {
+          if (res.data.exists) {
+            setPhoneStatus('existing_unverified');
+          } else {
+            setPhoneStatus('new');
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi kiểm tra SĐT", err);
+        setPhoneStatus('new'); // Fallback
+      }
+    }, 600);
+    
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    };
+  }, [formData.phone]);
+
+  const handleVerifyName = async () => {
+    if (!verifyName.trim()) {
+      toast.error("Vui lòng nhập họ tên để xác thực.");
+      return;
+    }
+    setIsVerifying(true);
+    try {
+      const res = await api.post('/public/patients/verify', {
+        phone: formData.phone,
+        fullName: verifyName
+      });
+      if (res.data?.success && res.data?.match && res.data?.data) {
+        const p = res.data.data;
+        setFormData(prev => ({
+          ...prev,
+          fullName: p.fullName || prev.fullName,
+          email: p.email || prev.email,
+          notes: p.notes || prev.notes
+        }));
+        setPhoneStatus('verified');
+        toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
+        if (p.lastServiceId && !selectedService) {
+           // Gợi ý dịch vụ cũ
+           setLastServiceId(p.lastServiceId);
+           setSelectedService(p.lastServiceId);
+           toast.success(`Hệ thống đã tự động chọn dịch vụ: ${p.lastServiceName}`);
+        }
+      } else {
+        toast.error("Tên không khớp với hồ sơ, vui lòng thử lại hoặc dùng số điện thoại khác.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Có lỗi xảy ra khi xác thực.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedService || !selectedSlot) {
@@ -104,18 +186,29 @@ export default function SimpleBookingForm() {
 
     setIsSubmitting(true);
     try {
-      const holdRes = await api.post('/public/appointments/hold', {
-        providerId: selectedSlot.providerId,
-        serviceId: selectedService,
-        startAt: selectedSlot.startAt,
-        endAt: selectedSlot.endAt
-      });
+      let sessionToken = activeSession?.token;
       
-      if (!holdRes.data.success) {
-        throw new Error('Khung giờ này đã có người đặt, vui lòng chọn lại.');
+      // If no session or session expired or different slot, hold new slot
+      if (!sessionToken || activeSession?.startAt !== selectedSlot.startAt || Date.now() + 5000 > (activeSession?.expiresAt || 0)) {
+        const holdRes = await api.post('/public/appointments/hold', {
+          providerId: selectedSlot.providerId,
+          serviceId: selectedService,
+          startAt: selectedSlot.startAt,
+          endAt: selectedSlot.endAt
+        });
+        
+        if (!holdRes.data.success) {
+          throw new Error('Khung giờ này đã có người đặt, vui lòng chọn lại.');
+        }
+        
+        sessionToken = holdRes.data.data.sessionToken;
+        setActiveSession({
+          token: sessionToken,
+          startAt: selectedSlot.startAt,
+          endAt: selectedSlot.endAt,
+          expiresAt: new Date(holdRes.data.data.expiresAt).getTime()
+        });
       }
-      
-      const sessionToken = holdRes.data.data.sessionToken;
 
       const res = await api.post('/public/appointments', {
         sessionToken,
@@ -126,6 +219,11 @@ export default function SimpleBookingForm() {
       });
 
       if (res.data.success) {
+        const appointmentData = res.data.data;
+        if (appointmentData && appointmentData.appointmentId) {
+          localStorage.setItem('verifiedPatient', JSON.stringify({ phone: formData.phone, fullName: formData.fullName }));
+        }
+
         setAppointmentSuccess(
           res.data.data.appointmentId,
           formData.fullName,
@@ -318,24 +416,8 @@ export default function SimpleBookingForm() {
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Thông tin liên hệ</h3>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
-            <div className="space-y-2 relative">
-              <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Họ và tên <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={formData.fullName}
-                  onChange={e => setFormData({...formData, fullName: e.target.value})}
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                  placeholder="Nhập đầy đủ họ tên"
-                />
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 gap-5 sm:gap-6">
+            {/* SĐT */}
             <div className="space-y-2 relative">
               <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Số điện thoại <span className="text-red-500">*</span></label>
               <div className="relative">
@@ -345,13 +427,92 @@ export default function SimpleBookingForm() {
                 <input
                   type="tel"
                   required
-                  value={formData.phone}
-                  onChange={e => setFormData({...formData, phone: e.target.value})}
+                  value={formData.phone || ''}
+                  onChange={e => {
+                    setFormData({...formData, phone: e.target.value});
+                    if (phoneStatus === 'verified') setPhoneStatus('idle'); // reset if they type a new number
+                  }}
                   className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                  placeholder="Nhập số điện thoại"
+                  placeholder="Nhập số điện thoại của bạn..."
                 />
+                {phoneStatus === 'checking' && (
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  </div>
+                )}
+                {phoneStatus === 'verified' && (
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                    <CheckCircle2 className="w-5 h-5 text-teal-500" />
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Khối xác thực nếu là khách cũ */}
+            {phoneStatus === 'existing_unverified' && (
+              <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5 sm:p-6 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg shrink-0 mt-0.5">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-slate-800">Khách hàng quen thuộc?</h4>
+                    <p className="text-sm text-slate-600 mt-1">Số điện thoại này đã từng đặt khám. Vui lòng nhập <strong className="text-slate-800">Họ và Tên</strong> của bạn để hệ thống tự động điền hồ sơ.</p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <User className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={verifyName || ''}
+                      onChange={e => setVerifyName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
+                      placeholder="Nhập họ và tên..."
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-sm font-semibold text-slate-800 bg-white"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleVerifyName}
+                    disabled={isVerifying}
+                    className="whitespace-nowrap px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+                  >
+                    {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                    Xác thực
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPhoneStatus('new')}
+                  className="text-xs text-blue-600 hover:underline font-medium inline-block"
+                >
+                  Bỏ qua, tôi muốn điền hồ sơ mới
+                </button>
+              </div>
+            )}
+
+            {/* Các trường còn lại chỉ hiện khi là khách mới hoặc đã verify */}
+            {(phoneStatus === 'new' || phoneStatus === 'verified') && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="space-y-2 relative">
+                  <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Họ và tên <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <User className="h-5 w-5 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={formData.fullName || ''}
+                      onChange={e => setFormData({...formData, fullName: e.target.value})}
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
+                      placeholder="Nhập đầy đủ họ tên"
+                    />
+                  </div>
+                </div>
             
             {bookingFormConfig?.showNotificationChannels && (
               <div className="space-y-2 col-span-1 sm:col-span-2 relative">
@@ -362,7 +523,7 @@ export default function SimpleBookingForm() {
                   </div>
                   <input
                     type="email"
-                    value={formData.email}
+                    value={formData.email || ''}
                     onChange={e => setFormData({...formData, email: e.target.value})}
                     className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                     placeholder="Nhận vé khám qua email"
@@ -378,7 +539,7 @@ export default function SimpleBookingForm() {
                   <FileText className="h-5 w-5 text-slate-400" />
                 </div>
                 <textarea
-                  value={formData.notes}
+                  value={formData.notes || ''}
                   onChange={e => setFormData({...formData, notes: e.target.value})}
                   className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal min-h-[120px] resize-none bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                   placeholder="Mô tả triệu chứng hoặc yêu cầu đặc biệt..."
@@ -403,6 +564,8 @@ export default function SimpleBookingForm() {
               )}
             </div>
           </div>
+          )}
+        </div>
         </div>
 
         <div className="mt-10 sm:mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -410,9 +573,15 @@ export default function SimpleBookingForm() {
             <ShieldCheck className="w-5 h-5 text-teal-600" />
             Thông tin được bảo mật hoàn toàn
           </div>
-          <button
+          
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+          <p className="text-[12px] text-slate-500 leading-relaxed text-center">
+            Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám sắp xếp phục vụ bệnh nhân khác.
+          </p>
+        </div>
+<button
             type="submit"
-            disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting}
+            disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
             className="w-full sm:w-auto min-w-[280px] py-4 px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20"
           >
             {isSubmitting ? (

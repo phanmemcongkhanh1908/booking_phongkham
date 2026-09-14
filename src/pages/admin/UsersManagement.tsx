@@ -5,7 +5,7 @@ import api from '../../services/api';
 import {  
   Users, ShieldCheck, Key, Lock, Unlock, X, Edit, 
   Plus, CheckCircle2, AlertTriangle, RefreshCw, Loader2
-, Eye, EyeOff, Download } from 'lucide-react';
+, Eye, EyeOff, Download, Link as LinkIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 
 const PERMISSION_MATRIX = [
@@ -61,6 +61,8 @@ export default function UsersManagement() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['*']);
   const [uiMode, setUiMode] = useState<'full' | 'simple'>('full');
   const [slug, setSlug] = useState('');
+  const [shortUrl, setShortUrl] = useState('');
+  const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState(false);
   
   const [msg, setMsg] = useState('');
   const [isError, setIsError] = useState(false);
@@ -69,6 +71,51 @@ export default function UsersManagement() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (!slug) {
+      setShortUrl('');
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsGeneratingShortUrl(true);
+      try {
+        const longUrl = `${window.location.origin}/booking/${slug}`;
+        const alias = slug.replace(/-/g, '').substring(0, 16);
+        const res = await fetch('https://spoo.me/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+          },
+          body: `url=${encodeURIComponent(longUrl)}&alias=${alias}`
+        });
+        const data = await res.json();
+        if (data.short_url) {
+          setShortUrl(data.short_url.replace('http://', 'https://'));
+        } else if (data.AliasError) {
+          // If alias exists, try with a random suffix
+          const randomSuffix = Math.floor(Math.random() * 999).toString();
+          const fallbackAlias = alias.substring(0, 13) + randomSuffix;
+          const retryRes = await fetch('https://spoo.me/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json'
+            },
+            body: `url=${encodeURIComponent(longUrl)}&alias=${fallbackAlias}`
+          });
+          const retryData = await retryRes.json();
+          if (retryData.short_url) setShortUrl(retryData.short_url.replace('http://', 'https://'));
+        }
+      } catch (err) {
+        console.error("Short URL gen err", err);
+      } finally {
+        setIsGeneratingShortUrl(false);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [slug]);
 
   const fetchUsers = async () => {
     try {
@@ -354,7 +401,7 @@ export default function UsersManagement() {
                           <input 
                             type="text" 
                             placeholder="VD: admin hoặc admin@phongkham.vn" 
-                            value={email} 
+                            value={email || ''} 
                             onChange={e => setEmail(e.target.value)} 
                             required={modalMode === 'create'}
                             disabled={modalMode === 'edit'}
@@ -370,7 +417,7 @@ export default function UsersManagement() {
                             <input 
                               type={showPassword ? 'text' : 'password'} 
                               placeholder="Tối thiểu 6 ký tự" 
-                              value={password} 
+                              value={password || ''} 
                               onChange={e => setPassword(e.target.value)} 
                               required={modalMode === 'create'}
                               className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
@@ -393,7 +440,7 @@ export default function UsersManagement() {
                             <input 
                               type={showConfirmPassword ? 'text' : 'password'} 
                               placeholder="Nhập lại mật khẩu" 
-                              value={confirmPassword} 
+                              value={confirmPassword || ''} 
                               onChange={e => setConfirmPassword(e.target.value)} 
                               required={modalMode === 'create' || (modalMode === 'edit' && password.length > 0)}
                               className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
@@ -421,57 +468,86 @@ export default function UsersManagement() {
                           <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Đường dẫn định danh (Slug)</label>
                           <input
                             type="text"
-                            value={slug}
+                            value={slug || ''}
                             onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                             placeholder="VD: nha-khoa-le-phuong"
                             className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                           />
                           <p className="text-[13px] text-slate-500 mt-1.5 leading-relaxed">
-                            Đường dẫn đặt khám: <br/>
-                            <a href={`${window.location.origin}/booking/${slug || '...'}`} target="_blank" rel="noreferrer" className="text-primary font-medium hover:underline break-all">
+                            Đường dẫn hệ thống: <br/>
+                            <span className="text-slate-400 break-all text-xs">
                               {window.location.origin}/booking/{slug || '...'}
-                            </a>
+                            </span>
                           </p>
                         </div>
                         
                         {slug && (
-                          <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-4">
-                            <div className="bg-white p-2 rounded-lg border border-slate-200 shrink-0">
+                          <div className="mt-4 p-4 bg-teal-50/50 border border-teal-100 rounded-xl flex items-start gap-4 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-2 opacity-10">
+                               <LinkIcon className="w-16 h-16" />
+                            </div>
+                            <div className="bg-white p-2 rounded-lg border border-slate-200 shrink-0 relative z-10 shadow-sm">
                               <QRCodeSVG 
                                 id="qr-code-canvas"
-                                value={`${window.location.origin}/booking/${slug}`} 
-                                size={80} 
+                                value={shortUrl || `${window.location.origin}/booking/${slug}`} 
+                                size={90} 
                                 level="M"
                                 includeMargin={false}
+                                imageSettings={{
+                                  src: '/vite.svg',
+                                  x: undefined,
+                                  y: undefined,
+                                  height: 20,
+                                  width: 20,
+                                  excavate: true,
+                                }}
                               />
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-sm text-slate-700 font-medium">Mã QR đặt lịch</p>
-                              <p className="text-xs text-slate-500 leading-relaxed">Bệnh nhân có thể quét mã này để truy cập trực tiếp vào trang đặt lịch của phòng khám.</p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const canvas = document.getElementById('qr-code-canvas');
-                                  if (canvas) {
-                                    // qrcode.react renders as SVG by default, we need to convert it or use canvas. 
-                                    // Let's change QRCodeSVG to QRCodeCanvas if we want simple download, but SVG download is also possible.
-                                    // Since we imported QRCodeSVG, we can download it as SVG.
-                                    const svgData = new XMLSerializer().serializeToString(canvas);
-                                    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `qr-${slug}.svg`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                                Tải mã QR
-                              </button>
+                            <div className="space-y-2.5 relative z-10">
+                              <div>
+                                <p className="text-sm text-slate-700 font-bold flex items-center gap-2">
+                                  Link rút gọn & Standee QR
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 max-w-[200px]">Gửi link này cho khách hàng hoặc tải Standee QR đặt tại quầy lễ tân.</p>
+                              </div>
+                              
+                              {isGeneratingShortUrl ? (
+                                <div className="flex items-center gap-2 text-teal-600 text-[13px] font-medium bg-white px-3 py-1.5 rounded-lg border border-teal-100 inline-flex">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Đang tạo link rút gọn...
+                                </div>
+                              ) : shortUrl ? (
+                                <a href={shortUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-teal-700 font-bold text-[13px] hover:underline bg-white px-3 py-1.5 rounded-lg border border-teal-100 shadow-sm inline-flex">
+                                  <LinkIcon className="w-3.5 h-3.5" />
+                                  {shortUrl}
+                                </a>
+                              ) : (
+                                <span className="text-[12px] text-amber-600">Không tạo được link rút gọn, QR sẽ dùng link gốc.</span>
+                              )}
+
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const canvas = document.getElementById('qr-code-canvas');
+                                    if (canvas) {
+                                      const svgData = new XMLSerializer().serializeToString(canvas);
+                                      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = `qr-${slug}.svg`;
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white text-xs font-semibold rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Tải QR Standee
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -479,7 +555,7 @@ export default function UsersManagement() {
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5 block">Giao diện hiển thị</label>
                           <select
-                            value={uiMode}
+                            value={uiMode || 'simple'}
                             onChange={(e) => setUiMode(e.target.value as 'full' | 'simple')}
                             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                           >

@@ -97,7 +97,7 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
                 Đang giữ chỗ riêng:
               </span>
               <span className={`font-mono font-bold px-2 py-0.5 rounded-md ${
-                timeLeft < 60 ? 'bg-red-500/30 text-red-200 animate-pulse' : 'bg-teal-500/20 text-teal-100'
+                timeLeft < 120 ? 'bg-red-500/30 text-red-200 animate-pulse' : 'bg-teal-500/20 text-teal-100'
               }`}>
                 {minutes}:{seconds < 10 ? '0' : ''}{seconds}
               </span>

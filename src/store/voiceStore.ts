@@ -17,10 +17,10 @@ export interface VoiceState {
 export const useVoiceStore = create<VoiceState>()(
   persist(
     (set) => ({
-      enabled: false,
+      enabled: true,
       rate: 1.0,
       pitch: 1.0,
-      volume: 1.0,
+      volume: 0.9,
       preferredVoiceURI: undefined,
       setEnabled: (enabled) => set({ enabled }),
       setRate: (rate) => set({ rate }),

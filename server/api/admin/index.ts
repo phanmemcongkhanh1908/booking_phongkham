@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { services, providers, settings, appointments, patients, users } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
+import { BadRequestError } from "../../core/errors.js";
 
 const adminRouter = Router();
 
@@ -18,15 +19,21 @@ adminRouter.get("/services", async (req, res, next) => {
   }
 });
 
-adminRouter.post("/services", async (req, res, next) => {
+adminRouter.post("/services", requirePermission("service.manage"), async (req, res, next) => {
   try {
+    const durationMins = parseInt(req.body.durationMins);
+    const price = req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null;
+    
+    if (isNaN(durationMins) || durationMins <= 0) throw new BadRequestError("Thời lượng khám không hợp lệ");
+    if (price !== null && price < 0) throw new BadRequestError("Giá tiền không hợp lệ");
+
     const newService = await db.insert(services).values({
       name: req.body.name,
       description: req.body.description,
-      durationMins: parseInt(req.body.durationMins),
+      durationMins,
       bufferBefore: parseInt(req.body.bufferBefore) || 0,
       bufferAfter: parseInt(req.body.bufferAfter) || 0,
-      price: req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null,
+      price,
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
@@ -38,16 +45,22 @@ adminRouter.post("/services", async (req, res, next) => {
   }
 });
 
-adminRouter.put("/services/:id", async (req, res, next) => {
+adminRouter.put("/services/:id", requirePermission("service.manage"), async (req, res, next) => {
   try {
+    const durationMins = parseInt(req.body.durationMins);
+    const price = req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null;
+    
+    if (isNaN(durationMins) || durationMins <= 0) throw new BadRequestError("Thời lượng khám không hợp lệ");
+    if (price !== null && price < 0) throw new BadRequestError("Giá tiền không hợp lệ");
+
     const updated = await db.update(services).set({
       name: req.body.name,
       description: req.body.description,
-      durationMins: parseInt(req.body.durationMins),
+      durationMins,
       bufferBefore: parseInt(req.body.bufferBefore) || 0,
       bufferAfter: parseInt(req.body.bufferAfter) || 0,
       isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : true,
-      price: req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null,
+      price,
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
@@ -58,7 +71,7 @@ adminRouter.put("/services/:id", async (req, res, next) => {
   }
 });
 
-adminRouter.delete("/services/:id", async (req, res, next) => {
+adminRouter.delete("/services/:id", requirePermission("service.manage"), async (req, res, next) => {
   try {
     await db.delete(services).where(eq(services.id, req.params.id));
     res.json({ success: true });
@@ -77,7 +90,7 @@ adminRouter.get("/providers", async (req, res, next) => {
   }
 });
 
-adminRouter.post("/providers", async (req, res, next) => {
+adminRouter.post("/providers", requirePermission("provider.manage"), async (req, res, next) => {
   try {
     // If this provider is marked as default, unset others first (simulated in memory via update loop if needed, but here we just update all)
     if (req.body.isDefault) {
@@ -92,6 +105,9 @@ adminRouter.post("/providers", async (req, res, next) => {
     const newProvider = await db.insert(providers).values({
       name: req.body.name,
       specialty: req.body.specialty,
+      experience: req.body.experience,
+      specialties: req.body.specialties,
+      certificates: req.body.certificates,
       workingHours: req.body.workingHours || {},
       bookingEnabled: req.body.bookingEnabled !== false,
       isActive: req.body.isActive !== false,
@@ -103,7 +119,7 @@ adminRouter.post("/providers", async (req, res, next) => {
   }
 });
 
-adminRouter.put("/providers/:id", async (req, res, next) => {
+adminRouter.put("/providers/:id", requirePermission("provider.manage"), async (req, res, next) => {
   try {
     if (req.body.isDefault) {
        const allProviders = await db.select().from(providers);
@@ -117,6 +133,9 @@ adminRouter.put("/providers/:id", async (req, res, next) => {
     const updated = await db.update(providers).set({
       name: req.body.name,
       specialty: req.body.specialty,
+      experience: req.body.experience,
+      specialties: req.body.specialties,
+      certificates: req.body.certificates,
       workingHours: req.body.workingHours || {},
       bookingEnabled: req.body.bookingEnabled !== false,
       isActive: req.body.isActive !== false,
@@ -128,7 +147,7 @@ adminRouter.put("/providers/:id", async (req, res, next) => {
   }
 });
 
-adminRouter.delete("/providers/:id", async (req, res, next) => {
+adminRouter.delete("/providers/:id", requirePermission("provider.manage"), async (req, res, next) => {
   try {
     await db.delete(providers).where(eq(providers.id, req.params.id));
     res.json({ success: true });
@@ -272,10 +291,10 @@ import { sql } from "drizzle-orm";
 
 // ... (adminRouter already has imports, we just need to add routes)
 
-// Lấy dữ liệu thống kê
+// Lấy dữ liệu thống kê phân tích chuyên sâu
 adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
   try {
-    // Phân tích Dịch vụ mũi nhọn & Tỉ lệ lấp đầy
+    const range = String(req.query.range || "all"); // 7, 14, 30, 90, all
     const allAppointments = await db.select().from(appointments);
     const allServices = await db.select().from(services);
     
@@ -284,82 +303,128 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
       serviceMap[s.id] = s;
     });
 
-    const serviceStatsMap: any = {};
-    
-    // Tỉ lệ lấp đầy & Hủy theo ngày trong 7 ngày qua
-    const occupancyStatsMap: any = {};
-    const today = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      occupancyStatsMap[dateStr] = { date: dateStr, completed: 0, cancelled: 0, total: 0, revenue: 0 };
-    }
-    
-    // Thống kê lịch hẹn theo ngày, tuần và tỷ lệ khách hàng quay lại
+    const serviceStatsMap: Record<string, { id: string; name: string; count: number; revenue: number; durationMins: number }> = {};
+    const dailyStatsMap: Record<string, { date: string; completed: number; cancelled: number; pending: number; total: number; revenue: number }> = {};
     const appointmentsByDay: Record<string, number> = {};
     const appointmentsByWeek: Record<string, number> = {};
     const patientVisits: Record<string, number> = {};
 
+    let totalRevenue = 0;
+    let completedAppointments = 0;
+    let cancelledAppointments = 0;
+    let pendingAppointments = 0;
+    let confirmedAppointments = 0;
+
+    const statusCounts: Record<string, number> = {
+      COMPLETED: 0,
+      CONFIRMED: 0,
+      PENDING: 0,
+      IN_PROGRESS: 0,
+      CANCEL_PATIENT: 0,
+      CANCEL_CLINIC: 0,
+      NO_SHOW: 0,
+    };
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    let todayAppointments = 0;
+    let todayRevenue = 0;
+
     allAppointments.forEach((a: any) => {
+      const status = a.status || "PENDING";
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+      const price = Number(serviceMap[a.serviceId]?.price || 0);
+
+      if (status === "COMPLETED") {
+        completedAppointments += 1;
+        totalRevenue += price;
+      } else if (status === "CANCEL_PATIENT" || status === "CANCEL_CLINIC" || status === "NO_SHOW") {
+        cancelledAppointments += 1;
+      } else if (status === "CONFIRMED") {
+        confirmedAppointments += 1;
+      } else {
+        pendingAppointments += 1;
+      }
+
       // Dịch vụ mũi nhọn
-      if (a.status === 'COMPLETED' && a.serviceId) {
+      if (a.serviceId) {
         if (!serviceStatsMap[a.serviceId]) {
           serviceStatsMap[a.serviceId] = {
-            name: serviceMap[a.serviceId]?.name || 'Khác',
+            id: a.serviceId,
+            name: serviceMap[a.serviceId]?.name || "Khác",
             count: 0,
-            revenue: 0
+            revenue: 0,
+            durationMins: Number(serviceMap[a.serviceId]?.durationMins || 30),
           };
         }
         serviceStatsMap[a.serviceId].count += 1;
-        serviceStatsMap[a.serviceId].revenue += Number(serviceMap[a.serviceId]?.price || 0);
+        if (status === "COMPLETED") {
+          serviceStatsMap[a.serviceId].revenue += price;
+        }
       }
-      
-      // Lấp đầy, Hủy & Doanh thu
+
+      // Thống kê theo ngày
       if (a.startAt) {
-         const date = new Date(a.startAt);
-         const dateStr = date.toISOString().split('T')[0];
-         
-         if (occupancyStatsMap[dateStr]) {
-            occupancyStatsMap[dateStr].total += 1;
-            if (a.status === 'COMPLETED') {
-              occupancyStatsMap[dateStr].completed += 1;
-              if (a.serviceId) {
-                occupancyStatsMap[dateStr].revenue += Number(serviceMap[a.serviceId]?.price || 0);
-              }
-            }
-            if (a.status === 'NO_SHOW' || a.status === 'CANCEL_PATIENT' || a.status === 'CANCEL_CLINIC') {
-              occupancyStatsMap[dateStr].cancelled += 1;
-            }
-         }
+        const date = new Date(a.startAt);
+        const dateStr = date.toISOString().split("T")[0];
 
-         // Đếm theo ngày (cho toàn thời gian)
-         appointmentsByDay[dateStr] = (appointmentsByDay[dateStr] || 0) + 1;
+        if (!dailyStatsMap[dateStr]) {
+          dailyStatsMap[dateStr] = { date: dateStr, completed: 0, cancelled: 0, pending: 0, total: 0, revenue: 0 };
+        }
+        dailyStatsMap[dateStr].total += 1;
+        if (status === "COMPLETED") {
+          dailyStatsMap[dateStr].completed += 1;
+          dailyStatsMap[dateStr].revenue += price;
+        } else if (status === "CANCEL_PATIENT" || status === "CANCEL_CLINIC" || status === "NO_SHOW") {
+          dailyStatsMap[dateStr].cancelled += 1;
+        } else {
+          dailyStatsMap[dateStr].pending += 1;
+        }
 
-         // Đếm theo tuần (VD: "2026-W36")
-         // Hàm lấy số tuần đơn giản
-         const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-         const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-         const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-         const weekStr = `${date.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
-         appointmentsByWeek[weekStr] = (appointmentsByWeek[weekStr] || 0) + 1;
+        if (dateStr === todayStr) {
+          todayAppointments += 1;
+          if (status === "COMPLETED") todayRevenue += price;
+        }
+
+        appointmentsByDay[dateStr] = (appointmentsByDay[dateStr] || 0) + 1;
+
+        // Tuần
+        const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+        const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+        const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+        const weekStr = `${date.getFullYear()}-W${weekNum.toString().padStart(2, "0")}`;
+        appointmentsByWeek[weekStr] = (appointmentsByWeek[weekStr] || 0) + 1;
       }
 
-      // Đếm số lần khám của bệnh nhân (để tính tỉ lệ quay lại)
-      if (a.status === 'COMPLETED' && a.patientId) {
+      // Tần suất bệnh nhân
+      if (a.patientId) {
         patientVisits[a.patientId] = (patientVisits[a.patientId] || 0) + 1;
       }
     });
 
-    // Tính tỷ lệ khách hàng quay lại
-    const totalPatientsWithCompletedAppt = Object.keys(patientVisits).length;
-    const returningPatients = Object.values(patientVisits).filter((count: number) => count > 1).length;
-    const returningRate = totalPatientsWithCompletedAppt > 0 
-      ? Math.round((returningPatients / totalPatientsWithCompletedAppt) * 100) 
-      : 0;
+    // Điền ngày trống nếu xem dạng range
+    const daysRange = range === "7" ? 7 : range === "14" ? 14 : range === "30" ? 30 : 0;
+    if (daysRange > 0) {
+      const now = new Date();
+      for (let i = daysRange - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dStr = d.toISOString().split("T")[0];
+        if (!dailyStatsMap[dStr]) {
+          dailyStatsMap[dStr] = { date: dStr, completed: 0, cancelled: 0, pending: 0, total: 0, revenue: 0 };
+        }
+      }
+    }
 
-    // Sắp xếp ngày và tuần để gửi về FE (lấy 14 ngày gần nhất, 10 tuần gần nhất)
+    const totalPatientsCount = Object.keys(patientVisits).length;
+    const returningPatients = Object.values(patientVisits).filter((count: number) => count > 1).length;
+    const returningRate = totalPatientsCount > 0 ? Math.round((returningPatients / totalPatientsCount) * 100) : 0;
+    const totalAppointmentsCount = allAppointments.length;
+    const completionRate = totalAppointmentsCount > 0 ? Math.round((completedAppointments / totalAppointmentsCount) * 100) : 0;
+    const cancellationRate = totalAppointmentsCount > 0 ? Math.round((cancelledAppointments / totalAppointmentsCount) * 100) : 0;
+    const avgTicket = completedAppointments > 0 ? Math.round(totalRevenue / completedAppointments) : 0;
+
+    const sortedDailyStats = Object.values(dailyStatsMap).sort((a, b) => a.date.localeCompare(b.date));
     const sortedDays = Object.entries(appointmentsByDay)
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-14)
@@ -370,17 +435,50 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
       .slice(-10)
       .map(([week, count]) => ({ week, count }));
 
+    // Bổ sung % doanh thu từng dịch vụ
+    const enrichedServices = Object.values(serviceStatsMap)
+      .map(s => ({
+        ...s,
+        percent: totalRevenue > 0 ? Math.round((s.revenue / totalRevenue) * 100) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const statusBreakdown = [
+      { status: "COMPLETED", label: "Đã hoàn thành", count: statusCounts.COMPLETED, color: "#10b981" },
+      { status: "CONFIRMED", label: "Đã xác nhận", count: statusCounts.CONFIRMED, color: "#3b82f6" },
+      { status: "PENDING", label: "Chờ xác nhận", count: statusCounts.PENDING, color: "#f59e0b" },
+      { status: "IN_PROGRESS", label: "Đang khám", count: statusCounts.IN_PROGRESS, color: "#8b5cf6" },
+      { status: "CANCELLED", label: "Đã hủy / Vắng mặt", count: statusCounts.CANCEL_PATIENT + statusCounts.CANCEL_CLINIC + statusCounts.NO_SHOW, color: "#ef4444" },
+    ].filter(s => s.count > 0);
+
     res.json({
       success: true,
       data: {
-        serviceStats: Object.values(serviceStatsMap),
-        occupancyStats: Object.values(occupancyStatsMap),
+        summary: {
+          totalRevenue,
+          totalAppointments: totalAppointmentsCount,
+          completedAppointments,
+          cancelledAppointments,
+          pendingAppointments,
+          confirmedAppointments,
+          completionRate,
+          cancellationRate,
+          avgTicket,
+          totalPatients: totalPatientsCount,
+          returningPatients,
+          returningRate,
+          todayAppointments,
+          todayRevenue,
+        },
+        serviceStats: enrichedServices,
+        occupancyStats: sortedDailyStats,
         appointmentsByDay: sortedDays,
         appointmentsByWeek: sortedWeeks,
+        statusBreakdown,
         returningRate,
-        totalPatients: totalPatientsWithCompletedAppt,
-        returningPatients
-      }
+        totalPatients: totalPatientsCount,
+        returningPatients,
+      },
     });
   } catch (error) {
     next(error);
@@ -392,7 +490,14 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
     const allSettings = await db.select().from(settings);
     const settingsObj: any = {};
     allSettings.forEach(s => {
-      settingsObj[s.id] = s.value;
+      const key = s.key || s.id;
+      // Map legacy clinic_profile to clinicProfile
+      if (key === 'clinic_profile' || s.id === 'clinic_profile') {
+        settingsObj['clinicProfile'] = s.value;
+      } else {
+        settingsObj[s.id] = s.value;
+        if (s.key) settingsObj[s.key] = s.value;
+      }
     });
     
     // Mask sensitive data
@@ -413,42 +518,42 @@ adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), 
     // Save to DB
     if (telegramToken !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramToken', value: telegramToken })
+        .values({ id: 'telegramToken', key: 'telegramToken', value: telegramToken })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramToken } });
     }
     if (telegramChatId !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramChatId', value: telegramChatId })
+        .values({ id: 'telegramChatId', key: 'telegramChatId', value: telegramChatId })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramChatId } });
     }
     if (telegramBotUsername !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramBotUsername', value: telegramBotUsername })
+        .values({ id: 'telegramBotUsername', key: 'telegramBotUsername', value: telegramBotUsername })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramBotUsername } });
     }
     if (clinicProfile !== undefined) {
       await db.insert(settings)
-        .values({ id: 'clinicProfile', value: clinicProfile })
+        .values({ id: 'clinicProfile', key: 'clinicProfile', value: clinicProfile })
         .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
     }
     if (emailConfig !== undefined) {
       await db.insert(settings)
-        .values({ id: 'emailConfig', value: emailConfig })
+        .values({ id: 'emailConfig', key: 'emailConfig', value: emailConfig })
         .onConflictDoUpdate({ target: settings.id, set: { value: emailConfig } });
     }
     if (bookingFormConfig !== undefined) {
       await db.insert(settings)
-        .values({ id: 'bookingFormConfig', value: bookingFormConfig })
+        .values({ id: 'bookingFormConfig', key: 'bookingFormConfig', value: bookingFormConfig })
         .onConflictDoUpdate({ target: settings.id, set: { value: bookingFormConfig } });
     }
     if (announcementBanner !== undefined) {
       await db.insert(settings)
-        .values({ id: 'announcementBanner', value: announcementBanner })
+        .values({ id: 'announcementBanner', key: 'announcementBanner', value: announcementBanner })
         .onConflictDoUpdate({ target: settings.id, set: { value: announcementBanner } });
     }
     if (idleTimeoutMinutes !== undefined) {
       await db.insert(settings)
-        .values({ id: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes) })
+        .values({ id: 'idleTimeoutMinutes', key: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes) })
         .onConflictDoUpdate({ target: settings.id, set: { value: String(idleTimeoutMinutes) } });
     }
 

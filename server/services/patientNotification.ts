@@ -18,7 +18,8 @@ export interface NotificationResult {
 
 export async function notifyPatientAppointment(
   appointmentId: string,
-  event: "CREATED" | "CONFIRMED" | "CANCELLED"
+  event: "CREATED" | "CONFIRMED" | "CANCELLED",
+  cancelReason?: string
 ): Promise<NotificationResult> {
   const result: NotificationResult = {
     telegramSent: false,
@@ -93,7 +94,8 @@ export async function notifyPatientAppointment(
       clinicName: clinicProfile.clinicName,
       clinicAddress: clinicProfile.address,
       clinicPhone: clinicProfile.phone,
-    };
+      cancelReason,
+    } as any;
 
     // 1. Send EMAIL if email is available
     if (email) {
@@ -157,7 +159,7 @@ export async function notifyPatientAppointment(
           : "Lịch hẹn đã bị hủy";
         
         const timeStr = safeFormatDate(apt.startAt, "HH:mm dd/MM/yyyy");
-        const pushBody = `Khám ${apt.serviceName} vào lúc ${timeStr}`;
+        const pushBody = event === "CANCELLED" && cancelReason ? `Khám ${apt.serviceName} vào lúc ${timeStr}. Lý do: ${cancelReason}` : `Khám ${apt.serviceName} vào lúc ${timeStr}`;
 
         await sendWebPush(apt.patientId, {
           title: pushTitle,

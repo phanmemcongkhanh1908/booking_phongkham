@@ -1,20 +1,40 @@
 import React, { useEffect, useState } from 'react';
-import { Volume2, Server, Globe, VolumeX, AlertCircle, PlayCircle, Loader2 } from 'lucide-react';
+import { 
+  Volume2, 
+  Server, 
+  Globe, 
+  VolumeX, 
+  AlertCircle, 
+  PlayCircle, 
+  Loader2, 
+  Clock, 
+  BellRing, 
+  RotateCw, 
+  Sparkles,
+  CheckCircle2
+} from 'lucide-react';
 import { useVoiceStore } from '../../../store/voiceStore';
+import { useBroadcastStore } from '../../../store/broadcastStore';
 import { ServerSpeechEngine } from '../../../services/speech/ServerSpeechEngine';
 
 export default function VoiceSettingsPanel() {
-  const { enabled, setEnabled, volume, setVolume, rate, setRate } = useVoiceStore();
+  const { enabled, setEnabled, volume, setVolume } = useVoiceStore();
+  const { 
+    reminderIntervalSeconds, 
+    setReminderIntervalSeconds, 
+    maxReminders, 
+    setMaxReminders,
+    autoChime,
+    setAutoChime,
+    testBroadcast
+  } = useBroadcastStore();
+
   const [ttsStatus, setTtsStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    fetch('/api/tts/status', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth-storage') ? JSON.parse(localStorage.getItem('auth-storage') as string)?.state?.token : ''}`
-      }
-    })
+    fetch('/api/tts/status')
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -28,32 +48,37 @@ export default function VoiceSettingsPanel() {
   const handleTest = async () => {
     if (testing) return;
     setTesting(true);
-    ServerSpeechEngine.unlockAudio(); // Important: must be called synchronously in onClick
     try {
-      await ServerSpeechEngine.speak("Đây là âm thanh thử nghiệm. Hệ thống đọc thông báo tiếng Việt đang hoạt động bình thường.");
+      await testBroadcast();
     } finally {
       setTesting(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 mb-6">
+    <div id="voice-settings-panel" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 mb-6">
+      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
           <Volume2 className="w-5 h-5 text-indigo-600" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Giọng đọc thông báo (Voice Notification)</h2>
-          <p className="text-sm text-slate-500">Quản lý cách hệ thống phát âm thanh khi có lịch hẹn mới</p>
+          <h2 className="text-lg font-bold text-slate-800">Phát thanh thông báo & Nhắc nhở lịch hẹn</h2>
+          <p className="text-sm text-slate-500">Nhạc hiệu chuyên nghiệp, giọng đọc tiếng Việt chuẩn và vòng lặp tự động nhắc nhở khi chưa chốt lịch</p>
         </div>
       </div>
 
       <div className="space-y-6">
         {/* Master Toggle */}
-        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200/80">
           <div>
-            <h3 className="font-semibold text-slate-800">Trợ lý âm thanh Dental Smart</h3>
-            <p className="text-sm text-slate-500">Tự động đọc thông tin khách hàng, bác sĩ và giờ hẹn</p>
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              <span>Trợ lý phát thanh phòng khám</span>
+              <span className="text-xs font-normal text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                Độc lập thiết bị
+              </span>
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Tự động phát nhạc hiệu & đọc thông tin khách hàng khi có lịch hẹn mới</p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
             <input 
@@ -61,8 +86,10 @@ export default function VoiceSettingsPanel() {
               className="sr-only peer" 
               checked={enabled}
               onChange={(e) => {
-                setEnabled(e.target.checked);
-                if (e.target.checked) {
+                const val = e.target.checked;
+                setEnabled(val);
+                useBroadcastStore.getState().setEnabled(val);
+                if (val) {
                   ServerSpeechEngine.unlockAudio();
                 }
               }} 
@@ -71,72 +98,120 @@ export default function VoiceSettingsPanel() {
           </label>
         </div>
 
-        <div className={`transition-all duration-300 ${enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-          {/* Server Status */}
-          <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-white">
-            <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-              <Server className="w-4 h-4 text-slate-400" />
-              Tình trạng máy chủ TTS
-            </h4>
-            
-            {loading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Loader2 className="w-4 h-4 animate-spin" /> Đang kiểm tra...
+        <div className={`transition-all duration-300 space-y-6 ${enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+          {/* Server TTS Status */}
+          <div className="p-4 rounded-xl border border-slate-200 bg-emerald-50/50">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm text-emerald-800 font-semibold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Máy chủ giọng đọc tiếng Việt chất lượng cao</span>
               </div>
-            ) : ttsStatus?.enabled ? (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium shrink-0">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Đã kết nối máy chủ
-                </div>
-                <div className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-mono break-all sm:break-normal w-max max-w-full">
-                  {ttsStatus.providers.join(', ')}
-                </div>
+              <div className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md font-medium">
+                {ttsStatus?.providers?.join(', ') || 'Google Voice Tiếng Việt Chuẩn (Tất cả thiết bị)'}
               </div>
-            ) : (
-              <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg text-amber-800 text-sm">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold mb-1">Máy chủ chưa bật giọng đọc tiếng Việt cao cấp</p>
-                  <p className="text-amber-700">Hệ thống sẽ dự phòng bằng gói ngôn ngữ cài trên trình duyệt của máy tính này. Nếu máy tính chưa cài tiếng Việt, bạn có thể nghe thấy giọng tiếng Anh.</p>
-                </div>
-              </div>
-            )}
+            </div>
+            <p className="text-xs text-emerald-700 mt-1.5">
+              Hệ thống kết xuất âm thanh trực tiếp từ máy chủ định dạng MP3, phát chuẩn tiếng Việt trên mọi dòng điện thoại iOS, Android và máy tính mà không cần cài thêm gói giọng đọc.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Reminder Interval & Max Reminders */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Auto Reminder Interval */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-white">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-indigo-600" />
+                <span>Tự động nhắc lại nếu chưa chốt lịch</span>
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                Nếu quản lý chưa bấm xem chi tiết hoặc chưa chốt lịch, hệ thống sẽ phát lại nhắc nhở sau mỗi:
+              </p>
+              <select
+                value={reminderIntervalSeconds || ''}
+                onChange={(e) => setReminderIntervalSeconds(parseInt(e.target.value, 10))}
+                className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+              >
+                <option value={30}>30 giây (Rất nhanh - Dành cho giờ cao điểm)</option>
+                <option value={60}>60 giây (1 phút - Khuyến nghị tiêu chuẩn)</option>
+                <option value={90}>90 giây (1 phút 30 giây)</option>
+                <option value={120}>2 phút (Vừa phải)</option>
+                <option value={180}>3 phút</option>
+                <option value={300}>5 phút</option>
+                <option value={0}>Tắt tự động nhắc lại</option>
+              </select>
+            </div>
+
+            {/* Max Reminders */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-white">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <RotateCw className="w-4 h-4 text-indigo-600" />
+                <span>Số lần nhắc nhở tối đa</span>
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                Số chu kỳ phát thanh nhắc nhở trước khi tạm ngưng nếu không có thao tác:
+              </p>
+              <select
+                value={maxReminders || ''}
+                onChange={(e) => setMaxReminders(parseInt(e.target.value, 10))}
+                className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+              >
+                <option value={1}>1 lần nhắc</option>
+                <option value={3}>3 lần nhắc</option>
+                <option value={5}>5 lần nhắc (Khuyến nghị)</option>
+                <option value={10}>10 lần nhắc</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Volume and Test Broadcast */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">
-                Âm lượng: {Math.round(volume * 100)}%
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-700 mb-1.5 block">
+                Âm lượng phát thanh: {Math.round(volume * 100)}%
               </label>
               <input 
                 type="range" 
-                min="0" 
+                min="0.1" 
                 max="1" 
-                step="0.1" 
-                value={volume}
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                step="0.05" 
+                value={volume || ''}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setVolume(val);
+                  useBroadcastStore.getState().setVolume(val);
+                }}
                 className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
             </div>
             
-            <div className="flex items-end">
+            <div>
               <button
+                id="btn-test-broadcast"
                 onClick={handleTest}
                 disabled={testing}
-                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg font-medium transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-sm shadow-indigo-600/20 transition-all cursor-pointer"
               >
-                {testing ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
-                Nghe thử thông báo
+                {testing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Đang phát nhạc hiệu & giọng đọc...</span>
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="w-5 h-5" />
+                    <span>Nghe thử Nhạc hiệu & Giọng đọc</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
           
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <a href="/kiem-tra-giong-doc.html" target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 w-full sm:w-max flex-wrap">
-              <Globe className="w-4 h-4 shrink-0" /> 
-              <span>Công cụ chẩn đoán giọng đọc của máy tính (Dự phòng)</span>
-            </a>
+          {/* Note */}
+          <div className="p-3.5 bg-slate-50 rounded-xl text-xs text-slate-600 border border-slate-100 flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+            <p>
+              <strong>Cơ chế tự ngắt thông minh:</strong> Khi người quản lý bấm <em>"Chốt lịch ngay"</em>, mở xem chi tiết lịch hẹn, hoặc cập nhật trạng thái lịch, hệ thống sẽ tự động dừng vòng lặp nhắc nhở ngay lập tức.
+            </p>
           </div>
         </div>
       </div>

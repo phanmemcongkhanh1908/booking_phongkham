@@ -47,3 +47,23 @@ export async function triggerWaitlistMatching(cancelledAppointment: any) {
     console.error("[Waitlist] Lỗi:", error);
   }
 }
+
+export async function checkExpiredWaitlistOffers() {
+  try {
+    const expiredOffers = await db.select().from(waitlist).where(and(eq(waitlist.status, "OFFERED"))).limit(100);
+    // memoryStore handles date poorly without an ORM, we just check updatedAt
+    const now = new Date();
+    for (const offer of expiredOffers) {
+      if (offer.updatedAt && (now.getTime() - new Date(offer.updatedAt).getTime() > 15 * 60000)) {
+        // Expired after 15 mins
+        await db.update(waitlist).set({ status: "EXPIRED" }).where(eq(waitlist.id, offer.id));
+        console.log(`[Waitlist] Offer expired cho patient ${offer.patientId}`);
+        
+        // Pass to next candidate? (Trigger matching again with dummy object)
+        triggerWaitlistMatching({ serviceId: offer.serviceId, providerId: offer.providerId });
+      }
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}

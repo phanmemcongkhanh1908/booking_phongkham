@@ -31,8 +31,8 @@ export function useHoldSlot() {
     // Kiểm tra thời hạn giữ chỗ (buffer 5s)
     const isValid = holdExpiresAt > Date.now() + 5000;
     if (!isValid) return false;
-    const matchStart = slotStartTime === startAt;
-    const matchEnd = !endAt || slotEndTime === endAt;
+    const matchStart = new Date(slotStartTime).getTime() === new Date(startAt).getTime();
+    const matchEnd = !endAt || (slotEndTime && new Date(slotEndTime).getTime() === new Date(endAt).getTime());
     return matchStart && matchEnd;
   }, [sessionToken, holdExpiresAt, slotStartTime, slotEndTime]);
 

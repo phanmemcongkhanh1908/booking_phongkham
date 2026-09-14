@@ -361,20 +361,20 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
                     <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Dịch vụ</label>
                     <select 
                       className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
-                      value={nextService}
+                      value={nextService || ''}
                       onChange={e => setNextService(e.target.value)}
                     >
-                      {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {services.map(s => <option key={s.id} value={s.id || ''}>{s.name}</option>)}
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Ngày</label>
-                      <Input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)}  />
+                      <Input type="date" value={nextDate || ''} onChange={e => setNextDate(e.target.value)}  />
                     </div>
                     <div>
                       <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giờ</label>
-                      <Input type="time" value={nextTime} onChange={e => setNextTime(e.target.value)}  />
+                      <Input type="time" value={nextTime || ''} onChange={e => setNextTime(e.target.value)}  />
                     </div>
                   </div>
                   <div className="flex gap-2 pt-2">
@@ -400,15 +400,15 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
             
             {showQuickBook ? (
               <div className="flex flex-col gap-3">
-                <Input placeholder="Tên khách hàng" value={quickBookPatient} onChange={e => setQuickBookPatient(e.target.value)} />
-                <Input placeholder="Số điện thoại" value={quickBookPhone} onChange={e => setQuickBookPhone(e.target.value)} />
+                <Input placeholder="Tên khách hàng" value={quickBookPatient || ''} onChange={e => setQuickBookPatient(e.target.value)} />
+                <Input placeholder="Số điện thoại" value={quickBookPhone || ''} onChange={e => setQuickBookPhone(e.target.value)} />
                 <select 
                   className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
-                  value={quickBookService}
+                  value={quickBookService || ''}
                   onChange={e => setQuickBookService(e.target.value)}
                 >
                   <option value="">-- Chọn dịch vụ --</option>
-                  {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {services.map(s => <option key={s.id} value={s.id || ''}>{s.name}</option>)}
                 </select>
                 <div className="flex gap-2 mt-4">
                   <Button variant="outline" className="flex-1" onClick={() => setShowQuickBook(false)}>Quay lại</Button>

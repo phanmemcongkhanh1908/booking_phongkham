@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf';
 import { 
   Search, Save, Cloud, Link as LinkIcon, FileText, CheckCircle2, 
   Image as ImageIcon, Images, Plus, Printer, Paperclip, Calendar, 
-  Trash2, ChevronRight, Stethoscope, Banknote, UserRound, Info, 
+  Trash2, MoreVertical, ChevronRight, Stethoscope, Banknote, UserRound, Info, 
   UploadCloud, Eye, Download, X, AlertCircle, ZoomIn, ZoomOut, 
   RotateCw, CalendarPlus, FolderPlus, Clock, Phone, Mail, 
   ClipboardList, Receipt, CalendarClock, Check, Sparkles,
@@ -138,7 +138,7 @@ export default function Patients() {
     spreadsheetUrl, 
     setSpreadsheetInfo 
   } = useGoogleAuthStore();
-  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'finance' | 'appointments'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'finance' | 'appointments' | 'gallery'>('overview');
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   
   // EMR Form State
@@ -698,7 +698,7 @@ export default function Patients() {
             <Input 
               className="pl-9 h-9 text-xs bg-bg-base border-border-subtle focus:bg-surface" 
               placeholder="Tìm tên hoặc số điện thoại..." 
-              value={searchTerm}
+              value={searchTerm || ''}
               onChange={e => setSearchTerm(e.target.value)}
             />
             {searchTerm && (
@@ -973,10 +973,129 @@ export default function Patients() {
                   </span>
                 )}
               </button>
+
+              <button 
+                onClick={() => setActiveTab('gallery')}
+                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                  activeTab === 'gallery' 
+                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
+                    : 'border-transparent text-text-muted hover:text-text-main'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                Thư viện Trước & Sau
+              </button>
             </div>
 
             {/* TAB CONTENTS */}
             <div className="flex-1 overflow-y-auto bg-bg-base p-4 lg:p-6">
+
+              {/* ======================================================== */}
+              {/* TAB 5: GALLERY (BEFORE & AFTER) */}
+              {/* ======================================================== */}
+              {activeTab === 'gallery' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-lg">Thư viện Trước & Sau</h3>
+                      <p className="text-sm text-slate-500">Quản lý và trình chiếu kết quả điều trị trực quan cho bệnh nhân.</p>
+                    </div>
+                    <button className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm">
+                      <Plus className="w-4 h-4" />
+                      Thêm ca mới
+                    </button>
+                  </div>
+                  
+                  {/* Category Filter */}
+                  <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+                    {['Tất cả', 'Niềng răng - Chỉnh nha', 'Implant', 'Răng sứ thẩm mỹ', 'Tẩy trắng răng'].map((cat, i) => (
+                      <button key={i} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${i === 0 ? 'bg-teal-50 border-teal-200 text-teal-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Gallery Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Item 1 */}
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between p-3.5 border-b border-slate-100 bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 bg-teal-100 text-teal-800 text-[10px] font-black uppercase tracking-wider rounded-md">Niềng răng</span>
+                          <span className="text-xs font-semibold text-slate-600">Mắc cài sứ tự động (18 tháng)</span>
+                        </div>
+                        <button className="text-slate-400 hover:text-slate-700 p-1"><MoreVertical className="w-4 h-4" /></button>
+                      </div>
+                      <div className="grid grid-cols-2 divide-x divide-slate-100">
+                        <div className="relative group">
+                          <div className="aspect-[4/3] bg-slate-100 flex items-center justify-center p-4">
+                            <ImageIcon className="w-8 h-8 text-slate-300" />
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Trước</span>
+                          </div>
+                        </div>
+                        <div className="relative group">
+                          <div className="aspect-[4/3] bg-teal-50 flex items-center justify-center p-4">
+                            <ImageIcon className="w-8 h-8 text-teal-200" />
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Sau</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-3 text-xs text-slate-500 bg-white border-t border-slate-100 flex items-center justify-between">
+                        <span>Hoàn thành: 12/08/2023</span>
+                        <button className="text-teal-600 font-semibold hover:underline">Chi tiết</button>
+                      </div>
+                    </div>
+                    
+                    {/* Item 2 */}
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between p-3.5 border-b border-slate-100 bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase tracking-wider rounded-md">Răng sứ</span>
+                          <span className="text-xs font-semibold text-slate-600">Bọc 16 răng sứ Cercon HT</span>
+                        </div>
+                        <button className="text-slate-400 hover:text-slate-700 p-1"><MoreVertical className="w-4 h-4" /></button>
+                      </div>
+                      <div className="grid grid-cols-2 divide-x divide-slate-100">
+                        <div className="relative group">
+                          <div className="aspect-[4/3] bg-slate-100 flex items-center justify-center p-4">
+                            <ImageIcon className="w-8 h-8 text-slate-300" />
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Trước</span>
+                          </div>
+                        </div>
+                        <div className="relative group">
+                          <div className="aspect-[4/3] bg-indigo-50 flex items-center justify-center p-4">
+                            <ImageIcon className="w-8 h-8 text-indigo-200" />
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Sau</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-3 text-xs text-slate-500 bg-white border-t border-slate-100 flex items-center justify-between">
+                        <span>Hoàn thành: 05/01/2024</span>
+                        <button className="text-indigo-600 font-semibold hover:underline">Chi tiết</button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Empty State / Call to Action */}
+                  <div className="mt-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
+                      <Sparkles className="w-5 h-5 text-slate-400" />
+                    </div>
+                    <h4 className="font-bold text-slate-700 mb-1">Xây dựng thư viện nụ cười</h4>
+                    <p className="text-sm text-slate-500 max-w-sm mb-4">Lưu lại hành trình thay đổi của bệnh nhân để trình chiếu và tư vấn hiệu quả hơn cho các ca tương tự.</p>
+                    <button className="text-sm font-semibold text-teal-600 hover:text-teal-700 hover:underline">Tìm hiểu cách chụp ảnh chuẩn y khoa</button>
+                  </div>
+                </div>
+              )}
+
               
               {/* ======================================================== */}
               {/* TAB 1: KHÁM & BỆNH LÝ (OVERVIEW)                         */}
@@ -1002,7 +1121,7 @@ export default function Patients() {
                         <textarea 
                           className="w-full h-24 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                           placeholder="Ghi nhận dị ứng kháng sinh, tê lidocaine, thuốc chống đông, cao huyết áp, tim mạch..."
-                          value={allergies}
+                          value={allergies || ''}
                           onChange={e => {
                             setAllergies(e.target.value);
                             setIsSaved(false);
@@ -1016,7 +1135,7 @@ export default function Patients() {
                         </label>
                         <Input 
                           type="date"
-                          value={lastXRayDate}
+                          value={lastXRayDate || ''}
                           onChange={e => {
                             setLastXRayDate(e.target.value);
                             setIsSaved(false);
@@ -1044,7 +1163,7 @@ export default function Patients() {
                       <textarea 
                         className="w-full h-24 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                         placeholder="VD: R46 sâu ngà sâu sát tủy; R11, R21 mẻ góc cắn; Cao răng độ 2..."
-                        value={diagnosis}
+                        value={diagnosis || ''}
                         onChange={e => {
                           setDiagnosis(e.target.value);
                           setIsSaved(false);
@@ -1059,7 +1178,7 @@ export default function Patients() {
                       <textarea 
                         className="w-full h-32 rounded-xl border border-border-subtle bg-surface px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
                         placeholder="VD: Buổi 1: Lấy vôi răng, mở tủy R46 đặt thuốc diệt tủy. Buổi 2 hẹn trám bít ống tủy..."
-                        value={notesText}
+                        value={notesText || ''}
                         onChange={e => {
                           setNotesText(e.target.value);
                           setIsSaved(false);
@@ -1461,7 +1580,7 @@ export default function Patients() {
                         <label className="text-text-main font-bold block mb-1.5">Chi phí phát sinh buổi khám này:</label>
                         <Input 
                           type="number" 
-                          value={currentServiceCost} 
+                          value={currentServiceCost || ''} 
                           onChange={e => {
                             setCurrentServiceCost(Number(e.target.value) || 0);
                             setIsSaved(false);
@@ -1486,7 +1605,7 @@ export default function Patients() {
                           <div className="flex gap-2">
                             <Input 
                               type="number" 
-                              value={paidAmount} 
+                              value={paidAmount || ''} 
                               onChange={e => {
                                 setPaidAmount(Number(e.target.value) || 0);
                                 setIsSaved(false);
@@ -1496,7 +1615,7 @@ export default function Patients() {
                             />
                             <select 
                               className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
-                              value={paymentMethod}
+                              value={paymentMethod || ''}
                               onChange={e => setPaymentMethod(e.target.value)}
                             >
                               <option value="Tiền mặt">Tiền mặt</option>
@@ -1703,7 +1822,7 @@ export default function Patients() {
                 </label>
                 <Input 
                   type="date"
-                  value={newSectionDate}
+                  value={newSectionDate || ''}
                   onChange={e => setNewSectionDate(e.target.value)}
                   className="bg-bg-base font-medium text-xs h-10"
                   required
@@ -1716,7 +1835,7 @@ export default function Patients() {
                 </label>
                 <div className="space-y-2">
                   <Input 
-                    value={newSectionTitle}
+                    value={newSectionTitle || ''}
                     onChange={e => setNewSectionTitle(e.target.value)}
                     placeholder="VD: Chụp X-quang Panorama toàn hàm..."
                     className="bg-bg-base text-xs h-10"
@@ -1742,7 +1861,7 @@ export default function Patients() {
                   Ghi chú lâm sàng cho đợt chụp này (tùy chọn)
                 </label>
                 <textarea 
-                  value={newSectionNote}
+                  value={newSectionNote || ''}
                   onChange={e => setNewSectionNote(e.target.value)}
                   placeholder="Ghi chú thêm về góc chụp, răng mục tiêu hoặc đánh giá ban đầu..."
                   className="w-full h-20 rounded-xl border border-border-subtle bg-bg-base px-3.5 py-2.5 text-[13px] font-medium text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none"
@@ -1914,7 +2033,7 @@ export default function Patients() {
                   Họ và tên <span className="text-error">*</span>
                 </label>
                 <Input 
-                  value={newPatientName} 
+                  value={newPatientName || ''} 
                   onChange={e => setNewPatientName(e.target.value)} 
                   placeholder="Nguyễn Văn A..." 
                   className="bg-bg-base text-xs h-10" 
@@ -1925,7 +2044,7 @@ export default function Patients() {
                   Số điện thoại <span className="text-error">*</span>
                 </label>
                 <Input 
-                  value={newPatientPhone} 
+                  value={newPatientPhone || ''} 
                   onChange={e => setNewPatientPhone(e.target.value)} 
                   placeholder="09xx xxx xxx" 
                   className="bg-bg-base text-xs h-10" 
@@ -1937,7 +2056,7 @@ export default function Patients() {
                 </label>
                 <Input 
                   type="date"
-                  value={newPatientDob} 
+                  value={newPatientDob || ''} 
                   onChange={e => setNewPatientDob(e.target.value)} 
                   className="bg-bg-base text-xs h-10" 
                 />
@@ -1947,7 +2066,7 @@ export default function Patients() {
                   Email (tùy chọn)
                 </label>
                 <Input 
-                  value={newPatientEmail} 
+                  value={newPatientEmail || ''} 
                   onChange={e => setNewPatientEmail(e.target.value)} 
                   placeholder="email@example.com" 
                   className="bg-bg-base text-xs h-10" 
@@ -2016,12 +2135,12 @@ export default function Patients() {
                   <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Dịch vụ điều trị <span className="text-red-500">*</span></label>
                   <select 
                     required
-                    value={aptService}
+                    value={aptService || ''}
                     onChange={e => setAptService(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                   >
                     <option value="">-- Chọn dịch vụ --</option>
-                    {services.map(s => <option key={s.id} value={s.id}>{s.name} - {s.price?.toLocaleString()}đ</option>)}
+                    {services.map(s => <option key={s.id} value={s.id || ''}>{s.name} - {s.price?.toLocaleString()}đ</option>)}
                   </select>
                 </div>
                 
@@ -2032,7 +2151,7 @@ export default function Patients() {
                       type="date"
                       required
                       min={new Date().toISOString().split('T')[0]}
-                      value={aptDate}
+                      value={aptDate || ''}
                       onChange={e => setAptDate(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                     />
@@ -2042,7 +2161,7 @@ export default function Patients() {
                     <input 
                       type="time"
                       required
-                      value={aptTime}
+                      value={aptTime || ''}
                       onChange={e => setAptTime(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-900 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all"
                     />
@@ -2054,7 +2173,7 @@ export default function Patients() {
                   <textarea 
                     rows={3}
                     placeholder="Nhập ghi chú cho bác sĩ..."
-                    value={aptNotes}
+                    value={aptNotes || ''}
                     onChange={e => setAptNotes(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-border-subtle bg-surface text-[13px] font-medium text-text-main focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all resize-none"
                   ></textarea>

@@ -56,7 +56,6 @@ export default function IdleTimeoutManager() {
       countdownTimerRef.current = setInterval(() => {
         setCountdown(prev => {
           if (prev <= 1) {
-            handleLogout();
             return 0;
           }
           return prev - 1;
@@ -67,7 +66,13 @@ export default function IdleTimeoutManager() {
     return () => {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
-  }, [showWarning, handleLogout]);
+  }, [showWarning]);
+
+  useEffect(() => {
+    if (showWarning && countdown === 0) {
+      handleLogout();
+    }
+  }, [showWarning, countdown, handleLogout]);
 
   // Setup event listeners
   useEffect(() => {

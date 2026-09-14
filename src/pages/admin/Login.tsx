@@ -76,7 +76,7 @@ export default function Login() {
               <Input 
                 type="text" 
                 placeholder="VD: admin hoặc admin@dentalsmartbooking.com" 
-                value={email} 
+                value={email || ''} 
                 onChange={e => setEmail(e.target.value)} 
                 required 
                 autoComplete="username"
@@ -88,7 +88,7 @@ export default function Login() {
                 <Input 
                   type={showPassword ? "text" : "password"} 
                   placeholder="••••••••" 
-                  value={password} 
+                  value={password || ''} 
                   onChange={e => setPassword(e.target.value)} 
                   required 
                   autoComplete="current-password"

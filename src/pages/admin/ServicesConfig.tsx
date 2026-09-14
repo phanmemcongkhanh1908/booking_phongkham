@@ -4,7 +4,7 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { Trash2, Edit2, Plus, Clock, Settings2 } from 'lucide-react';
+import { Trash2, Edit2, Plus, Clock, Settings2, X } from 'lucide-react';
 
 export default function ServicesConfig() {
   const [services, setServices] = useState<any[]>([]);
@@ -150,21 +150,30 @@ export default function ServicesConfig() {
         </CardHeader>
         <CardContent>
           {showServiceForm && editingService && (
-            <div className="mb-6 p-4 border border-border-subtle rounded-lg bg-bg-base relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <h4 className="font-bold text-slate-800 text-lg">{editingService.id ? 'Sửa dịch vụ' : 'Thêm dịch vụ mới'}</h4>
+              <button onClick={() => setShowServiceForm(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 max-h-[80vh] overflow-y-auto">
+
               <h4 className="font-semibold mb-4 text-sm">{editingService.id ? 'Sửa dịch vụ' : 'Thêm dịch vụ mới'}</h4>
               <form onSubmit={handleSaveService} className="space-y-4">
                 <div>
                   <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên dịch vụ</label>
-                  <Input required value={editingService.name} onChange={e => setEditingService({...editingService, name: e.target.value})} />
+                  <Input required value={editingService.name || ''} onChange={e => setEditingService({...editingService, name: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Thời gian khám (phút)</label>
-                    <Input type="number" required value={editingService.durationMins} onChange={e => setEditingService({...editingService, durationMins: e.target.value})} />
+                    <Input type="number" required value={editingService.durationMins || ''} onChange={e => setEditingService({...editingService, durationMins: e.target.value})} />
                   </div>
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Buffer sau khám (phút)</label>
-                    <Input type="number" value={editingService.bufferAfter} onChange={e => setEditingService({...editingService, bufferAfter: e.target.value})} />
+                    <Input type="number" value={editingService.bufferAfter || ''} onChange={e => setEditingService({...editingService, bufferAfter: e.target.value})} />
                   </div>
                 </div>
                 <div>
@@ -179,6 +188,16 @@ export default function ServicesConfig() {
                     }} 
                     disabled={editingService.isFree}
                   />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tag Dịch vụ Cao cấp</label>
+                  <Input 
+                    placeholder="VD: KHÔNG ĐAU, TRẢ GÓP 0% (cách nhau bằng dấu phẩy)"
+                    value={(editingService.tags || []).join(', ')} 
+                    onChange={e => setEditingService({...editingService, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} 
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Các tag này sẽ hiển thị nổi bật ở bước Chọn Dịch Vụ.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-6 pt-2">
                   <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
@@ -203,13 +222,15 @@ export default function ServicesConfig() {
                     <span>Nổi bật (HOT)</span>
                   </label>
                 </div>
-                <div className="flex justify-end space-x-2 pt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowServiceForm(false)}>Hủy</Button>
-                  <Button type="submit" size="sm">Lưu</Button>
+                <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-slate-100">
+                  <Button type="button" variant="outline" className="rounded-xl font-bold" onClick={() => setShowServiceForm(false)}>Hủy</Button>
+                  <Button type="submit" className="rounded-xl font-bold bg-teal-600 hover:bg-teal-700">Lưu dịch vụ</Button>
                 </div>
               </form>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
           <div className="space-y-3">
             {services.map(svc => (
@@ -262,17 +283,48 @@ export default function ServicesConfig() {
         </CardHeader>
         <CardContent>
           {showProviderForm && editingProvider && (
-            <div className="mb-6 p-4 border border-border-subtle rounded-lg bg-bg-base relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <h4 className="font-bold text-slate-800 text-lg">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
+              <button onClick={() => setShowProviderForm(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 max-h-[80vh] overflow-y-auto">
               <h4 className="font-semibold mb-4 text-sm">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
               <form onSubmit={handleSaveProvider} className="space-y-4">
                 <div>
                   <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên bác sĩ</label>
-                  <Input required placeholder="VD: BS. Nguyễn Văn A" value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} />
+                  <Input required placeholder="VD: BS. Nguyễn Văn A" value={editingProvider.name || ''} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Chuyên khoa</label>
                   <Input placeholder="VD: Chuyên khoa Răng Hàm Mặt" value={editingProvider.specialty || ''} onChange={e => setEditingProvider({...editingProvider, specialty: e.target.value})} />
                 </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Kinh nghiệm</label>
+                  <Input placeholder="VD: 10 năm kinh nghiệm" value={editingProvider.experience || ''} onChange={e => setEditingProvider({...editingProvider, experience: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Thế mạnh chuyên môn (Tags)</label>
+                  <Input 
+                    placeholder="VD: CHỈNH NHA, IMPLANT NHA KHOA (cách nhau bằng dấu phẩy)" 
+                    value={(editingProvider.specialties || []).join(', ')} 
+                    onChange={e => setEditingProvider({...editingProvider, specialties: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} 
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Các tag này hiển thị nổi bật dưới tên bác sĩ.</p>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Bằng cấp & Chứng chỉ</label>
+                  <textarea 
+                    className="flex min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
+                    placeholder="Mỗi dòng một chứng chỉ&#10;VD: Chứng chỉ Cấy ghép Implant (Bộ Y Tế)"
+                    value={(editingProvider.certificates || []).join('\n')}
+                    onChange={e => setEditingProvider({...editingProvider, certificates: e.target.value.split('\n').filter(Boolean)})}
+                  ></textarea>
+                </div>
+
                 <div className="flex flex-wrap items-center gap-6 pt-2">
                   <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
                     <input type="checkbox" checked={editingProvider.isActive !== false} onChange={e => setEditingProvider({...editingProvider, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
@@ -283,13 +335,15 @@ export default function ServicesConfig() {
                     <span>Bác sĩ mặc định</span>
                   </label>
                 </div>
-                <div className="flex justify-end space-x-2 pt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowProviderForm(false)}>Hủy</Button>
-                  <Button type="submit" size="sm">Lưu</Button>
+                <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-slate-100">
+                  <Button type="button" variant="outline" className="rounded-xl font-bold" onClick={() => setShowProviderForm(false)}>Hủy</Button>
+                  <Button type="submit" className="rounded-xl font-bold bg-teal-600 hover:bg-teal-700">Lưu hồ sơ</Button>
                 </div>
               </form>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
           <div className="space-y-3">
             {providers.map(prv => (
@@ -306,6 +360,9 @@ export default function ServicesConfig() {
                   </div>
                   {prv.specialty && (
                     <div className="text-xs text-text-muted mt-1">{prv.specialty}</div>
+                  )}
+                  {prv.experience && (
+                    <div className="text-[11px] text-teal-600 mt-0.5">{prv.experience}</div>
                   )}
                 </div>
                 <div className="flex space-x-2">
@@ -339,7 +396,7 @@ export default function ServicesConfig() {
               <p className="text-xs text-text-muted mb-2">Chia nhỏ lịch hẹn thành từng đoạn bao nhiêu phút trên màn hình chọn giờ?</p>
               <select 
                 className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
-                value={config.intervalStep}
+                value={config.intervalStep || ''}
                 onChange={e => setConfig({...config, intervalStep: parseInt(e.target.value)})}
               >
                 <option value={15}>15 phút / slot</option>

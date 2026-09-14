@@ -1,3 +1,5 @@
+import webpush from 'web-push';
+import nodeCron from 'node-cron';
 import express from "express";
 import path from "path";
 import cors from "cors";
@@ -21,7 +23,18 @@ import { initReminderCronJob } from "./server/jobs/appointmentReminder.js";
 dotenv.config();
 
 async function startServer() {
-  const app = express();
+  
+// Setup Web Push
+webpush.setVapidDetails(
+    'mailto:support@dentalbooking.com',
+    process.env.VAPID_PUBLIC_KEY || 'BH2wGmPIHUUgpjmONKc8TkcxWD5jqIEopilog9Mg9sGdGZxbpwqb5aamouPjJRsy20Jy0a7CGEVUbFyt5De4Lyk',
+    process.env.VAPID_PRIVATE_KEY || 'Tqn3SBNkFGIiSf6uGoGvpDfZXjH1XDesiM9XA5nTiZU'
+  );
+
+// Store subscriptions mapped to phone numbers or appointment IDs
+const subscriptions = new Map<string, any>();
+
+const app = express();
   const PORT = 3000;
 
   // Middlewares
@@ -33,6 +46,41 @@ async function startServer() {
   // ==========================================
   
   // Healthcheck
+  
+  app.get('/api/push/vapid-key', (req, res) => {
+    res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || 'BH2wGmPIHUUgpjmONKc8TkcxWD5jqIEopilog9Mg9sGdGZxbpwqb5aamouPjJRsy20Jy0a7CGEVUbFyt5De4Lyk' });
+  });
+
+  app.post('/api/push/subscribe', async (req, res) => {
+    const { subscription, phone } = req.body;
+    if (!subscription || !phone) {
+      return res.status(400).json({ error: 'Subscription and phone required' });
+    }
+    
+    try {
+      const { db } = await import('./server/db/index.js');
+      const { patients, pushSubscriptions } = await import('./server/db/schema.js');
+      const { eq } = await import('drizzle-orm');
+
+      const pts = await db.select().from(patients).where(eq(patients.phone, phone));
+      if (pts.length > 0) {
+         const patientId = pts[0].id;
+         await db.insert(pushSubscriptions).values({
+            id: Math.random().toString(36).substring(7),
+            patientId: patientId,
+            endpoint: subscription.endpoint,
+            p256dh: subscription.keys.p256dh,
+            auth: subscription.keys.auth,
+         });
+      }
+      
+      res.status(201).json({ success: true, message: 'Subscribed successfully.' });
+    } catch(err) {
+      console.error(err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", message: "Dental Smart Booking API is running." });
   });

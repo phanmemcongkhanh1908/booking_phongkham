@@ -171,7 +171,12 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
         else rightDef = ch;
       } else if (ch?.constructor?.name === "StringChunk") {
         const text = ch.value.join("").trim();
-        if (text) op = text;
+        if (text) {
+          // Normalize operators
+          if (text.toLowerCase() === "in") op = "in";
+          else if (text.toLowerCase() === "not in") op = "not in";
+          else op = text;
+        }
       } else if (ch?.queryChunks) {
         return evaluateSingleCondition(docData, ch, joinsData);
       } else {
@@ -194,7 +199,7 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
     if (op === "<=") return nDocVal <= nVal;
     if (op === "is null") return docVal == null;
     if (op === "is not null") return docVal != null;
-    if (op === "in") return Array.isArray(val) && val.includes(docVal);
+    if (op === "in") { console.log("IN OP", {docVal, val}); return Array.isArray(val) && val.includes(docVal); }
     if (op === "not in") return Array.isArray(val) && !val.includes(docVal);
 
     return true;

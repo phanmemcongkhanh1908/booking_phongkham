@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useBookingStore } from '../../../store/booking';
 import { 
+  UploadCloud, 
+  FileText, 
+  X, 
+  CheckCircle, 
+  Loader2, 
   ArrowLeft, 
   Clock, 
   Mail, 
@@ -10,10 +15,13 @@ import {
   MessageSquarePlus,
   ArrowRight,
   Send,
-  Users
+  Users,
+  Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import api from '../../../services/api';
 
 const DEFAULT_QUICK_TAGS = [
   'Đang đau nhức / Ê buốt',
@@ -59,6 +67,93 @@ export default function PatientForm() {
   const [error, setError] = useState('');
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [showAdvancedNotify, setShowAdvancedNotify] = useState(Boolean(patientDraft?.telegramId));
+  const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'new' | 'existing_unverified' | 'verified'>('idle');
+  const [verifyName, setVerifyName] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+
+  
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('verifiedPatient');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.phone && parsed.fullName) {
+          setFormData(prev => ({ ...prev, phone: parsed.phone, fullName: parsed.fullName }));
+          setPhoneStatus('verified'); // Assume verified if it's from local storage
+        }
+      }
+    } catch (e) {}
+  }, []);
+
+  // Soft Authentication Logic
+  useEffect(() => {
+    const rawClean = formData.phone.replace(/\D/g, '');
+    const isValid = /^\d{10,11}$/.test(rawClean);
+    
+    if (!isValid) {
+      setPhoneStatus('idle');
+      return;
+    }
+    
+    if (phoneStatus === 'verified') return;
+
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    
+    checkTimerRef.current = setTimeout(async () => {
+      setPhoneStatus('checking');
+      try {
+        const res = await api.get('/public/patients/check', {
+          params: { phone: rawClean }
+        });
+        if (res.data?.success) {
+          if (res.data.exists) {
+            setPhoneStatus('existing_unverified');
+          } else {
+            setPhoneStatus('new');
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi kiểm tra SĐT", err);
+        setPhoneStatus('new'); // Fallback
+      }
+    }, 600);
+    
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    };
+  }, [formData.phone]);
+
+  const handleVerifyName = async () => {
+    if (!verifyName.trim()) {
+      toast.error("Vui lòng nhập họ tên để xác thực.");
+      return;
+    }
+    setIsVerifying(true);
+    try {
+      const res = await api.post('/public/patients/verify', {
+        phone: formData.phone,
+        fullName: verifyName
+      });
+      if (res.data?.success && res.data?.match && res.data?.data) {
+        const p = res.data.data;
+        updateField('fullName', p.fullName || formData.fullName);
+        updateField('email', p.email || formData.email);
+        updateField('notes', p.notes || formData.notes);
+        
+        setPhoneStatus('verified');
+        toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
+      } else {
+        toast.error("Tên không khớp với hồ sơ, vui lòng thử lại hoặc dùng số điện thoại khác.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Có lỗi xảy ra khi xác thực.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   const updateField = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -78,7 +173,9 @@ export default function PatientForm() {
       setTimeLeft(remaining);
       
       if (remaining === 0) {
-        setError('Thời gian giữ chỗ đã hết hạn. Vui lòng quay lại chọn lại khung giờ.');
+        toast.error('Thời gian giữ chỗ đã hết hạn. Vui lòng chọn lại khung giờ.');
+        clearInterval(interval);
+        setTimeout(() => navigate(`${basePath}/chon-gio`, { replace: true }), 1500);
       }
     };
 
@@ -269,34 +366,8 @@ export default function PatientForm() {
               Thông tin liên hệ
             </h3>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">
-                  Họ và tên người khám <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="VD: Nguyễn Văn An"
-                    value={formData.fullName}
-                    onChange={e => {
-                      updateField('fullName', e.target.value);
-                      if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
-                    }}
-                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
-                      fieldErrors.fullName 
-                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
-                        : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
-                    }`}
-                  />
-                </div>
-                {fieldErrors.fullName && (
-                  <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.fullName}</p>
-                )}
-              </div>
-
+            <div className="grid grid-cols-1 gap-4">
+              {/* SĐT FIRST */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700">
                   Số điện thoại <span className="text-red-500">*</span>
@@ -306,11 +377,12 @@ export default function PatientForm() {
                   <input
                     type="tel"
                     required
-                    placeholder="VD: 0912 345 678"
-                    value={formData.phone}
+                    placeholder="Nhập số điện thoại của bạn..."
+                    value={formData.phone || ''}
                     onChange={e => {
                       const val = e.target.value.replace(/[^\d\s.-]/g, '');
                       updateField('phone', val);
+                      if (phoneStatus === 'verified') setPhoneStatus('idle');
                       if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: '' }));
                     }}
                     onBlur={() => handleBlur('phone')}
@@ -320,11 +392,95 @@ export default function PatientForm() {
                         : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
                     }`}
                   />
+                  {phoneStatus === 'checking' && (
+                    <Loader2 className="w-4 h-4 text-slate-400 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+                  )}
+                  {phoneStatus === 'verified' && (
+                    <CheckCircle className="w-4 h-4 text-teal-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                  )}
                 </div>
                 {fieldErrors.phone && (
                   <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.phone}</p>
                 )}
               </div>
+
+              {/* Khối xác thực nếu là khách cũ */}
+              {phoneStatus === 'existing_unverified' && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 sm:p-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg shrink-0 mt-0.5">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">Khách hàng quen thuộc?</h4>
+                      <p className="text-xs text-slate-600 mt-1">Số điện thoại này đã từng đặt khám. Vui lòng nhập <strong className="text-slate-800">Họ và Tên</strong> của bạn để hệ thống tự động điền hồ sơ.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="w-4 h-4 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        value={verifyName || ''}
+                        onChange={e => setVerifyName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
+                        placeholder="Nhập họ và tên..."
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-sm font-semibold text-slate-800 bg-white"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleVerifyName}
+                      disabled={isVerifying}
+                      className="whitespace-nowrap px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs flex items-center justify-center gap-1.5"
+                    >
+                      {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      Xác thực
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPhoneStatus('new')}
+                    className="text-xs text-blue-600 hover:underline font-medium inline-block"
+                  >
+                    Bỏ qua, tôi muốn điền hồ sơ mới
+                  </button>
+                </div>
+              )}
+
+              {/* Các trường còn lại chỉ hiện khi là khách mới hoặc đã verify */}
+              {(phoneStatus === 'new' || phoneStatus === 'verified') && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Họ và tên người khám <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="VD: Nguyễn Văn An"
+                        value={formData.fullName || ''}
+                        onChange={e => {
+                          updateField('fullName', e.target.value);
+                          if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
+                        }}
+                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                          fieldErrors.fullName 
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
+                            : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
+                        }`}
+                      />
+                    </div>
+                    {fieldErrors.fullName && (
+                      <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.fullName}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -350,7 +506,7 @@ export default function PatientForm() {
                     <input
                       type="email"
                       placeholder="VD: nhakhoa.khachhang@gmail.com"
-                      value={formData.email}
+                      value={formData.email || ''}
                       onChange={e => {
                         updateField('email', e.target.value);
                         if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
@@ -394,7 +550,7 @@ export default function PatientForm() {
                       <input
                         type="text"
                         placeholder="VD: @username hoặc Chat ID"
-                        value={formData.telegramId}
+                        value={formData.telegramId || ''}
                         onChange={e => updateField('telegramId', e.target.value)}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100 transition-all"
                       />
@@ -407,6 +563,48 @@ export default function PatientForm() {
               </div>
             </div>
           )}
+
+          {/* Hình ảnh y khoa (Idea 3) */}
+          <div className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200/60 mb-6">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-4 flex items-center gap-2">
+              <UploadCloud className="w-4 h-4 text-teal-600" />
+              Tải lên Hình ảnh / Hồ sơ (Tùy chọn)
+            </h3>
+            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative">
+              <div className="space-y-1 text-center">
+                <UploadCloud className="mx-auto h-8 w-8 text-slate-400" />
+                <div className="flex text-[13px] text-slate-600 justify-center">
+                  <label htmlFor="file-upload" className="relative cursor-pointer bg-white rounded-md font-semibold text-teal-700 hover:text-teal-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-700 focus-within:ring-offset-2 px-2 py-0.5">
+                    <span>Chọn file</span>
+                    <input id="file-upload" name="file-upload" type="file" className="sr-only" multiple accept="image/*,.pdf" onChange={(e) => {
+                      if (e.target.files) {
+                        setUploadedFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+                      }
+                    }} />
+                  </label>
+                  <p className="pl-1">hoặc kéo thả vào đây</p>
+                </div>
+                <p className="text-[11px] text-slate-500">PNG, JPG, PDF tối đa 10MB (Hồ sơ sẽ được chuyển thẳng tới Admin)</p>
+              </div>
+            </div>
+            {uploadedFiles.length > 0 && (
+              <ul className="mt-3 divide-y divide-slate-100 border border-slate-100 rounded-lg overflow-hidden bg-white">
+                {uploadedFiles.map((file, idx) => (
+                  <li key={idx} className="flex items-center justify-between py-2 pl-3 pr-4 text-[12px]">
+                    <div className="flex w-0 flex-1 items-center">
+                      <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                      <span className="ml-2 w-0 flex-1 truncate text-slate-600 font-medium">{file.name}</span>
+                    </div>
+                    <div className="ml-4 shrink-0">
+                      <button type="button" onClick={() => setUploadedFiles(prev => prev.filter((_, i) => i !== idx))} className="font-medium text-rose-500 hover:text-rose-600">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           {/* Health Notes Section */}
           <div className="space-y-4">
@@ -445,7 +643,7 @@ export default function PatientForm() {
               <textarea
                 rows={3}
                 placeholder="Bạn có điều gì muốn bác sĩ lưu ý trước không? (Ví dụ: đang ê buốt răng hàm dưới, tiền sử dị ứng thuốc tê...)"
-                value={formData.notes}
+                value={formData.notes || ''}
                 onChange={e => updateField('notes', e.target.value)}
                 className="w-full p-3.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all resize-y leading-relaxed"
               />
@@ -466,6 +664,12 @@ export default function PatientForm() {
           </div>
 
           {/* Desktop CTA */}
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 mt-6">
+          <p className="text-[12px] text-slate-500 leading-relaxed text-center">
+            Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám sắp xếp phục vụ bệnh nhân khác.
+          </p>
+        </div>
           <div className="hidden sm:block pt-4">
             <button
               type="submit"
