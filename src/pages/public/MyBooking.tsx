@@ -112,15 +112,20 @@ export default function MyBooking() {
     handleSearch(undefined, pin);
   };
 
+  
   const handleClearHistory = () => {
-    if (window.confirm("Bạn có chắc muốn đăng xuất hồ sơ khỏi thiết bị này?")) {
-      localStorage.removeItem('verifiedPatient');
-      setAppointments([]);
-      setSearchPhone('');
-      setSearchName('');
-      toast.success("Đã đăng xuất hồ sơ");
-    }
+    setLogoutConfirmOpen(true);
   };
+  
+  const performLogout = () => {
+    localStorage.removeItem('verifiedPatient');
+    setAppointments([]);
+    setSearchPhone('');
+    setSearchName('');
+    setLogoutConfirmOpen(false);
+    toast.success("Đã đăng xuất hồ sơ an toàn");
+  };
+
 
   useEffect(() => {
     const fetchAppointments = async () => {

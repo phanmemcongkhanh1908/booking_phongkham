@@ -41,6 +41,11 @@ export default function Dashboard() {
     newDate: '',
     newTime: ''
   });
+  const [cancelModalData, setCancelModalData] = useState<{isOpen: boolean, appointmentId: string | null, reason: string}>({
+    isOpen: false,
+    appointmentId: null,
+    reason: ''
+  });
 
   useEffect(() => {
     if (user?.tenantId && isConnected) {
@@ -1127,7 +1132,7 @@ export default function Dashboard() {
               <button 
                 onClick={() => {
                   if (!cancelModalData.reason.trim()) {
-                    toast.error("Vui lòng nhập lý do hủy");
+                    alert("Vui lòng nhập lý do hủy");
                     return;
                   }
                   if (cancelModalData.appointmentId) {

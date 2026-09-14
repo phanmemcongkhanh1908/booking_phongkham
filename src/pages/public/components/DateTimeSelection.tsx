@@ -372,8 +372,25 @@ export default function DateTimeSelection() {
     );
   };
 
+
+  const slotsByProvider = React.useMemo(() => {
+    const grouped: Record<string, { morning: any[], afternoon: any[], evening: any[] }> = {};
+    slots.forEach(slot => {
+      const pName = (slot as any).providerName || 'Bác sĩ chuyên khoa';
+      if (!grouped[pName]) {
+        grouped[pName] = { morning: [], afternoon: [], evening: [] };
+      }
+      const hour = parseInt(format(parseISO(slot.startAt), 'HH'));
+      if (hour < 12) grouped[pName].morning.push(slot);
+      else if (hour < 18) grouped[pName].afternoon.push(slot);
+      else grouped[pName].evening.push(slot);
+    });
+    return grouped;
+  }, [slots]);
+
   return (
     <div className="space-y-6 pb-24 sm:pb-0">
+
       {/* Step Header Card */}
       <div className="rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-7 shadow-lg shadow-slate-200/40 relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
