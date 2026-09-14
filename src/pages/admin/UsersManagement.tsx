@@ -4,8 +4,9 @@ import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
 import {  
   Users, ShieldCheck, Key, Lock, Unlock, X, Edit, 
-  Plus, CheckCircle2, AlertTriangle, RefreshCw, Loader2
-, Eye, EyeOff, Download, Link as LinkIcon } from 'lucide-react';
+  Plus, CheckCircle2, AlertTriangle, RefreshCw, Loader2,
+  Eye, EyeOff, Download, Link as LinkIcon, Copy, Check, ExternalLink, Sparkles
+} from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 
 const PERMISSION_MATRIX = [
@@ -62,7 +63,11 @@ export default function UsersManagement() {
   const [uiMode, setUiMode] = useState<'full' | 'simple'>('full');
   const [slug, setSlug] = useState('');
   const [shortUrl, setShortUrl] = useState('');
+  const [internalShortUrl, setInternalShortUrl] = useState('');
+  const [activeUrlType, setActiveUrlType] = useState<'internal' | 'external'>('internal');
+  const [shortenerProvider, setShortenerProvider] = useState<string>('');
   const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState(false);
+  const [copied, setCopied] = useState(false);
   
   const [msg, setMsg] = useState('');
   const [isError, setIsError] = useState(false);
@@ -72,48 +77,56 @@ export default function UsersManagement() {
     fetchUsers();
   }, []);
 
+  const triggerShorten = async (targetSlug: string) => {
+    const cleanSlug = (targetSlug || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!cleanSlug) {
+      setShortUrl('');
+      setInternalShortUrl('');
+      setShortenerProvider('');
+      return;
+    }
+
+    const directInternal = `${window.location.origin}/b/${cleanSlug}`;
+    setInternalShortUrl(directInternal);
+
+    setIsGeneratingShortUrl(true);
+    try {
+      const longUrl = `${window.location.origin}/booking/${cleanSlug}`;
+      const res = await api.post('/public/shorten', {
+        url: longUrl,
+        slug: cleanSlug,
+      });
+
+      if (res.data?.data) {
+        const { shortUrl: fetchedShort, internalShortUrl: fetchedInternal, provider } = res.data.data;
+        setShortUrl(fetchedShort);
+        if (fetchedInternal) setInternalShortUrl(fetchedInternal);
+        setShortenerProvider(provider);
+      }
+    } catch (err) {
+      console.warn("Short link server fallback to direct internal:", err);
+      setShortUrl(directInternal);
+      setShortenerProvider('internal');
+    } finally {
+      setIsGeneratingShortUrl(false);
+    }
+  };
+
   useEffect(() => {
     if (!slug) {
       setShortUrl('');
+      setInternalShortUrl('');
+      setShortenerProvider('');
       return;
     }
-    const timer = setTimeout(async () => {
-      setIsGeneratingShortUrl(true);
-      try {
-        const longUrl = `${window.location.origin}/booking/${slug}`;
-        const alias = slug.replace(/-/g, '').substring(0, 16);
-        const res = await fetch('https://spoo.me/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-          },
-          body: `url=${encodeURIComponent(longUrl)}&alias=${alias}`
-        });
-        const data = await res.json();
-        if (data.short_url) {
-          setShortUrl(data.short_url.replace('http://', 'https://'));
-        } else if (data.AliasError) {
-          // If alias exists, try with a random suffix
-          const randomSuffix = Math.floor(Math.random() * 999).toString();
-          const fallbackAlias = alias.substring(0, 13) + randomSuffix;
-          const retryRes = await fetch('https://spoo.me/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Accept': 'application/json'
-            },
-            body: `url=${encodeURIComponent(longUrl)}&alias=${fallbackAlias}`
-          });
-          const retryData = await retryRes.json();
-          if (retryData.short_url) setShortUrl(retryData.short_url.replace('http://', 'https://'));
-        }
-      } catch (err) {
-        console.error("Short URL gen err", err);
-      } finally {
-        setIsGeneratingShortUrl(false);
-      }
-    }, 800);
+
+    const clean = slug.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    setInternalShortUrl(`${window.location.origin}/b/${clean}`);
+
+    const timer = setTimeout(() => {
+      triggerShorten(slug);
+    }, 600);
+
     return () => clearTimeout(timer);
   }, [slug]);
 
@@ -141,6 +154,11 @@ export default function UsersManagement() {
     setSelectedPermissions(['*']);
     setUiMode('full');
     setSlug('');
+    setShortUrl('');
+    setInternalShortUrl('');
+    setShortenerProvider('');
+    setActiveUrlType('internal');
+    setCopied(false);
     setMsg('');
     setIsError(false);
     setShowModal(true);
@@ -155,11 +173,103 @@ export default function UsersManagement() {
     const hasAll = u.permissions?.includes('*') || u.rolePermissions?.includes('*') || u.roleName === 'admin';
     setSelectedPermissions(hasAll ? ['*'] : (u.permissions || []));
     setUiMode(u.uiMode || 'full');
-    setSlug(u.slug || '');
+    const userSlug = u.slug || '';
+    setSlug(userSlug);
+    setShortUrl('');
+    setInternalShortUrl(userSlug ? `${window.location.origin}/b/${userSlug}` : '');
+    setShortenerProvider('');
+    setActiveUrlType('internal');
+    setCopied(false);
     
     setMsg('');
     setIsError(false);
     setShowModal(true);
+  };
+
+  const handleCopyLink = (url: string) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadSvg = () => {
+    const canvas = document.getElementById('qr-code-canvas');
+    if (canvas) {
+      const svgData = new XMLSerializer().serializeToString(canvas);
+      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `qr-${slug || 'booking'}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  const handleDownloadStandeePng = () => {
+    const svg = document.getElementById('qr-code-canvas');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = 600;
+      canvas.height = 720;
+      if (ctx) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, 600, 720);
+
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(16, 16, 568, 688);
+
+        ctx.fillStyle = '#0D9488';
+        ctx.fillRect(16, 16, 568, 110);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('ĐẶT LỊCH HẸN TRỰC TUYẾN', 300, 64);
+
+        ctx.fillStyle = '#CCFBF1';
+        ctx.font = '15px sans-serif';
+        ctx.fillText('Quét mã QR bằng Camera để đặt lịch nhanh chóng', 300, 96);
+
+        ctx.drawImage(img, 130, 150, 340, 340);
+
+        ctx.fillStyle = '#F0FDFA';
+        ctx.fillRect(50, 515, 500, 64);
+        ctx.strokeStyle = '#99F6E4';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(50, 515, 500, 64);
+
+        const activeTarget = (activeUrlType === 'external' && shortUrl)
+          ? shortUrl 
+          : (internalShortUrl || `${window.location.origin}/b/${slug || 'booking'}`);
+
+        ctx.fillStyle = '#0F766E';
+        ctx.font = 'bold 17px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(activeTarget, 300, 554);
+
+        ctx.fillStyle = '#475569';
+        ctx.font = '500 14px sans-serif';
+        ctx.fillText('Tiết kiệm thời gian • Chủ động chọn khung giờ khám', 300, 620);
+
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Dental Smart Booking • Hệ Thống Quản Trị Nha Khoa Thông Minh', 300, 656);
+
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `standee-qr-${slug || 'booking'}.png`;
+        a.click();
+      }
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -482,72 +592,149 @@ export default function UsersManagement() {
                         </div>
                         
                         {slug && (
-                          <div className="mt-4 p-4 bg-teal-50/50 border border-teal-100 rounded-xl flex items-start gap-4 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-2 opacity-10">
-                               <LinkIcon className="w-16 h-16" />
-                            </div>
-                            <div className="bg-white p-2 rounded-lg border border-slate-200 shrink-0 relative z-10 shadow-sm">
-                              <QRCodeSVG 
-                                id="qr-code-canvas"
-                                value={shortUrl || `${window.location.origin}/booking/${slug}`} 
-                                size={90} 
-                                level="M"
-                                includeMargin={false}
-                                imageSettings={{
-                                  src: '/vite.svg',
-                                  x: undefined,
-                                  y: undefined,
-                                  height: 20,
-                                  width: 20,
-                                  excavate: true,
-                                }}
-                              />
-                            </div>
-                            <div className="space-y-2.5 relative z-10">
-                              <div>
-                                <p className="text-sm text-slate-700 font-bold flex items-center gap-2">
-                                  Link rút gọn & Standee QR
-                                </p>
-                                <p className="text-[11px] text-slate-500 mt-0.5 max-w-[200px]">Gửi link này cho khách hàng hoặc tải Standee QR đặt tại quầy lễ tân.</p>
-                              </div>
-                              
-                              {isGeneratingShortUrl ? (
-                                <div className="flex items-center gap-2 text-teal-600 text-[13px] font-medium bg-white px-3 py-1.5 rounded-lg border border-teal-100 inline-flex">
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  Đang tạo link rút gọn...
-                                </div>
-                              ) : shortUrl ? (
-                                <a href={shortUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-teal-700 font-bold text-[13px] hover:underline bg-white px-3 py-1.5 rounded-lg border border-teal-100 shadow-sm inline-flex">
-                                  <LinkIcon className="w-3.5 h-3.5" />
-                                  {shortUrl}
-                                </a>
-                              ) : (
-                                <span className="text-[12px] text-amber-600">Không tạo được link rút gọn, QR sẽ dùng link gốc.</span>
-                              )}
-
-                              <div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const canvas = document.getElementById('qr-code-canvas');
-                                    if (canvas) {
-                                      const svgData = new XMLSerializer().serializeToString(canvas);
-                                      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download = `qr-${slug}.svg`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      document.body.removeChild(a);
-                                    }
+                          <div className="mt-4 p-4.5 bg-gradient-to-br from-teal-50/70 to-slate-50 border border-teal-200/70 rounded-2xl space-y-4 shadow-xs">
+                            {/* Top QR & Info */}
+                            <div className="flex flex-col sm:flex-row items-start gap-4">
+                              {/* QR Preview Box */}
+                              <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shrink-0 shadow-xs flex flex-col items-center gap-1.5 self-center sm:self-start">
+                                <QRCodeSVG 
+                                  id="qr-code-canvas"
+                                  value={(activeUrlType === 'external' && shortUrl) ? shortUrl : (internalShortUrl || `${window.location.origin}/b/${slug}`)} 
+                                  size={110} 
+                                  level="M"
+                                  includeMargin={false}
+                                  imageSettings={{
+                                    src: '/vite.svg',
+                                    x: undefined,
+                                    y: undefined,
+                                    height: 22,
+                                    width: 22,
+                                    excavate: true,
                                   }}
-                                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white text-xs font-semibold rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  Tải QR Standee
-                                </button>
+                                />
+                                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
+                                  Quét để đặt hẹn
+                                </span>
                               </div>
+
+                              {/* Link Details & Options */}
+                              <div className="flex-1 space-y-2.5 w-full min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Sparkles className="w-4 h-4 text-teal-600" />
+                                    <span className="text-sm font-bold text-slate-800">Link đặt lịch & QR Standee</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerShorten(slug)}
+                                    disabled={isGeneratingShortUrl}
+                                    title="Tạo lại link rút gọn"
+                                    className="p-1 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                                  >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingShortUrl ? 'animate-spin text-teal-600' : ''}`} />
+                                  </button>
+                                </div>
+
+                                {/* Link Type Switcher */}
+                                <div className="inline-flex p-1 bg-slate-200/70 rounded-xl text-xs font-semibold text-slate-600 w-full sm:w-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveUrlType('internal')}
+                                    className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all text-center ${
+                                      activeUrlType === 'internal'
+                                        ? 'bg-white text-teal-700 shadow-xs'
+                                        : 'hover:text-slate-900'
+                                    }`}
+                                  >
+                                    🏛️ Link phòng khám
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveUrlType('external')}
+                                    className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 ${
+                                      activeUrlType === 'external'
+                                        ? 'bg-white text-teal-700 shadow-xs'
+                                        : 'hover:text-slate-900'
+                                    }`}
+                                  >
+                                    ⚡ Link siêu ngắn
+                                    {isGeneratingShortUrl && <Loader2 className="w-3 h-3 animate-spin text-teal-600" />}
+                                  </button>
+                                </div>
+
+                                {/* Link Display & Quick Actions */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1.5 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                                    <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    <span className="text-[12px] font-mono font-medium text-slate-800 truncate flex-1 select-all">
+                                      {(activeUrlType === 'external' && shortUrl)
+                                        ? shortUrl 
+                                        : (internalShortUrl || `${window.location.origin}/b/${slug}`)}
+                                    </span>
+                                    
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLink((activeUrlType === 'external' && shortUrl) ? shortUrl : (internalShortUrl || `${window.location.origin}/b/${slug}`))}
+                                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1 transition-all ${
+                                        copied 
+                                          ? 'bg-emerald-600 text-white' 
+                                          : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                                      }`}
+                                    >
+                                      {copied ? (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          Đã chép
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="w-3 h-3" />
+                                          Chép
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <a
+                                      href={(activeUrlType === 'external' && shortUrl) ? shortUrl : (internalShortUrl || `${window.location.origin}/b/${slug}`)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors"
+                                      title="Mở link thử nghiệm"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                                    <span>
+                                      {activeUrlType === 'internal' 
+                                        ? '• Link vĩnh viễn mang tên miền phòng khám' 
+                                        : (shortenerProvider ? `• Nguồn: ${shortenerProvider.toUpperCase()} (Tối ưu gửi tin nhắn SMS)` : '• Đang tải link siêu ngắn...')}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Standee & SVG Download Action Bar */}
+                            <div className="pt-2 border-t border-teal-100/80 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleDownloadStandeePng}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-600 text-white text-xs font-semibold rounded-xl hover:bg-teal-700 transition-colors shadow-xs"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Tải Standee In Quầy (PNG)
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={handleDownloadSvg}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors shadow-2xs"
+                              >
+                                <Download className="w-3.5 h-3.5 text-slate-500" />
+                                Tải file Vector (SVG)
+                              </button>
                             </div>
                           </div>
                         )}

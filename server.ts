@@ -105,6 +105,12 @@ const app = express();
 
   app.use(globalErrorHandler);
 
+  // Direct internal short links: /b/:slug and /s/:slug -> /booking/:slug
+  app.get(["/b/:slug", "/s/:slug"], (req, res) => {
+    const slug = req.params.slug;
+    res.redirect(302, `/booking/${slug}`);
+  });
+
   // ==========================================
   // VITE MIDDLEWARE (For React PWA)
   // ==========================================
