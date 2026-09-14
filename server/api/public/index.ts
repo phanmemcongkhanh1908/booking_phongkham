@@ -867,17 +867,17 @@ publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
   }
 });
 
-// [M-Shorten] Rút gọn link an toàn đa tầng với TinyURL, clck.ru và Link nội bộ dự phòng
+// [M-Shorten] Rút gọn link an toàn đa tầng: Link phòng khám chính chủ, TinyURL, da.gd (100% không quảng cáo)
 publicRouter.post("/shorten", async (req, res, next) => {
   try {
-    const { url, slug } = req.body;
+    const { url, slug, origin: clientOrigin } = req.body;
     if (!url || typeof url !== 'string') {
       return res.status(400).json({ success: false, error: { message: "URL là bắt buộc" } });
     }
 
     const host = req.get('host');
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const origin = req.get('origin') || `${protocol}://${host}`;
+    const origin = clientOrigin || req.get('origin') || `${protocol}://${host}`;
 
     const { shortenUrl } = await import('../../services/urlShortener.js');
     const result = await shortenUrl(url, slug, origin);

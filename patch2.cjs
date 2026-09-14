@@ -1,6 +1,13 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/pages/admin/Dashboard.tsx', 'utf-8');
 
-code = code.replace(/playTTS\(msgText\);/g, "import('../../services/speech/TTSQueueManager').then(m => m.TTSQueueManager.enqueue('msg_'+Date.now(), msgText));");
+const f1 = 'server/services/urlShortener.ts';
+let code1 = fs.readFileSync(f1, 'utf8');
+code1 = code1.replace("id: 'internal' | 'dagd' | 'tinyurl' | 'full';", "id: 'internal' | 'dagd' | 'tinyurl' | 'full' | 'render';");
+fs.writeFileSync(f1, code1);
 
-fs.writeFileSync('src/pages/admin/Dashboard.tsx', code);
+const f2 = 'src/pages/admin/UsersManagement.tsx';
+let code2 = fs.readFileSync(f2, 'utf8');
+code2 = code2.replace("id: 'internal' | 'dagd' | 'tinyurl' | 'full';", "id: 'internal' | 'dagd' | 'tinyurl' | 'full' | 'render';");
+fs.writeFileSync(f2, code2);
+
+console.log('Fixed interface types');

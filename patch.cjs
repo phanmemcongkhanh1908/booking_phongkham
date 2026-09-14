@@ -1,40 +1,68 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/pages/admin/Dashboard.tsx', 'utf-8');
+let code = fs.readFileSync('src/pages/admin/UsersManagement.tsx', 'utf8');
 
-// Imports
-if (!code.includes('useVoiceStore')) {
-  code = code.replace("import { useAuthStore } from '../../store/auth';", "import { useAuthStore } from '../../store/auth';\nimport { useVoiceStore } from '../../store/voiceStore';\nimport { BrowserSpeechEngine } from '../../services/speech/BrowserSpeechEngine';");
-}
-
-// State
-code = code.replace(/const \[audioEnabled, setAudioEnabled\] = useState\(false\);\n?/, '');
-code = code.replace(/const audioEnabledRef = useRef\(audioEnabled\);\n\s*useEffect\(\(\) => \{\n\s*audioEnabledRef.current = audioEnabled;\n\s*\}, \[audioEnabled\]\);\n?/, '');
-
-// Add hook
-code = code.replace("const [clinicProfile, setClinicProfile] = useState<any>(null);", "const [clinicProfile, setClinicProfile] = useState<any>(null);\n  const { enabled: audioEnabled, setEnabled: setAudioEnabled } = useVoiceStore();");
-
-// playTTS removal
-const pttsStart = code.indexOf("const playTTS = (text: string");
-if (pttsStart !== -1) {
-  let depth = 0;
-  let pttsEnd = -1;
-  for (let i = pttsStart; i < code.length; i++) {
-    if (code[i] === '{') depth++;
-    else if (code[i] === '}') {
-      depth--;
-      if (depth === 0) {
-        pttsEnd = i + 1;
-        break;
+const target = `    const currentOrigin = window.location.origin;
+    const directInternal = \`\${currentOrigin}/b/\${cleanSlug}\`;
+    const fullLink = \`\${currentOrigin}/booking/\${cleanSlug}\`;
+    
+    // Cung cấp ngay các tùy chọn an toàn tại chỗ trong lúc chờ kết nối mạng
+    const initialOptions: ShortLinkOption[] = [
+      {
+        id: 'internal',
+        name: 'Link phòng khám (Khuyên dùng)',
+        tagline: 'Tên miền chính chủ • 100% Không quảng cáo • Nhận diện thương hiệu',
+        url: directInternal,
+        isAdFree: true,
+        isDirectRedirect: true,
+        type: 'brand',
+      },
+      {
+        id: 'full',
+        name: 'Đường dẫn chuẩn (Gốc)',
+        tagline: 'Link đầy đủ chuẩn SEO • Phù hợp đăng Website / Fanpage',
+        url: fullLink,
+        isAdFree: true,
+        isDirectRedirect: true,
+        type: 'full',
       }
-    }
-  }
-  if (pttsEnd !== -1) {
-    code = code.slice(0, pttsStart) + code.slice(pttsEnd);
-  }
-}
+    ];`;
 
-// Button replacement
-const btnTarget = `playTTS('Đã kích hoạt trợ lý âm thanh Dental Smart.', true);`;
-code = code.replace(btnTarget, `BrowserSpeechEngine.speak('Đã kích hoạt trợ lý âm thanh Dental Smart.');`);
+const replacement = `    const currentOrigin = window.location.origin;
+    const directInternal = \`\${currentOrigin}/b/\${cleanSlug}\`;
+    const fullLink = \`\${currentOrigin}/booking/\${cleanSlug}\`;
+    const renderLink = \`https://booking-phongkham.onrender.com/b/\${cleanSlug}\`;
+    
+    // Cung cấp ngay các tùy chọn an toàn tại chỗ trong lúc chờ kết nối mạng
+    const initialOptions: ShortLinkOption[] = [
+      {
+        id: 'internal',
+        name: 'Link phòng khám (Hiện tại)',
+        tagline: 'Link tên miền đang sử dụng • 100% Không quảng cáo',
+        url: directInternal,
+        isAdFree: true,
+        isDirectRedirect: true,
+        type: 'brand',
+      },
+      {
+        id: 'render',
+        name: 'Link máy chủ (Render)',
+        tagline: 'Tên miền chính thức booking-phongkham.onrender.com • 100% Không quảng cáo',
+        url: renderLink,
+        isAdFree: true,
+        isDirectRedirect: true,
+        type: 'brand',
+      },
+      {
+        id: 'full',
+        name: 'Đường dẫn chuẩn (Gốc)',
+        tagline: 'Link đầy đủ chuẩn SEO • Phù hợp đăng Website / Fanpage',
+        url: fullLink,
+        isAdFree: true,
+        isDirectRedirect: true,
+        type: 'full',
+      }
+    ];`;
 
-fs.writeFileSync('src/pages/admin/Dashboard.tsx', code);
+code = code.replace(target, replacement);
+fs.writeFileSync('src/pages/admin/UsersManagement.tsx', code);
+console.log('Patched frontend options');
