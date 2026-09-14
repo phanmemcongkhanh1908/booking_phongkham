@@ -27,6 +27,13 @@ export default function RescheduleModal({ isOpen, appointmentId, serviceId, veri
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phoneFallback, setPhoneFallback] = useState('');
+
+  useEffect(() => {
+    if (verifiedPhone) {
+      setPhoneFallback(verifiedPhone);
+    }
+  }, [verifiedPhone]);
 
   const nextDays = Array.from({ length: 7 }).map((_, i) => addDays(startOfToday(), i));
 
@@ -59,11 +66,10 @@ export default function RescheduleModal({ isOpen, appointmentId, serviceId, veri
       return;
     }
 
-    let phoneToUse = verifiedPhone;
+    const phoneToUse = verifiedPhone || phoneFallback.trim();
     if (!phoneToUse) {
-      const phoneInput = window.prompt('Vui lòng nhập số điện thoại đặt lịch để xác nhận dời lịch:');
-      if (!phoneInput) return;
-      phoneToUse = phoneInput;
+      toast.error('Vui lòng nhập số điện thoại để xác nhận dời lịch');
+      return;
     }
 
     setIsSubmitting(true);
@@ -150,10 +156,10 @@ export default function RescheduleModal({ isOpen, appointmentId, serviceId, veri
                         key={slot.startAt}
                         type="button"
                         onClick={() => setSelectedSlot(slot)}
-                        className={`py-2 px-1 rounded-xl text-[13px] font-medium transition-all border ${
+                        className={`min-h-[44px] py-2 px-1 rounded-xl text-sm font-bold transition-all border flex items-center justify-center cursor-pointer ${
                           isSelected 
-                            ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500' 
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                            ? 'border-teal-600 bg-teal-50 text-teal-800 ring-2 ring-teal-600/30' 
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                         }`}
                       >
                         {format(parseISO(slot.startAt), 'HH:mm')}
@@ -172,17 +178,34 @@ export default function RescheduleModal({ isOpen, appointmentId, serviceId, veri
                 </div>
               )}
             </div>
+
+            {/* Mobile-friendly phone confirmation if verifiedPhone is missing */}
+            {!verifiedPhone && (
+              <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Số điện thoại xác nhận <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="Nhập số điện thoại đã đặt lịch..."
+                  value={phoneFallback}
+                  onChange={(e) => setPhoneFallback(e.target.value)}
+                  className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all"
+                />
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-100 shrink-0">
+        <div className="p-4 border-t border-slate-100 shrink-0 bg-slate-50/50">
           <button 
             type="button" 
             onClick={handleSubmit}
             disabled={isSubmitting || !selectedSlot} 
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+            className="w-full min-h-[48px] py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.99]"
           >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Xác nhận dời lịch'}
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Xác nhận dời sang lịch này'}
           </button>
         </div>
       </div>

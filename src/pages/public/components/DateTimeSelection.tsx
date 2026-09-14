@@ -21,7 +21,8 @@ import {
   ShieldCheck, 
   Check, 
   RefreshCw,
-  ArrowRight
+  ArrowRight,
+  Stethoscope
 } from 'lucide-react';
 import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';

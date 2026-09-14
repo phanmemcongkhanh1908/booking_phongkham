@@ -426,13 +426,14 @@ export default function SimpleBookingForm() {
                 </div>
                 <input
                   type="tel"
+                  inputMode="tel"
                   required
                   value={formData.phone || ''}
                   onChange={e => {
                     setFormData({...formData, phone: e.target.value});
                     if (phoneStatus === 'verified') setPhoneStatus('idle'); // reset if they type a new number
                   }}
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
+                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                   placeholder="Nhập số điện thoại của bạn..."
                 />
                 {phoneStatus === 'checking' && (
@@ -471,7 +472,7 @@ export default function SimpleBookingForm() {
                       onChange={e => setVerifyName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
                       placeholder="Nhập họ và tên..."
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-sm font-semibold text-slate-800 bg-white"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 bg-white"
                     />
                   </div>
                   <button
@@ -508,7 +509,7 @@ export default function SimpleBookingForm() {
                       required
                       value={formData.fullName || ''}
                       onChange={e => setFormData({...formData, fullName: e.target.value})}
-                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                       placeholder="Nhập đầy đủ họ tên"
                     />
                   </div>
@@ -525,7 +526,7 @@ export default function SimpleBookingForm() {
                     type="email"
                     value={formData.email || ''}
                     onChange={e => setFormData({...formData, email: e.target.value})}
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
+                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                     placeholder="Nhận vé khám qua email"
                   />
                 </div>
@@ -541,7 +542,7 @@ export default function SimpleBookingForm() {
                 <textarea
                   value={formData.notes || ''}
                   onChange={e => setFormData({...formData, notes: e.target.value})}
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal min-h-[120px] resize-none bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
+                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal min-h-[120px] resize-none bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
                   placeholder="Mô tả triệu chứng hoặc yêu cầu đặc biệt..."
                 />
               </div>

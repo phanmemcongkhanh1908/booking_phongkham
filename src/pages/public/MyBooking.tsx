@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
-import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES } from '../../constants/appointmentStatus';
@@ -17,6 +17,7 @@ interface AppointmentData {
   serviceName: string;
   providerName: string | null;
   patientName: string;
+  cancelReason?: string | null;
 }
 
 export default function MyBooking() {
@@ -173,12 +174,29 @@ export default function MyBooking() {
         </header>
 
         {/* Lookup Form for Self-Reschedule */}
-        <form onSubmit={handleSearch} className="mb-6 p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
-           <h3 className="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-3">Tra cứu lịch hẹn</h3>
+        <form onSubmit={handleSearch} className="mb-6 p-4 sm:p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+           <h3 className="text-xs sm:text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-3">Tra cứu lịch hẹn</h3>
            <div className="flex flex-col sm:flex-row gap-3">
-             <input type="text" value={searchPhone || ''} onChange={(e) => setSearchPhone(e.target.value)} placeholder="Nhập số điện thoại..." className="flex-1 h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[13px] focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all" />
-             <input type="text" value={searchName || ''} onChange={(e) => setSearchName(e.target.value)} placeholder="Họ và tên..." className="flex-1 h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[13px] focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all" />
-             <button type="submit" disabled={searchLoading} className="h-11 px-6 bg-slate-800 text-white font-semibold text-[13px] rounded-xl hover:bg-slate-700 transition-colors whitespace-nowrap flex items-center justify-center">
+             <input 
+               type="tel" 
+               inputMode="tel"
+               value={searchPhone || ''} 
+               onChange={(e) => setSearchPhone(e.target.value)} 
+               placeholder="Nhập số điện thoại..." 
+               className="flex-1 h-12 sm:h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-base sm:text-[13px] text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all" 
+             />
+             <input 
+               type="text" 
+               value={searchName || ''} 
+               onChange={(e) => setSearchName(e.target.value)} 
+               placeholder="Họ và tên..." 
+               className="flex-1 h-12 sm:h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-base sm:text-[13px] text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all" 
+             />
+             <button 
+               type="submit" 
+               disabled={searchLoading} 
+               className="h-12 sm:h-11 px-6 bg-slate-800 text-white font-semibold text-sm sm:text-[13px] rounded-xl hover:bg-slate-700 active:scale-[0.98] transition-all whitespace-nowrap flex items-center justify-center cursor-pointer shadow-sm"
+             >
                {searchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Tra cứu an toàn'}
              </button>
            </div>
@@ -241,13 +259,38 @@ export default function MyBooking() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Lý do hủy nếu phòng khám hủy */}
+                    {apt.status === 'CANCEL_CLINIC' && (
+                      <div className="mt-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200/70 text-rose-800 space-y-2">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-rose-900">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          Lý do phòng khám hủy lịch:
+                        </div>
+                        <p className="text-xs bg-white/90 p-2.5 rounded-lg border border-rose-200 text-rose-900 leading-relaxed font-medium">
+                          {apt.cancelReason || 'Phòng khám có lịch bận đột xuất hoặc lý do kỹ thuật. Thành thật xin lỗi bạn về sự bất tiện này.'}
+                        </p>
+                        <div className="pt-2 border-t border-rose-200/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                          <span className="text-[11px] text-rose-700 font-medium">Bạn có thể chọn lại khung giờ khám khác:</span>
+                          <button
+                            type="button"
+                            onClick={() => setRescheduleData({ isOpen: true, appointmentId: apt.id, serviceId: apt.serviceId })}
+                            className="min-h-[40px] px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Đổi sang lịch khác ngay
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
+
                   {(apt.status === 'REQUESTED' || apt.status === 'PENDING' || apt.status === 'CONFIRMED') && (
-                    <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-xl">
+                    <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-xl">
                       <button 
                         disabled={actionLoading === apt.id}
                         onClick={() => setConfirmCancelId(apt.id)}
-                        className="px-4 py-2 text-xs font-semibold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1.5"
+                        className="min-h-[40px] px-4 py-2 text-xs font-semibold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         {actionLoading === apt.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
                         Hủy lịch
@@ -255,7 +298,7 @@ export default function MyBooking() {
                       <button 
                         disabled={actionLoading === apt.id}
                         onClick={() => setRescheduleData({ isOpen: true, appointmentId: apt.id, serviceId: apt.serviceId })}
-                        className="px-4 py-2 text-xs font-semibold text-teal-600 bg-white border border-teal-200 hover:bg-teal-50 rounded-lg transition-colors flex items-center gap-1.5"
+                        className="min-h-[40px] px-4 py-2 text-xs font-semibold text-teal-600 bg-white border border-teal-200 hover:bg-teal-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <Edit3 className="w-4 h-4" />
                         Dời lịch

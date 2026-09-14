@@ -246,9 +246,9 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleUpdateStatus = async (id: string, newStatus: string) => {
+  const handleUpdateStatus = async (id: string, newStatus: string, cancelReason?: string) => {
     try {
-      await api.patch(`/appointments/${id}/status`, { status: newStatus });
+      await api.patch(`/appointments/${id}/status`, { status: newStatus, cancelReason });
       useBroadcastStore.getState().dismissAppointment(id);
       fetchAppointments();
     } catch (error) {

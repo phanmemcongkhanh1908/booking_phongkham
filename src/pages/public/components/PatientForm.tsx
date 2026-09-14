@@ -376,6 +376,7 @@ export default function PatientForm() {
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="tel"
+                    inputMode="tel"
                     required
                     placeholder="Nhập số điện thoại của bạn..."
                     value={formData.phone || ''}
@@ -386,7 +387,7 @@ export default function PatientForm() {
                       if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: '' }));
                     }}
                     onBlur={() => handleBlur('phone')}
-                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
                       fieldErrors.phone 
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
                         : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
@@ -427,7 +428,7 @@ export default function PatientForm() {
                         onChange={e => setVerifyName(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
                         placeholder="Nhập họ và tên..."
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-sm font-semibold text-slate-800 bg-white"
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 bg-white"
                       />
                     </div>
                     <button
@@ -468,7 +469,7 @@ export default function PatientForm() {
                           updateField('fullName', e.target.value);
                           if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
                         }}
-                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
                           fieldErrors.fullName 
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
                             : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
@@ -512,7 +513,7 @@ export default function PatientForm() {
                         if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: '' }));
                       }}
                       onBlur={() => handleBlur('email')}
-                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
                         fieldErrors.email 
                           ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
                           : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
@@ -552,7 +553,7 @@ export default function PatientForm() {
                         placeholder="VD: @username hoặc Chat ID"
                         value={formData.telegramId || ''}
                         onChange={e => updateField('telegramId', e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium focus:outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100 transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-base sm:text-[13px] text-slate-900 font-medium focus:outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-100 transition-all"
                       />
                       <p className="text-[11px] text-slate-500 leading-relaxed">
                         Bạn cũng có thể kết nối với Bot bằng 1 chạm sau khi hoàn tất đặt lịch.
@@ -645,7 +646,7 @@ export default function PatientForm() {
                 placeholder="Bạn có điều gì muốn bác sĩ lưu ý trước không? (Ví dụ: đang ê buốt răng hàm dưới, tiền sử dị ứng thuốc tê...)"
                 value={formData.notes || ''}
                 onChange={e => updateField('notes', e.target.value)}
-                className="w-full p-3.5 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all resize-y leading-relaxed"
+                className="w-full p-3.5 rounded-xl border border-slate-200 bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all resize-y leading-relaxed"
               />
             </div>
           </div>
