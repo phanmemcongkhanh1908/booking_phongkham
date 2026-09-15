@@ -215,6 +215,7 @@ class QueryBuilder {
   conditions: any[];
   joins: any[];
   _limit: any;
+  _offset: any;
   _orderBy: any;
   _selectFields: any;
   _returning: boolean;
@@ -228,6 +229,7 @@ class QueryBuilder {
     this.conditions = [];
     this.joins = [];
     this._limit = null;
+    this._offset = null;
     this._orderBy = null;
     this._selectFields = null;
     this._returning = false;
@@ -250,6 +252,10 @@ class QueryBuilder {
   }
   limit(n: number) {
     this._limit = n;
+    return this;
+  }
+  offset(n: number) {
+    this._offset = n;
     return this;
   }
   orderBy(...ords: any[]) {
@@ -385,7 +391,12 @@ class QueryBuilder {
         }
       }
 
-      if (this._limit) results = results.slice(0, this._limit);
+      const start = typeof this._offset === "number" ? Math.max(0, this._offset) : 0;
+      if (typeof this._limit === "number") {
+        results = results.slice(start, start + this._limit);
+      } else if (start > 0) {
+        results = results.slice(start);
+      }
       return results;
     }
 

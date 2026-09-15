@@ -192,3 +192,10 @@ html, body {
   border-radius: 1.25rem !important;
 }
 
+
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+}

@@ -149,7 +149,7 @@ publicRouter.post("/appointments/hold", async (req, res, next) => {
     const data = HoldSlotSchema.parse(req.body);
     const startAt = new Date(data.startAt);
     const endAt = new Date(data.endAt);
-    const expiresAt = addMinutes(new Date(), 10); // Hold 10 mins
+    const expiresAt = addMinutes(new Date(), 5); // Hold 10 mins
     
     
     
@@ -889,6 +889,44 @@ publicRouter.post("/shorten", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+
+// Endpoint giữ chỗ đặt lịch tạm thời
+publicRouter.post("/slots/hold", async (req, res, next) => {
+  try {
+    const { serviceId, date, time } = req.body;
+    if (!serviceId || !date || !time) return res.status(400).json({ success: false });
+
+    // Check if slot is already held by someone else
+    const now = new Date();
+    const existingHold = await db.select().from(appointmentHolds)
+      .where(
+        eq(appointmentHolds.date, date) && 
+        eq(appointmentHolds.time, time)
+      ).limit(1);
+
+    if (existingHold.length > 0) {
+      const hold = existingHold[0];
+      if (new Date(hold.expiresAt) > now) {
+        return res.status(409).json({ success: false, error: 'Khung giờ này vừa có người khác chọn. Vui lòng chọn giờ khác.' });
+      }
+      // If expired, we can overwrite it
+      await db.update(appointmentHolds)
+        .set({ expiresAt: new Date(now.getTime() + 5 * 60000) })
+        .where(eq(appointmentHolds.id, hold.id));
+    } else {
+      await db.insert(appointmentHolds).values({
+        serviceId,
+        date,
+        time,
+        expiresAt: new Date(now.getTime() + 5 * 60000),
+        createdAt: now
+      });
+    }
+
+    return res.json({ success: true, expiresAt: now.getTime() + 5 * 60000 });
+  } catch (error) { next(error); }
 });
 
 export default publicRouter;

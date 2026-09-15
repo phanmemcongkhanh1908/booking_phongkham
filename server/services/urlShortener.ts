@@ -212,3 +212,14 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
 
   return result;
 }
+
+
+// Cleanup expired cache entries periodically (Memory Leak Prevention)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of cache.entries()) {
+    if (now > entry.expiresAt) {
+      cache.delete(key);
+    }
+  }
+}, 60 * 60 * 1000); // Check every 1 hour

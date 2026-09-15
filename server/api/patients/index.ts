@@ -9,11 +9,28 @@ const patientsRouter = Router();
 
 patientsRouter.get("/", requireAuth, async (req, res, next) => {
   try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = (page - 1) * limit;
+
     const allPatients = await db
       .select()
       .from(patients)
-      .orderBy(desc(patients.updatedAt));
-    res.json({ success: true, data: allPatients });
+      .orderBy(desc(patients.updatedAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Drizzle doesn't have a simple count query for sqlite without specific functions, 
+    // but we can return data and a hasMore flag based on if we got exactly 'limit' rows
+    res.json({ 
+      success: true, 
+      data: allPatients,
+      pagination: {
+        page,
+        limit,
+        hasMore: allPatients.length === limit
+      }
+    });
   } catch (error) {
     next(error);
   }

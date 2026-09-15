@@ -68,7 +68,8 @@ export default function PatientForm() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [showAdvancedNotify, setShowAdvancedNotify] = useState(Boolean(patientDraft?.telegramId));
   const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'new' | 'existing_unverified' | 'verified'>('idle');
-  const [verifyName, setVerifyName] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -125,16 +126,28 @@ export default function PatientForm() {
     };
   }, [formData.phone]);
 
-  const handleVerifyName = async () => {
-    if (!verifyName.trim()) {
-      toast.error("Vui lòng nhập họ tên để xác thực.");
+  const handleSendOtp = async () => {
+    try {
+      const res = await api.post('/public/patients/send-otp', { phone: formData.phone });
+      if (res.data?.success) {
+        setOtpSent(true);
+        toast.success(`Mã OTP đã gửi (Mã Test: ${res.data.devOtp})`, { duration: 5000 });
+      }
+    } catch (err) {
+      toast.error("Không thể gửi OTP.");
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode.trim()) {
+      toast.error("Vui lòng nhập mã OTP.");
       return;
     }
     setIsVerifying(true);
     try {
       const res = await api.post('/public/patients/verify', {
         phone: formData.phone,
-        fullName: verifyName
+        otp: otpCode
       });
       if (res.data?.success && res.data?.match && res.data?.data) {
         const p = res.data.data;
@@ -143,9 +156,9 @@ export default function PatientForm() {
         updateField('notes', p.notes || formData.notes);
         
         setPhoneStatus('verified');
-        toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
+        toast.success("Xác thực thành công! Đã tự động điền thông tin.");
       } else {
-        toast.error("Tên không khớp với hồ sơ, vui lòng thử lại hoặc dùng số điện thoại khác.");
+        toast.error(res.data?.error || "Mã OTP không chính xác.");
       }
     } catch (err) {
       console.error(err);
@@ -414,32 +427,43 @@ export default function PatientForm() {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-slate-800">Khách hàng quen thuộc?</h4>
-                      <p className="text-xs text-slate-600 mt-1">Số điện thoại này đã từng đặt khám. Vui lòng nhập <strong className="text-slate-800">Họ và Tên</strong> của bạn để hệ thống tự động điền hồ sơ.</p>
+                      <p className="text-xs text-slate-600 mt-1">Số điện thoại này đã từng đặt khám. Vui lòng xác thực bằng mã OTP để hệ thống tự động điền hồ sơ và bảo vệ dữ liệu y tế.</p>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative flex-1">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <User className="w-4 h-4 text-slate-400" />
-                      </div>
-                      <input
-                        type="text"
-                        value={verifyName || ''}
-                        onChange={e => setVerifyName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
-                        placeholder="Nhập họ và tên..."
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 bg-white"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleVerifyName}
-                      disabled={isVerifying}
-                      className="whitespace-nowrap px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs flex items-center justify-center gap-1.5"
-                    >
-                      {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                      Xác thực
-                    </button>
+                    {!otpSent ? (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        className="w-full whitespace-nowrap px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm flex items-center justify-center gap-1.5"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        Gửi mã OTP (Zalo/SMS)
+                      </button>
+                    ) : (
+                      <>
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={otpCode || ''}
+                            onChange={e => setOtpCode(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyOtp())}
+                            placeholder="Nhập mã OTP..."
+                            maxLength={6}
+                            className="w-full px-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 bg-white text-center font-mono tracking-widest"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleVerifyOtp}
+                          disabled={isVerifying}
+                          className="whitespace-nowrap px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs flex items-center justify-center gap-1.5 min-w-[100px]"
+                        >
+                          {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                          Xác thực
+                        </button>
+                      </>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -597,7 +621,7 @@ export default function PatientForm() {
                       <span className="ml-2 w-0 flex-1 truncate text-slate-600 font-medium">{file.name}</span>
                     </div>
                     <div className="ml-4 shrink-0">
-                      <button type="button" onClick={() => setUploadedFiles(prev => prev.filter((_, i) => i !== idx))} className="font-medium text-rose-500 hover:text-rose-600">
+                      <button type="button" onClick={() => setUploadedFiles(prev => prev.filter((_, i) => i !== idx))} className="p-2 -m-2 font-medium text-rose-500 hover:text-rose-600">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
