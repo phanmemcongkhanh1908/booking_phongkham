@@ -74,6 +74,8 @@ authRouter.post("/login", async (req, res, next) => {
           role: user.roleName,
           permissions: mergedPermissions,
           tenantId: user.tenantId,
+          uiMode: user.uiMode,
+          slug: user.slug,
         },
       },
     });

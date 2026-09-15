@@ -16,6 +16,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token, user });
   },
   logout: () => {
+    const currentUser = JSON.parse(localStorage.getItem('admin_user') || 'null');
+    if (currentUser?.slug) {
+      localStorage.setItem('last_clinic_slug', currentUser.slug);
+    }
     localStorage.removeItem('admin_token');
     localStorage.removeItem('admin_user');
     set({ token: null, user: null });

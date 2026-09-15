@@ -57,8 +57,8 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-base p-4 relative">
-      <Link 
-        to="/" 
+            <Link 
+        to={localStorage.getItem('last_clinic_slug') ? `/booking/${localStorage.getItem('last_clinic_slug')}` : "/"} 
         className="absolute top-6 left-6 flex items-center text-sm font-medium text-text-muted hover:text-text-main bg-surface px-4 py-2 rounded-full shadow-soft border border-border-subtle transition-all hover:shadow"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />

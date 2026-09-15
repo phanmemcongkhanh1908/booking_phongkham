@@ -19,6 +19,7 @@ import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import CreateAppointmentModal from './components/CreateAppointmentModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function Dashboard() {
@@ -26,7 +27,9 @@ export default function Dashboard() {
   const isSimpleMode = user?.uiMode === 'simple';
   
   const { hasPermission } = usePermissions();
-  const { isConnected, init: initGoogleAuth, connect: connectGoogleStore } = useGoogleAuthStore();
+  const { isConnected, accessToken, init: initGoogleAuth, connect: connectGoogleStore } = useGoogleAuthStore();
+  const [quotaResult, setQuotaResult] = useState<any>(null);
+  const [checkingQuota, setCheckingQuota] = useState(false);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -600,16 +603,42 @@ export default function Dashboard() {
                 <p className="text-sm text-blue-800 leading-relaxed mb-3">
                   Để đảm bảo quá trình đồng bộ và sao lưu diễn ra liên tục, vui lòng kiểm tra dung lượng còn trống trên tài khoản Google Drive của bạn. Tránh trường hợp dữ liệu bị đầy không thể lưu hồ sơ mới.
                 </p>
-                <a 
-                  href="https://drive.google.com/settings/storage" 
-                  target="_blank" 
-                  rel="noreferrer"
-                  onClick={dismissStorageReminder}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors"
-                >
-                  Kiểm tra dung lượng ngay
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </a>
+                {!quotaResult ? (
+                  <button 
+                    onClick={async () => {
+                      if (!accessToken) return;
+                      setCheckingQuota(true);
+                      try {
+                        const res = await fetchDriveQuota(accessToken);
+                        setQuotaResult(res);
+                        // Record check in localstorage but don't dismiss banner yet
+                        if (user?.id) localStorage.setItem('lastStorageCheckDate_' + user.id, Date.now().toString());
+                      } catch (e) {
+                        console.error(e);
+                      } finally {
+                        setCheckingQuota(false);
+                      }
+                    }}
+                    disabled={checkingQuota}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors disabled:opacity-70 disabled:cursor-wait"
+                  >
+                    {checkingQuota ? 'Đang kiểm tra...' : 'Kiểm tra dung lượng ngay'}
+                    {!checkingQuota && <ChevronRight className="w-3.5 h-3.5" />}
+                  </button>
+                ) : (
+                  <div className="bg-white/80 p-3 rounded-lg border border-blue-100 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Đã sử dụng: {formatBytes(quotaResult.usage)} / {formatBytes(quotaResult.limit)}</div>
+                      <div className="text-xs text-slate-500 mt-1">Dung lượng rác: {formatBytes(quotaResult.usageInDriveTrash)}</div>
+                    </div>
+                    <button 
+                      onClick={() => setShowStorageReminder(false)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-md transition-colors"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
