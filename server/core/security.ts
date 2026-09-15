@@ -1,15 +1,14 @@
 import argon2 from "argon2";
 import jwt from "jsonwebtoken";
-
+import crypto from "crypto";
 
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   if (process.env.NODE_ENV === "production") {
-    console.warn("⚠️ [CẢNH BÁO BẢO MẬT] Biến môi trường JWT_SECRET chưa được cấu hình trên Render/Production.");
-    console.warn("⚠️ Hệ thống sẽ dùng khóa bí mật dự phòng an toàn để máy chủ khởi động bình thường.");
-    console.warn("⚠️ Bạn có thể thêm biến JWT_SECRET vào Environment Variables trên Render bất cứ lúc nào.");
+    console.warn("⚠️ [CẢNH BÁO BẢO MẬT] Biến môi trường JWT_SECRET chưa được cấu hình.");
+    console.warn("⚠️ Khởi tạo khóa ngẫu nhiên mật mã cho phiên chạy hiện tại.");
   }
-  JWT_SECRET = "dental_smart_booking_jwt_production_fallback_secret_key_98234710293847109238";
+  JWT_SECRET = crypto.randomBytes(32).toString("hex");
 }
 const SECRET = JWT_SECRET;
 

@@ -378,7 +378,17 @@ export default function Settings() {
         });
       }
     } catch (err: any) {
-      console.error(err);
+      if (err?.isCancelled || err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (err?.code === 'auth/popup-blocked') {
+        setGoogleStatusMsg({
+          type: 'error',
+          text: 'Trình duyệt đang chặn cửa sổ popup. Vui lòng cho phép popup trên thanh địa chỉ và thử lại.'
+        });
+        return;
+      }
+      console.error('Google connect error:', err);
       setGoogleStatusMsg({
         type: 'error',
         text: err.message || 'Lỗi khi kết nối Google. Vui lòng thử lại.'

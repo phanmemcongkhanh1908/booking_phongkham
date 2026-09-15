@@ -397,72 +397,84 @@ export default function Analytics() {
     <>
     <div className="space-y-6 pb-12 print:hidden">
       {/* 1. Header & Realtime Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-teal-600" />
-              Báo cáo & Thống kê Y khoa
-            </h1>
-            {/* Realtime Live Pulse Badge */}
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              Trực tiếp
-            </span>
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-100 shadow-2xs">
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-2">
-            <span>Cập nhật: <strong className="text-slate-700">{format(lastUpdated, 'HH:mm:ss - dd/MM/yyyy')}</strong></span>
-            <span className="hidden sm:inline text-slate-300">•</span>
-            <span className="hidden sm:inline text-slate-500">Chuẩn hóa dữ liệu y tế</span>
-          </p>
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 tracking-tight whitespace-nowrap">
+                Báo cáo & Thống kê Y khoa
+              </h1>
+              {/* Realtime Live Pulse Badge */}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70 whitespace-nowrap shadow-2xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Trực tiếp
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+              <span>Cập nhật: <strong className="text-slate-700 font-semibold">{format(lastUpdated, 'HH:mm:ss - dd/MM/yyyy')}</strong></span>
+              <span className="hidden sm:inline text-slate-300">•</span>
+              <span className="text-slate-500 hidden sm:inline">Chuẩn hóa dữ liệu y tế</span>
+            </p>
+          </div>
         </div>
 
-        {/* Action Controls: Fully Responsive for Mobile & Desktop */}
-        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
-          {/* Time range selector */}
-          <div className="grid grid-cols-4 w-full sm:w-auto bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 text-center">
+        {/* Action Controls: Structured Responsive Toolbar */}
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full xl:w-auto">
+          {/* Time range selector (Segmented control) */}
+          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 text-xs font-medium text-slate-600 shadow-2xs">
             <button
               onClick={() => setTimeRange('7')}
-              className={`px-2 sm:px-3 py-1.5 rounded-lg transition-all ${timeRange === '7' ? 'bg-white text-teal-700 font-bold shadow-xs' : 'hover:text-slate-900'}`}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                timeRange === '7' ? 'bg-white text-teal-800 font-bold shadow-xs' : 'hover:text-slate-900'
+              }`}
             >
               7 ngày
             </button>
             <button
               onClick={() => setTimeRange('14')}
-              className={`px-2 sm:px-3 py-1.5 rounded-lg transition-all ${timeRange === '14' ? 'bg-white text-teal-700 font-bold shadow-xs' : 'hover:text-slate-900'}`}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                timeRange === '14' ? 'bg-white text-teal-800 font-bold shadow-xs' : 'hover:text-slate-900'
+              }`}
             >
               14 ngày
             </button>
             <button
               onClick={() => setTimeRange('30')}
-              className={`px-2 sm:px-3 py-1.5 rounded-lg transition-all ${timeRange === '30' ? 'bg-white text-teal-700 font-bold shadow-xs' : 'hover:text-slate-900'}`}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                timeRange === '30' ? 'bg-white text-teal-800 font-bold shadow-xs' : 'hover:text-slate-900'
+              }`}
             >
               30 ngày
             </button>
             <button
               onClick={() => setTimeRange('all')}
-              className={`px-2 sm:px-3 py-1.5 rounded-lg transition-all ${timeRange === 'all' ? 'bg-white text-teal-700 font-bold shadow-xs' : 'hover:text-slate-900'}`}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                timeRange === 'all' ? 'bg-white text-teal-800 font-bold shadow-xs' : 'hover:text-slate-900'
+              }`}
             >
               Tất cả
             </button>
           </div>
 
-          {/* Action buttons (Grid 2 on mobile, flex on desktop) */}
+          {/* Action buttons */}
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
             {/* Auto Refresh Toggle */}
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               title={autoRefresh ? 'Đang tự động cập nhật mỗi 30 giây' : 'Tự động cập nhật đang tắt'}
-              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border transition-all h-[38px] ${
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all h-[38px] cursor-pointer ${
                 autoRefresh 
-                  ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100' 
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  ? 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100 shadow-2xs' 
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-2xs'
               }`}
             >
-              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <Clock className="w-3.5 h-3.5 shrink-0 text-teal-600" />
               <span>Tự động: <strong>{autoRefresh ? 'Bật' : 'Tắt'}</strong></span>
             </button>
 
@@ -470,16 +482,16 @@ export default function Analytics() {
             <button
               onClick={() => fetchAnalytics(true)}
               disabled={isRefreshing}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-xs transition-all disabled:opacity-50 h-[38px]"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-2xs transition-all disabled:opacity-50 h-[38px] cursor-pointer"
             >
-              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isRefreshing ? 'animate-spin text-teal-600' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isRefreshing ? 'animate-spin text-teal-600' : 'text-slate-500'}`} />
               <span>Làm mới</span>
             </button>
 
             {/* Export Excel Button */}
             <button
               onClick={handleExportExcel}
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-all h-[38px]"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 transition-all h-[38px] cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>Xuất Excel</span>
@@ -488,7 +500,7 @@ export default function Analytics() {
             {/* Print / Preview Button */}
             <button
               onClick={handlePrint}
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-xs transition-all h-[38px] active:scale-95"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition-all h-[38px] active:scale-98 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 shrink-0 text-teal-400" />
               <span>In Báo Cáo</span>

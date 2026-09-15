@@ -79,8 +79,9 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
         setQuickBookPhone('');
         if (refreshAppointments) refreshAppointments();
       }
-    } catch (error) {
-      toast.error('Lỗi khi thêm lịch hẹn');
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || error.response?.data?.message || 'Lỗi khi thêm lịch hẹn';
+      toast.error(msg);
     } finally {
       setQuickBookLoading(false);
     }

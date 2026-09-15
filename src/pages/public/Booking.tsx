@@ -70,10 +70,6 @@ export default function Booking() {
         }
         if (res.data?.data?.tenantId !== undefined) {
           setTenantId(res.data.data.tenantId);
-          // Gắn header mặc định cho axios để các API public gọi phía sau tự nhận diện tenantId
-          if (res.data.data.tenantId) {
-            api.defaults.headers.common['x-tenant-id'] = res.data.data.tenantId;
-          }
         }
       })
       .catch(console.error);
@@ -163,10 +159,10 @@ export default function Booking() {
             {clinicProfile?.phone && (
               <a 
                 href={`tel:${clinicProfile.phone}`}
-                className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-50 text-teal-900 border border-teal-200/80 hover:bg-teal-100/70 transition-colors shadow-2xs"
+                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-50 text-teal-900 border border-teal-200/80 hover:bg-teal-100/70 transition-colors shadow-2xs"
                 title="Gọi hotline tư vấn y khoa"
               >
-                <Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-700" />
+                <Phone className="w-4 h-4 text-teal-700" />
                 <span className="hidden md:inline font-medium">Hotline:</span>
                 <span className="font-extrabold">{clinicProfile.phone}</span>
               </a>
@@ -175,10 +171,10 @@ export default function Booking() {
             <PWAInstallButton />
             <Link
               to="/admin/login"
-              className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
+              className="w-11 h-11 sm:w-11 sm:h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
               title="Cổng Đăng nhập Quản trị viên"
             >
-              <ShieldAlert className="w-4 h-4" />
+              <ShieldAlert className="w-5 h-5" />
             </Link>
           </div>
         </div>
@@ -191,9 +187,9 @@ export default function Booking() {
           announcementBanner.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
           'bg-blue-50 border-blue-200 text-blue-800'
         }`}>
-          <div className="max-w-7xl mx-auto flex items-center h-9 px-3 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto flex items-center h-11 px-3 sm:px-6 lg:px-8">
             <div className="shrink-0 mr-3 flex items-center">
-              <Sparkles className={`w-4 h-4 ${
+              <Sparkles className={`w-5 h-5 ${
                 announcementBanner.type === 'warning' ? 'text-amber-500' :
                 announcementBanner.type === 'success' ? 'text-emerald-500' :
                 'text-blue-500'
@@ -211,69 +207,98 @@ export default function Booking() {
       )}
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 sm:space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 sm:space-y-6 pb-24 lg:pb-8">
         {/* Stepper Progress Ribbon (Visible in Steps 1, 2, 3, 4) - Hidden if Simple Version */}
         {step < 5 && bookingFormConfig?.uiVersion !== 'simple' && (
-          <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white p-3 sm:p-5 shadow-sm overflow-x-auto scrollbar-hide">
-            <div className="min-w-[320px] max-w-3xl mx-auto px-2 sm:px-0">
-              <div className="relative flex items-center justify-between">
-                {/* Connector Line Background */}
-                <div className="absolute left-5 right-5 sm:left-8 sm:right-8 top-4 sm:top-5.5 -translate-y-1/2 h-1 bg-slate-100 rounded-full" />
-                
-                {/* Active Progress Connector */}
-                <div 
-                  className="absolute left-5 sm:left-8 top-4 sm:top-5.5 -translate-y-1/2 h-1 bg-teal-700 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${Math.max(0, Math.min(100, ((step - 1) / 3) * 92))}%` }}
-                />
+          <>
+            {/* Desktop Full Stepper */}
+            <div className="hidden sm:block rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white p-3 sm:p-5 shadow-sm">
+              <div className="max-w-3xl mx-auto px-2 sm:px-0">
+                <div className="relative flex items-center justify-between">
+                  {/* Connector Line Background */}
+                  <div className="absolute left-8 right-8 top-5.5 -translate-y-1/2 h-1 bg-slate-100 rounded-full" />
+                  
+                  {/* Active Progress Connector */}
+                  <div 
+                    className="absolute left-8 top-5.5 -translate-y-1/2 h-1 bg-teal-700 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.max(0, Math.min(100, ((step - 1) / 3) * 92))}%` }}
+                  />
 
-                {steps.slice(0, 4).map((s) => {
-                  const isActive = step === s.id;
-                  const isCompleted = step > s.id;
-                  const isClickable = s.id < step || 
-                    (s.id === 2 && Boolean(serviceId)) ||
-                    (s.id === 3 && Boolean(serviceId && selectedDate && sessionToken)) ||
-                    (s.id === 4 && Boolean(serviceId && selectedDate && sessionToken && patientDraft?.fullName && patientDraft?.phone));
+                  {steps.slice(0, 4).map((s) => {
+                    const isActive = step === s.id;
+                    const isCompleted = step > s.id;
+                    const isClickable = s.id < step || 
+                      (s.id === 2 && Boolean(serviceId)) ||
+                      (s.id === 3 && Boolean(serviceId && selectedDate && sessionToken)) ||
+                      (s.id === 4 && Boolean(serviceId && selectedDate && sessionToken && patientDraft?.fullName && patientDraft?.phone));
 
-                  return (
-                    <div 
-                      key={s.id} 
-                      onClick={() => isClickable && handleStepClick(s.id)}
-                      className={`relative z-10 flex flex-col items-center select-none ${
-                        isClickable ? 'cursor-pointer group' : 'cursor-default'
-                      }`}
-                    >
+                    return (
                       <div 
-                        className={`w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center font-bold text-xs sm:text-sm transition-all duration-300 shadow-sm ${
-                          isActive 
-                            ? 'bg-teal-700 text-white ring-3 ring-teal-700/20 scale-105 sm:scale-110 shadow-teal-900/20' 
-                            : isCompleted
-                              ? 'bg-teal-700 text-white group-hover:bg-teal-800'
-                              : 'bg-white text-slate-400 border border-slate-200'
+                        key={s.id} 
+                        onClick={() => isClickable && handleStepClick(s.id)}
+                        className={`relative z-10 flex flex-col items-center select-none ${
+                          isClickable ? 'cursor-pointer group' : 'cursor-default'
                         }`}
                       >
-                        {isCompleted ? <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" /> : s.id}
-                      </div>
+                        <div 
+                          className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm transition-all duration-300 shadow-sm ${
+                            isActive 
+                              ? 'bg-teal-700 text-white ring-3 ring-teal-700/20 scale-110 shadow-teal-900/20' 
+                              : isCompleted
+                                ? 'bg-teal-700 text-white group-hover:bg-teal-800'
+                                : 'bg-white text-slate-400 border border-slate-200'
+                          }`}
+                        >
+                          {isCompleted ? <Check className="w-5 h-5 stroke-[2.5]" /> : s.id}
+                        </div>
 
-                      <div className="text-center mt-1.5 sm:mt-2">
-                        <span className={`text-[11px] sm:text-sm font-bold block transition-colors ${
-                          isActive 
-                            ? 'text-teal-950 font-black' 
-                            : isCompleted 
-                              ? 'text-slate-800 group-hover:text-teal-700' 
-                              : 'text-slate-400'
-                        }`}>
-                          {s.title}
-                        </span>
-                        <span className="text-[10px] text-slate-400 hidden sm:block mt-0.5">
-                          {s.subtitle}
-                        </span>
+                        <div className="text-center mt-2">
+                          <span className={`text-sm font-bold block transition-colors ${
+                            isActive 
+                              ? 'text-teal-950 font-black' 
+                              : isCompleted 
+                                ? 'text-slate-800 group-hover:text-teal-700' 
+                                : 'text-slate-400'
+                          }`}>
+                            {s.title}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            {s.subtitle}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+
+            {/* Mobile Compact Progress Bar */}
+            <div className="sm:hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-0.5">
+                    Bước {step}/4
+                  </div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {steps.find(s => s.id === step)?.title || 'Đang xử lý'}
+                  </h3>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-semibold text-slate-500">
+                    {Math.round(((step) / 4) * 100)}%
+                  </div>
+                </div>
+              </div>
+              
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-teal-600 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${((step) / 4) * 100}%` }}
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {/* Mobile Accordion Summary Drawer (Step 2, 3, 4) - Chỉ hiện khi dùng giao diện Full */}

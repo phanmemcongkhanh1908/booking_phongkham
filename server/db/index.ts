@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { appContext } from "../core/context.js";
@@ -37,7 +37,10 @@ export function persistStore() {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(memoryStore, null, 2), "utf-8");
+    // Atomic write via temp file + rename to prevent database corruption on unexpected exit/crash
+    const tempFile = `${DB_FILE}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    fs.writeFileSync(tempFile, JSON.stringify(memoryStore, null, 2), "utf-8");
+    fs.renameSync(tempFile, DB_FILE);
   } catch (err) {
     console.error("[LocalStore] Failed to persist store.json:", err);
   }
@@ -111,6 +114,17 @@ function removeUndefined(obj) {
   return cleaned;
 }
 
+function normalizeSearchString(str: any): string {
+  if (str == null) return "";
+  return String(str)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
+
 function evaluateSingleCondition(docData, cond, joinsData = {}) {
   if (!cond) return true;
 
@@ -172,15 +186,32 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
       } else if (ch?.constructor?.name === "StringChunk") {
         const text = ch.value.join("").trim();
         if (text) {
-          // Normalize operators
-          if (text.toLowerCase() === "in") op = "in";
-          else if (text.toLowerCase() === "not in") op = "not in";
-          else op = text;
+          const lower = text.toLowerCase();
+          // Check for embedded NOT IN / IN clause: e.g. "NOT IN ('A', 'B')"
+          const notInMatch = text.match(/not\s+in\s*\(([^)]+)\)/i);
+          const inMatch = text.match(/\bin\s*\(([^)]+)\)/i);
+          if (notInMatch) {
+            op = "not in";
+            val = notInMatch[1].split(",").map((s: string) => s.trim().replace(/^['"]|['"]$/g, ""));
+          } else if (inMatch && !notInMatch) {
+            op = "in";
+            val = inMatch[1].split(",").map((s: string) => s.trim().replace(/^['"]|['"]$/g, ""));
+          } else if (lower.includes("like")) {
+            op = "like";
+          } else if (lower === "in") {
+            op = "in";
+          } else if (lower === "not in") {
+            op = "not in";
+          } else {
+            op = text;
+          }
         }
       } else if (ch?.queryChunks) {
         return evaluateSingleCondition(docData, ch, joinsData);
       } else {
-        val = ch;
+        if (val === undefined) {
+          val = ch;
+        }
       }
     }
 
@@ -199,8 +230,21 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
     if (op === "<=") return nDocVal <= nVal;
     if (op === "is null") return docVal == null;
     if (op === "is not null") return docVal != null;
-    if (op === "in") { console.log("IN OP", {docVal, val}); return Array.isArray(val) && val.includes(docVal); }
-    if (op === "not in") return Array.isArray(val) && !val.includes(docVal);
+    
+    if (op === "in") {
+      const targetArray = Array.isArray(rightVal) ? rightVal : (Array.isArray(val) ? val : [rightVal]);
+      return targetArray.map(normalizeVal).includes(nDocVal);
+    }
+    if (op === "not in") {
+      const targetArray = Array.isArray(rightVal) ? rightVal : (Array.isArray(val) ? val : [rightVal]);
+      return !targetArray.map(normalizeVal).includes(nDocVal);
+    }
+    if (op === "like") {
+      const pattern = String(rightVal || val || "").replace(/%/g, "");
+      const normalizedSource = normalizeSearchString(docVal);
+      const normalizedTarget = normalizeSearchString(pattern);
+      return normalizedSource.includes(normalizedTarget);
+    }
 
     return true;
   }
@@ -411,7 +455,7 @@ class QueryBuilder {
       const tenantId = ctx?.tenantId;
 
       for (const item of items) {
-        const id = item.id || String(uuidv4());
+        const id = item.id || crypto.randomUUID();
         let docData = { ...item, id };
         
         if (tenantId && !docData.tenantId && tableName !== "roles") {
@@ -476,13 +520,45 @@ class QueryBuilder {
   }
 }
 
+let transactionQueue: Promise<any> = Promise.resolve();
+
 export const db: any = {
   select: (fields?: any) => new QueryBuilder("select").select(fields),
   insert: (table?: any) => new QueryBuilder("insert", table),
   update: (table?: any) => new QueryBuilder("update", table),
   delete: (table?: any) => new QueryBuilder("delete", table),
-  transaction: async (cb: any) => {
-    return await cb(db);
+  transaction: async (cb: any, config?: { isolationLevel?: string }) => {
+    // Chain transaction execution to ensure serializable isolation across concurrent requests
+    const runInLock = async () => {
+      loadStore();
+      // Snapshot state for rollback support on error
+      const snapshot = JSON.stringify(memoryStore);
+      try {
+        const result = await cb(db);
+        return result;
+      } catch (err) {
+        // Rollback memoryStore on failure
+        try {
+          memoryStore = JSON.parse(snapshot);
+        } catch (rollbackErr) {
+          console.error("[LocalStore] Rollback error:", rollbackErr);
+        }
+        throw err;
+      }
+    };
+
+    const previousQueue = transactionQueue;
+    let resolveLock: (value?: any) => void;
+    transactionQueue = new Promise<void>((resolve) => {
+      resolveLock = resolve;
+    });
+
+    try {
+      await previousQueue;
+      return await runInLock();
+    } finally {
+      resolveLock!();
+    }
   },
   execute: async (sqlQuery: any) => {
     if (

@@ -12,6 +12,26 @@ import { sendNewAppointmentAlert, getTelegramBotUsername } from "../../core/tele
 import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
 import { savePatientContact } from "../../services/patientContact.js";
+import { createRateLimiter } from "../../core/rateLimit.js";
+
+// Rate limiters for public endpoints
+const bookingHoldLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Bạn đã gửi quá nhiều yêu cầu đặt giữ chỗ. Vui lòng đợi 1 phút trước khi thử lại."
+});
+
+const patientVerifyLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 12,
+  message: "Quá nhiều yêu cầu kiểm tra hoặc xác thực thông tin. Vui lòng đợi 1 phút."
+});
+
+const appointmentLookupLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 15,
+  message: "Quá nhiều yêu cầu tra cứu lịch hẹn. Vui lòng thử lại sau 1 phút."
+});
 
 import { appContext } from "../../core/context.js";
 const publicRouter = Router();
@@ -144,7 +164,7 @@ publicRouter.get("/availability", async (req, res, next) => {
 
 
 // [M01] Giữ chỗ (Hold Slot) 5 phút
-publicRouter.post("/appointments/hold", async (req, res, next) => {
+publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, next) => {
   try {
     const data = HoldSlotSchema.parse(req.body);
     const startAt = new Date(data.startAt);
@@ -400,7 +420,7 @@ publicRouter.get("/patients/lookup", async (req, res, next) => {
 });
 
 // Endpoint kiểm tra số điện thoại có tồn tại hay không (KHÔNG lộ thông tin cá nhân)
-publicRouter.get("/patients/check", async (req, res, next) => {
+publicRouter.get("/patients/check", patientVerifyLimiter, async (req, res, next) => {
   try {
     const rawPhone = String(req.query.phone || "").trim();
     if (!rawPhone) return res.json({ success: true, exists: false });
@@ -425,7 +445,7 @@ publicRouter.get("/patients/check", async (req, res, next) => {
 });
 
 // Endpoint xác thực khách hàng cũ bằng SĐT + Họ tên (Fuzzy Match)
-publicRouter.post("/patients/verify", async (req, res, next) => {
+publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, next) => {
   try {
     const { phone, fullName } = req.body;
     if (!phone || !fullName) return res.json({ success: false, match: false });
@@ -666,7 +686,7 @@ function normalizeName(str: string) {
     .trim();
 }
 
-publicRouter.post("/appointments/lookup", async (req, res, next) => {
+publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, res, next) => {
   try {
     const { phone, code, fullName, pin } = req.body;
     if (!phone) {

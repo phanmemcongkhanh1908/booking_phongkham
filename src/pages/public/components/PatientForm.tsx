@@ -709,7 +709,7 @@ export default function PatientForm() {
       </div>
 
       {/* Sticky Mobile Footer */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 p-3.5 bg-white border-t border-slate-200 z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3">
+      <div className="sm:hidden sticky bottom-0 left-0 right-0 p-3.5 bg-white border-t border-slate-200 z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3 -mx-4 -mb-4 mt-6">
         <div className="flex flex-col">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Lịch hẹn</span>
           <span className="text-[13px] font-extrabold text-slate-900">

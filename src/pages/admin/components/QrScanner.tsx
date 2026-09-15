@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Html5Qrcode, CameraDevice } from 'html5-qrcode';
+import { Html5Qrcode, CameraDevice, Html5QrcodeScannerState } from 'html5-qrcode';
 import {
   X,
   Camera,
@@ -117,6 +117,8 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isMountedRef = useRef(true);
+  const opQueueRef = useRef<Promise<any>>(Promise.resolve());
+  const opIdRef = useRef<number>(0);
 
   // Helper to parse scanned raw string
   const parseQrText = (text: string): string => {
@@ -229,101 +231,243 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
       return;
     }
 
-    // Stop or pause scanning to prevent multiple triggers
-    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+    // Pause scanning safely if running
+    if (html5QrCodeRef.current) {
       try {
-        await html5QrCodeRef.current.pause(true);
+        const state = html5QrCodeRef.current.getState();
+        if (state === Html5QrcodeScannerState.SCANNING) {
+          await html5QrCodeRef.current.pause(true);
+        }
       } catch (e) {
-        console.warn('Cannot pause scanner:', e);
+        // Ignore pause collision
       }
     }
 
     await executeCheckIn(cleanId);
   }, [isProcessing]);
 
-  // Start Camera
-  const startCamera = async (deviceIdOrFacing?: string | { facingMode: string }) => {
+  // Serialized operation runner to prevent overlapping transitions
+  const runExclusiveOp = <T,>(op: (currentId: number) => Promise<T>): Promise<T | undefined> => {
+    const currentId = ++opIdRef.current;
+    const task = opQueueRef.current.then(async () => {
+      if (!isMountedRef.current || currentId !== opIdRef.current) return undefined;
+      return await op(currentId);
+    }).catch((err) => {
+      const msg = String(err?.message || err);
+      if (!msg.includes('Cannot transition') && !msg.includes('not running')) {
+        console.warn('[QrScanner] Operation error:', err);
+      }
+      return undefined;
+    });
+    opQueueRef.current = task.then(() => {});
+    return task;
+  };
+
+  // Internal safe stop
+  const safeStopCameraInternal = async () => {
+    const scanner = html5QrCodeRef.current;
+    if (!scanner) return;
     try {
+      const state = scanner.getState();
+      if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+        await scanner.stop();
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (!msg.includes('Cannot transition') && !msg.includes('not running')) {
+        console.warn('[QrScanner] Cảnh báo dừng scanner:', err);
+      }
+    }
+    try {
+      await scanner.clear();
+    } catch {}
+    if (isMountedRef.current) {
+      setIsScanning(false);
+      setIsTorchOn(false);
+      setTorchSupported(false);
+    }
+  };
+
+  const stopCamera = () => {
+    return runExclusiveOp(async () => {
+      await safeStopCameraInternal();
+    });
+  };
+
+  // Internal safe start
+  const startCameraInternal = async (
+    currentId: number,
+    deviceIdOrFacing?: string | { facingMode: string }
+  ) => {
+    if (!isMountedRef.current || currentId !== opIdRef.current) return;
+
+    if (isMountedRef.current) {
       setCameraError(null);
       setIsScanning(false);
+    }
 
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode("qr-camera-viewport", /* verbose= */ false);
+    // Stop any existing instance cleanly first
+    await safeStopCameraInternal();
+    if (!isMountedRef.current || currentId !== opIdRef.current) return;
+
+    // Check viewport element
+    const viewportEl = document.getElementById("qr-camera-viewport");
+    if (!viewportEl) {
+      return;
+    }
+
+    if (!html5QrCodeRef.current) {
+      html5QrCodeRef.current = new Html5Qrcode("qr-camera-viewport", false);
+    }
+
+    // 1. Detect available cameras
+    let devList: CameraDevice[] = [];
+    try {
+      devList = await Html5Qrcode.getCameras();
+    } catch (err: any) {
+      console.info('[QrScanner] Thông tin thiết bị camera:', err?.message || err);
+    }
+
+    if (!isMountedRef.current || currentId !== opIdRef.current) return;
+
+    if (!devList || devList.length === 0) {
+      // Zero camera devices found
+      setCameras([]);
+      if (isMountedRef.current && currentId === opIdRef.current) {
+        setIsScanning(false);
+        setCameraError(
+          'Không tìm thấy thiết bị camera trên máy tính/thiết bị này. ' +
+          'Bạn có thể tải ảnh mã QR lên hoặc chuyển sang mục "Nhập Thủ Công".'
+        );
       }
+      return;
+    }
 
-      // Check available cameras
-      try {
-        const devList = await Html5Qrcode.getCameras();
-        if (isMountedRef.current && devList && devList.length > 0) {
-          setCameras(devList);
-          if (!selectedCameraId) {
-            // Prefer back camera
-            const backCam = devList.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('sau') || c.label.toLowerCase().includes('rear'));
-            setSelectedCameraId(backCam ? backCam.id : devList[0].id);
-          }
-        }
-      } catch (err) {
-        console.warn('Lỗi lấy danh sách camera:', err);
+    setCameras(devList);
+
+    // 2. Determine target camera config
+    let targetConfig: string | { facingMode: string };
+
+    if (typeof deviceIdOrFacing === 'string' && deviceIdOrFacing) {
+      targetConfig = deviceIdOrFacing;
+    } else if (deviceIdOrFacing && typeof deviceIdOrFacing === 'object') {
+      targetConfig = deviceIdOrFacing;
+    } else if (selectedCameraId && devList.some(c => c.id === selectedCameraId)) {
+      targetConfig = selectedCameraId;
+    } else {
+      const backCam = devList.find(c => 
+        /back|sau|rear|environment/i.test(c.label)
+      );
+      targetConfig = backCam ? backCam.id : devList[0].id;
+      if (typeof targetConfig === 'string') {
+        setSelectedCameraId(targetConfig);
       }
+    }
 
-      const cameraConfig = deviceIdOrFacing || (selectedCameraId ? selectedCameraId : { facingMode: facingMode });
+    const scanConfig = {
+      fps: 15,
+      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+        const qrEdge = Math.floor(minEdge * 0.72);
+        return { width: Math.max(qrEdge, 220), height: Math.max(qrEdge, 220) };
+      },
+      aspectRatio: 1.0,
+    };
 
+    // 3. Start scanning with graceful fallback
+    try {
       await html5QrCodeRef.current.start(
-        cameraConfig,
-        {
-          fps: 15,
-          qrbox: (viewfinderWidth, viewfinderHeight) => {
-            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrEdge = Math.floor(minEdge * 0.72);
-            return { width: Math.max(qrEdge, 220), height: Math.max(qrEdge, 220) };
-          },
-          aspectRatio: 1.0,
-        },
+        targetConfig,
+        scanConfig,
         (decodedText) => {
           handleDecodedText(decodedText);
         },
-        () => {
-          // Ignore individual frame miss
-        }
+        () => {}
       );
+    } catch (startErr: any) {
+      if (!isMountedRef.current || currentId !== opIdRef.current) return;
 
-      if (isMountedRef.current) {
-        setIsScanning(true);
-        // Check torch support
+      const errMsg = String(startErr?.message || startErr);
+
+      // If requested device wasn't found and we have a valid camera in devList, try fallback
+      const isNotFound = /NotFoundError|Requested device not found|OverconstrainedError|DevicesNotFoundError/i.test(errMsg);
+      if (isNotFound && devList.length > 0 && targetConfig !== devList[0].id) {
+        console.info('[QrScanner] Camera chỉ định không mở được, thử lại với camera đầu tiên:', devList[0].id);
         try {
-          const caps = html5QrCodeRef.current.getRunningTrackCameraCapabilities();
-          if (caps && typeof (caps as any).torchFeature === 'function') {
-            setTorchSupported((caps as any).torchFeature().isSupported());
+          await html5QrCodeRef.current.start(
+            devList[0].id,
+            scanConfig,
+            (decodedText) => {
+              handleDecodedText(decodedText);
+            },
+            () => {}
+          );
+          setSelectedCameraId(devList[0].id);
+          if (isMountedRef.current && currentId === opIdRef.current) {
+            setIsScanning(true);
+            setCameraError(null);
           }
-        } catch {
-          setTorchSupported(false);
+          return;
+        } catch (fallbackErr: any) {
+          startErr = fallbackErr;
         }
       }
-    } catch (err: any) {
-      console.error('Lỗi khởi động camera:', err);
-      if (isMountedRef.current) {
+
+      // Handle expected camera states cleanly
+      if (errMsg.includes('Cannot transition to a new state')) {
+        console.info('[QrScanner] Bỏ qua chuyển đổi trạng thái trung gian của camera.');
+        return;
+      }
+
+      if (/NotFoundError|Requested device not found|DevicesNotFoundError/i.test(errMsg)) {
+        console.info('[QrScanner] Thiết bị camera không khả dụng hoặc bị ngắt kết nối.');
+        if (isMountedRef.current && currentId === opIdRef.current) {
+          setIsScanning(false);
+          setCameraError(
+            'Không tìm thấy thiết bị camera khả dụng trên máy tính này. ' +
+            'Bạn có thể tải ảnh mã QR lên hoặc nhập mã lịch hẹn thủ công.'
+          );
+        }
+        return;
+      }
+
+      if (/NotAllowedError|Permission denied/i.test(errMsg)) {
+        console.info('[QrScanner] Quyền truy cập camera bị từ chối.');
+        if (isMountedRef.current && currentId === opIdRef.current) {
+          setIsScanning(false);
+          setCameraError('Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng cho phép quyền Camera trên thanh địa chỉ của trình duyệt.');
+        }
+        return;
+      }
+
+      console.warn('[QrScanner] Cảnh báo khởi động camera:', errMsg);
+      if (isMountedRef.current && currentId === opIdRef.current) {
         setIsScanning(false);
         setCameraError(
-          err?.message ||
-          'Không thể khởi động camera. Vui lòng cấp quyền truy cập máy ảnh hoặc chuyển sang nhập mã thủ công.'
+          'Chưa thể khởi động camera. Vui lòng kiểm tra quyền camera hoặc sử dụng nhập mã thủ công.'
         );
+      }
+      return;
+    }
+
+    if (isMountedRef.current && currentId === opIdRef.current) {
+      setIsScanning(true);
+      setCameraError(null);
+      try {
+        const caps = html5QrCodeRef.current.getRunningTrackCameraCapabilities();
+        if (caps && typeof (caps as any).torchFeature === 'function') {
+          setTorchSupported((caps as any).torchFeature().isSupported());
+        }
+      } catch {
+        setTorchSupported(false);
       }
     }
   };
 
-  // Stop Camera
-  const stopCamera = async () => {
-    if (html5QrCodeRef.current) {
-      try {
-        if (html5QrCodeRef.current.isScanning) {
-          await html5QrCodeRef.current.stop();
-        }
-        await html5QrCodeRef.current.clear();
-      } catch (err) {
-        console.warn('Lỗi khi dừng scanner:', err);
-      }
-    }
-    setIsScanning(false);
+  const startCamera = (deviceIdOrFacing?: string | { facingMode: string }) => {
+    return runExclusiveOp(async (currentId) => {
+      await startCameraInternal(currentId, deviceIdOrFacing);
+    });
   };
 
   // Toggle Torch
@@ -341,13 +485,21 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
     }
   };
 
-  // Flip Camera (Front / Back)
+  // Flip Camera (Front / Back / Cycle available devices)
   const toggleFacingMode = async () => {
-    await stopCamera();
-    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(nextMode);
-    setSelectedCameraId('');
-    startCamera({ facingMode: nextMode });
+    if (cameras.length > 1) {
+      const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      const nextCam = cameras[nextIndex];
+      setSelectedCameraId(nextCam.id);
+      startCamera(nextCam.id);
+      toast.success(`Đã chuyển: ${nextCam.label || `Camera ${nextIndex + 1}`}`, { duration: 1500 });
+    } else {
+      const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+      setFacingMode(nextMode);
+      setSelectedCameraId('');
+      startCamera({ facingMode: nextMode });
+    }
   };
 
   // Scan from Image File
@@ -369,12 +521,13 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
       const decodedText = await html5QrCodeRef.current.scanFile(file, /* showImage= */ false);
       toast.dismiss('file-scan');
       await handleDecodedText(decodedText);
-    } catch (err) {
+    } catch (err: any) {
       toast.dismiss('file-scan');
       toast.error('Không tìm thấy mã QR hợp lệ trong hình ảnh này');
-      console.error('Lỗi đọc ảnh QR:', err);
-      // Restart camera
-      startCamera();
+      console.info('[QrScanner] Lỗi quét file ảnh:', err?.message || err);
+      if (activeTab === 'camera') {
+        startCamera();
+      }
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -388,18 +541,17 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
     setStatusMessage('');
 
     if (activeTab === 'camera') {
-      if (html5QrCodeRef.current) {
+      const scanner = html5QrCodeRef.current;
+      if (scanner && scanner.getState() === Html5QrcodeScannerState.PAUSED) {
         try {
-          html5QrCodeRef.current.resume();
+          scanner.resume();
+          setIsScanning(true);
           return;
-        } catch {
-          // Restart clean
-          await stopCamera();
-          startCamera();
+        } catch (e) {
+          console.info('[QrScanner] Resume paused scanner thất bại, sẽ khởi động lại:', e);
         }
-      } else {
-        startCamera();
       }
+      startCamera();
     }
   };
 
@@ -431,20 +583,23 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
     return () => clearTimeout(timer);
   }, [searchTerm, activeTab]);
 
-  // Mount & Unmount Camera lifecycle
+  // Tab change lifecycle
   useEffect(() => {
-    isMountedRef.current = true;
     if (activeTab === 'camera' && checkInStatus === 'idle') {
       startCamera();
     } else {
       stopCamera();
     }
+  }, [activeTab]);
 
+  // Unmount lifecycle
+  useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       stopCamera();
     };
-  }, [activeTab]);
+  }, []);
 
   // Keyboard shortcut ESC
   useEffect(() => {
@@ -529,8 +684,8 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
           {activeTab === 'camera' && (
             <div className="space-y-4">
               
-              {/* If an appointment was scanned, show the confirmation card instead of the camera */}
-              {checkInStatus !== 'idle' && scannedAppointment ? (
+              {/* If an appointment was scanned, show the confirmation card */}
+              {checkInStatus !== 'idle' && scannedAppointment && (
                 <div className="space-y-4 animate-in zoom-in-95 duration-200">
                   {/* Status Banner */}
                   <div className={`p-4 rounded-2xl border flex items-start gap-3.5 ${
@@ -637,129 +792,136 @@ export default function QrScanner({ onScan, onClose, onSuccess }: QrScannerProps
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Active Viewfinder Container */
-                <div className="space-y-3">
-                  <div className="relative w-full aspect-square max-w-[340px] mx-auto rounded-3xl overflow-hidden bg-black border-2 border-slate-700 shadow-inner flex items-center justify-center">
-                    {/* The camera video target */}
-                    <div id="qr-camera-viewport" className="w-full h-full object-cover"></div>
-
-                    {/* Laser overlay & Corner Targets */}
-                    {isScanning && !cameraError && (
-                      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                        
-                        {/* Target Box (70% width) */}
-                        <div className="relative w-[72%] h-[72%]">
-                          {/* Top-Left Corner */}
-                          <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-teal-400 rounded-tl-xl shadow-sm"></div>
-                          {/* Top-Right Corner */}
-                          <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-teal-400 rounded-tr-xl shadow-sm"></div>
-                          {/* Bottom-Left Corner */}
-                          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-teal-400 rounded-bl-xl shadow-sm"></div>
-                          {/* Bottom-Right Corner */}
-                          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-teal-400 rounded-br-xl shadow-sm"></div>
-
-                          {/* Animated Sweeping Laser Bar */}
-                          <div className="absolute left-1 right-1 h-0.5 bg-gradient-to-r from-transparent via-teal-300 to-transparent shadow-[0_0_12px_#14b8a6] animate-scan-laser"></div>
-
-                          {/* Central Pulse Dot */}
-                          <div className="absolute inset-0 m-auto w-2.5 h-2.5 bg-teal-400 rounded-full animate-ping opacity-60"></div>
-                        </div>
-
-                        {/* Tip overlay */}
-                        <div className="absolute bottom-4 left-0 right-0 text-center">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-[11px] text-teal-300 border border-teal-500/30">
-                            <Sparkles className="w-3 h-3 text-teal-400" />
-                            Căn mã QR vào giữa khung hình
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Camera Permission / Error Prompt */}
-                    {cameraError && (
-                      <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
-                        <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
-                          <ShieldAlert className="w-6 h-6" />
-                        </div>
-                        <h4 className="font-bold text-sm text-white">Chưa thể truy cập Camera</h4>
-                        <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
-                          {cameraError}
-                        </p>
-                        <div className="pt-2 flex flex-col gap-2 w-full max-w-xs">
-                          <button
-                            onClick={() => startCamera()}
-                            className="py-2.5 px-4 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                            <span>Thử lại quyền Camera</span>
-                          </button>
-                          <button
-                            onClick={() => setActiveTab('manual')}
-                            className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
-                          >
-                            Chuyển sang nhập thủ công
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Loading/Starting State */}
-                    {!isScanning && !cameraError && (
-                      <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center p-4 text-center space-y-2">
-                        <RefreshCw className="w-7 h-7 text-teal-400 animate-spin" />
-                        <p className="text-xs text-slate-400">Đang khởi tạo máy ảnh...</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Camera Control Toolbar */}
-                  <div className="flex items-center justify-center gap-3 pt-1">
-                    {/* Switch Camera */}
-                    <button
-                      onClick={toggleFacingMode}
-                      className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700/60"
-                      title="Đổi camera trước / sau"
-                    >
-                      <SwitchCamera className="w-4 h-4 text-teal-400" />
-                      <span className="hidden sm:inline">Đổi camera</span>
-                    </button>
-
-                    {/* Torch (if supported) */}
-                    {torchSupported && (
-                      <button
-                        onClick={toggleTorch}
-                        className={`p-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all border ${
-                          isTorchOn
-                            ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/60'
-                        }`}
-                        title="Bật/Tắt đèn pin"
-                      >
-                        <Flashlight className="w-4 h-4" />
-                        <span>{isTorchOn ? 'Tắt đèn' : 'Bật đèn'}</span>
-                      </button>
-                    )}
-
-                    {/* Upload Image QR */}
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700/60"
-                      title="Quét từ file ảnh trong thư viện"
-                    >
-                      <Upload className="w-4 h-4 text-emerald-400" />
-                      <span>Tải ảnh QR</span>
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleFileScan}
-                    />
-                  </div>
-                </div>
               )}
+
+              {/* Active Viewfinder Container - Kept in DOM to maintain fast resume */}
+              <div className={checkInStatus !== 'idle' && scannedAppointment ? 'hidden' : 'space-y-3'}>
+                <div className="relative w-full aspect-square max-w-[340px] mx-auto rounded-3xl overflow-hidden bg-black border-2 border-slate-700 shadow-inner flex items-center justify-center">
+                  {/* The camera video target */}
+                  <div id="qr-camera-viewport" className="w-full h-full object-cover"></div>
+
+                  {/* Laser overlay & Corner Targets */}
+                  {isScanning && !cameraError && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      
+                      {/* Target Box (70% width) */}
+                      <div className="relative w-[72%] h-[72%]">
+                        {/* Top-Left Corner */}
+                        <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-teal-400 rounded-tl-xl shadow-sm"></div>
+                        {/* Top-Right Corner */}
+                        <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-teal-400 rounded-tr-xl shadow-sm"></div>
+                        {/* Bottom-Left Corner */}
+                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-teal-400 rounded-bl-xl shadow-sm"></div>
+                        {/* Bottom-Right Corner */}
+                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-teal-400 rounded-br-xl shadow-sm"></div>
+
+                        {/* Animated Sweeping Laser Bar */}
+                        <div className="absolute left-1 right-1 h-0.5 bg-gradient-to-r from-transparent via-teal-300 to-transparent shadow-[0_0_12px_#14b8a6] animate-scan-laser"></div>
+
+                        {/* Central Pulse Dot */}
+                        <div className="absolute inset-0 m-auto w-2.5 h-2.5 bg-teal-400 rounded-full animate-ping opacity-60"></div>
+                      </div>
+
+                      {/* Tip overlay */}
+                      <div className="absolute bottom-4 left-0 right-0 text-center">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-[11px] text-teal-300 border border-teal-500/30">
+                          <Sparkles className="w-3 h-3 text-teal-400" />
+                          Căn mã QR vào giữa khung hình
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Camera Permission / Error Prompt */}
+                  {cameraError && (
+                    <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
+                      <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                        <ShieldAlert className="w-6 h-6" />
+                      </div>
+                      <h4 className="font-bold text-sm text-white">Chưa thể truy cập Camera</h4>
+                      <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+                        {cameraError}
+                      </p>
+                      <div className="pt-2 flex flex-col gap-2 w-full max-w-xs">
+                        <button
+                          onClick={() => startCamera()}
+                          className="py-2.5 px-4 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Thử lại quyền Camera</span>
+                        </button>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"
+                        >
+                          <Upload className="w-4 h-4" />
+                          <span>Tải ảnh mã QR</span>
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('manual')}
+                          className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
+                        >
+                          Chuyển sang nhập thủ công
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Loading/Starting State */}
+                  {!isScanning && !cameraError && (
+                    <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center p-4 text-center space-y-2">
+                      <RefreshCw className="w-7 h-7 text-teal-400 animate-spin" />
+                      <p className="text-xs text-slate-400">Đang khởi tạo máy ảnh...</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Camera Control Toolbar */}
+                <div className="flex items-center justify-center gap-3 pt-1">
+                  {/* Switch Camera */}
+                  <button
+                    onClick={toggleFacingMode}
+                    className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700/60"
+                    title="Đổi camera trước / sau hoặc đổi thiết bị"
+                  >
+                    <SwitchCamera className="w-4 h-4 text-teal-400" />
+                    <span className="hidden sm:inline">Đổi camera</span>
+                  </button>
+
+                  {/* Torch (if supported) */}
+                  {torchSupported && (
+                    <button
+                      onClick={toggleTorch}
+                      className={`p-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all border ${
+                        isTorchOn
+                          ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/60'
+                      }`}
+                      title="Bật/Tắt đèn pin"
+                    >
+                      <Flashlight className="w-4 h-4" />
+                      <span>{isTorchOn ? 'Tắt đèn' : 'Bật đèn'}</span>
+                    </button>
+                  )}
+
+                  {/* Upload Image QR */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700/60"
+                    title="Quét từ file ảnh trong thư viện"
+                  >
+                    <Upload className="w-4 h-4 text-emerald-400" />
+                    <span>Tải ảnh QR</span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileScan}
+                  />
+                </div>
+              </div>
             </div>
           )}
 

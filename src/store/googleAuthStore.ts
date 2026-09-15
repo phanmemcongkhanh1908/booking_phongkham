@@ -149,8 +149,41 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
 
         return { accessToken: token, user: userProfile };
       } catch (err: any) {
+        const isClosedByUser = 
+          err?.code === 'auth/popup-closed-by-user' || 
+          err?.code === 'auth/cancelled-popup-request' ||
+          (typeof err?.message === 'string' && err.message.includes('popup-closed-by-user'));
+
+        const isPopupBlocked = 
+          err?.code === 'auth/popup-blocked' || 
+          (typeof err?.message === 'string' && err.message.includes('popup-blocked'));
+
+        if (isClosedByUser) {
+          console.info('[Google Auth] Đã đóng cửa sổ đăng nhập Google.');
+          set({
+            isConnecting: false,
+            error: null,
+          });
+          const cancelError = new Error('Cửa sổ đăng nhập Google đã được đóng.');
+          (cancelError as any).code = 'auth/popup-closed-by-user';
+          (cancelError as any).isCancelled = true;
+          throw cancelError;
+        }
+
+        if (isPopupBlocked) {
+          console.warn('[Google Auth] Trình duyệt đã chặn popup đăng nhập Google.');
+          const blockedMsg = 'Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup trên thanh địa chỉ và thử lại.';
+          set({
+            isConnecting: false,
+            error: blockedMsg,
+          });
+          const blockedError = new Error(blockedMsg);
+          (blockedError as any).code = 'auth/popup-blocked';
+          throw blockedError;
+        }
+
         console.error('Google Sign-In Error:', err);
-        const errorMessage = err.message || 'Lỗi khi kết nối tài khoản Google';
+        const errorMessage = err?.message || 'Lỗi khi kết nối tài khoản Google';
         set({
           isConnecting: false,
           error: errorMessage,

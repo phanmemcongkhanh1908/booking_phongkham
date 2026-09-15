@@ -220,50 +220,112 @@ appointmentRouter.post("/next", requirePermission("appointment.create"), async (
   }
 });
 
-// Quick book from calendar
+// Quick / Direct book from Admin or Calendar
 appointmentRouter.post("/quick", requirePermission("appointment.create"), async (req, res, next) => {
   try {
-    const { patientName, phone, serviceId, startAt, endAt } = req.body;
-    if (!patientName || !phone || !serviceId || !startAt || !endAt) {
-      throw new BadRequestError("Thiếu thông tin bắt buộc");
+    const { 
+      patientName, 
+      phone, 
+      serviceId, 
+      providerId: reqProviderId, 
+      startAt, 
+      endAt: reqEndAt, 
+      notes, 
+      status: reqStatus, 
+      force,
+      patientId: reqPatientId
+    } = req.body;
+
+    if (!patientName || !phone || !serviceId || !startAt) {
+      throw new BadRequestError("Thiếu thông tin bắt buộc (Họ tên, Số điện thoại, Dịch vụ, Thời gian bắt đầu)");
     }
 
     const bookingResult = await db.transaction(async (tx) => {
-      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, phone.replace(/\D/g, ''))).limit(1);
-      let patientId = '';
+      let patientId = reqPatientId;
 
-      if (patientRecords.length === 0) {
-        const newPatient = await tx.insert(patients).values({
-          fullName: patientName,
-          phone: phone.replace(/\D/g, ''),
-        }).returning();
-        patientId = newPatient[0].id;
+      if (!patientId) {
+        const cleanPhone = phone.replace(/\D/g, '');
+        let patientRecords = await tx.select().from(patients).where(eq(patients.phone, cleanPhone)).limit(1);
+
+        if (patientRecords.length === 0) {
+          const newPatient = await tx.insert(patients).values({
+            fullName: patientName.trim(),
+            phone: cleanPhone,
+          }).returning();
+          patientId = newPatient[0].id;
+        } else {
+          patientId = patientRecords[0].id;
+          if (patientName.trim() && patientRecords[0].fullName !== patientName.trim()) {
+            await tx.update(patients).set({ fullName: patientName.trim() }).where(eq(patients.id, patientId));
+          }
+        }
+      }
+
+      // Determine Provider
+      let chosenProviderId = reqProviderId;
+      if (!chosenProviderId || chosenProviderId === 'default' || chosenProviderId === 'auto') {
+        const providerRecords = await tx.select().from(providers).where(eq(providers.isActive, true)).limit(1);
+        if (providerRecords.length > 0) {
+          chosenProviderId = providerRecords[0].id;
+        } else {
+          const anyProviders = await tx.select().from(providers).limit(1);
+          if (anyProviders.length > 0) {
+            chosenProviderId = anyProviders[0].id;
+          } else {
+            throw new BadRequestError("Không có bác sĩ nào trong hệ thống");
+          }
+        }
       } else {
-        patientId = patientRecords[0].id;
+        // Validate provider exists
+        const checkPrv = await tx.select().from(providers).where(eq(providers.id, chosenProviderId)).limit(1);
+        if (checkPrv.length === 0) {
+          const fallbackPrv = await tx.select().from(providers).limit(1);
+          if (fallbackPrv.length > 0) chosenProviderId = fallbackPrv[0].id;
+        }
       }
 
-      const providerRecords = await tx.select().from(providers).limit(1);
-      if (providerRecords.length === 0) {
-        throw new BadRequestError("Không có bác sĩ nào trong hệ thống");
+      // Determine endAt if not provided
+      let finalEndAt = reqEndAt ? new Date(reqEndAt) : null;
+      if (!finalEndAt || isNaN(finalEndAt.getTime())) {
+        const serviceRec = await tx.select().from(services).where(eq(services.id, serviceId)).limit(1);
+        const durationMins = (serviceRec.length > 0 && serviceRec[0].durationMins) ? serviceRec[0].durationMins : 30;
+        finalEndAt = new Date(new Date(startAt).getTime() + durationMins * 60000);
       }
-      
-      const occupiedSlots = await getProviderOccupiedSlots(providerRecords[0].id, new Date(startAt));
-      if (isSlotConflict(new Date(startAt), new Date(endAt), occupiedSlots)) {
-        throw new BadRequestError("Khung giờ này đã bị đụng lịch. Vui lòng chọn giờ khác.");
+
+      const finalStartAt = new Date(startAt);
+
+      if (!force) {
+        const occupiedSlots = await getProviderOccupiedSlots(chosenProviderId, finalStartAt);
+        if (isSlotConflict(finalStartAt, finalEndAt, occupiedSlots)) {
+          throw new BadRequestError("Khung giờ này đã bị đụng lịch với lịch hẹn khác của Bác sĩ. Vui lòng chọn giờ khác hoặc bật xác nhận đè lịch.");
+        }
       }
+
+      const initialStatus = reqStatus === "REQUESTED" ? "REQUESTED" : "CONFIRMED";
 
       const newAppointment = await tx.insert(appointments).values({
         patientId,
-        providerId: providerRecords[0].id,
+        providerId: chosenProviderId,
         serviceId,
-        startAt: new Date(startAt),
-        endAt: new Date(endAt),
-        status: "CONFIRMED",
+        startAt: finalStartAt,
+        endAt: finalEndAt,
+        status: initialStatus,
+        notes: notes ? notes.trim() : "Đặt lịch bởi Quản trị viên/Lễ tân",
         source: "CLINIC"
       }).returning();
       
       return newAppointment[0];
     });
+
+    // Notify patient if created with CONFIRMED status
+    if (bookingResult.status === "CONFIRMED") {
+      const timeStr = safeFormatDate(bookingResult.startAt, "HH:mm dd/MM/yyyy");
+      sendWebPush(bookingResult.patientId, {
+        title: "Lịch hẹn mới đã được xác nhận",
+        body: `Lịch hẹn của bạn vào lúc ${timeStr} đã được lên lịch thành công.`,
+      }).catch(console.error);
+      notifyPatientAppointment(bookingResult.id, "CONFIRMED").catch(console.error);
+    }
 
     res.json({ success: true, data: bookingResult });
   } catch (error) {

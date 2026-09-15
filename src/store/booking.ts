@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface PatientDraft {
   bookingFor: 'self' | 'relative';
@@ -85,117 +86,144 @@ const initialPatientDraft: PatientDraft = {
   notes: '',
 };
 
-export const useBookingStore = create<BookingState>((set, get) => ({
-  tenantId: null,
-  step: 1,
-  serviceId: null,
-  serviceName: null,
-  servicePrice: null,
-  serviceIsFree: null,
-  serviceShowPrice: null,
-  serviceDuration: null,
-  providerId: null,
-  providerName: null,
-  selectedDate: null,
-  sessionToken: null,
-  slotStartTime: null,
-  slotEndTime: null,
-  holdExpiresAt: null,
-  patientDraft: { ...initialPatientDraft },
-  appointmentId: null,
-  patientName: null,
-  patientPhone: null,
-  patientEmail: null,
-  patientTelegramId: null,
-  telegramBotUsername: null,
-  announcementBanner: null,
-  clinicProfile: null,
-  bookingFormConfig: null,
+export const useBookingStore = create<BookingState>()(
+  persist(
+    (set, get) => ({
+      tenantId: null,
+      step: 1,
+      serviceId: null,
+      serviceName: null,
+      servicePrice: null,
+      serviceIsFree: null,
+      serviceShowPrice: null,
+      serviceDuration: null,
+      providerId: null,
+      providerName: null,
+      selectedDate: null,
+      sessionToken: null,
+      slotStartTime: null,
+      slotEndTime: null,
+      holdExpiresAt: null,
+      patientDraft: { ...initialPatientDraft },
+      appointmentId: null,
+      patientName: null,
+      patientPhone: null,
+      patientEmail: null,
+      patientTelegramId: null,
+      telegramBotUsername: null,
+      announcementBanner: null,
+      clinicProfile: null,
+      bookingFormConfig: null,
 
-  setTenantId: (id) => set({ tenantId: id }),
-  setStep: (step) => set({ step }),
-  setClinicProfile: (profile) => set({ clinicProfile: profile }),
-  setBookingFormConfig: (config) => set({ bookingFormConfig: config }),
-  setAnnouncementBanner: (banner) => set({ announcementBanner: banner }),
-  
-  clearHold: () => set({
-    sessionToken: null,
-    slotStartTime: null,
-    slotEndTime: null,
-    holdExpiresAt: null,
-  }),
-
-  setService: (id, name, price = null, duration = null, isFree = null, showPrice = null) => {
-    const currentServiceId = get().serviceId;
-    const isDifferent = currentServiceId !== id;
-    set({ 
-      serviceId: id, 
-      serviceName: name, 
-      servicePrice: price, 
-      serviceIsFree: isFree,
-      serviceShowPrice: showPrice,
-      serviceDuration: duration, 
-      step: 2,
-      // Khi đổi dịch vụ khác, xoá hold cũ tránh lệch serviceId trong appointment
-      ...(isDifferent ? {
+      setTenantId: (id) => set({ tenantId: id }),
+      setStep: (step) => set({ step }),
+      setClinicProfile: (profile) => set({ clinicProfile: profile }),
+      setBookingFormConfig: (config) => set({ bookingFormConfig: config }),
+      setAnnouncementBanner: (banner) => set({ announcementBanner: banner }),
+      
+      clearHold: () => set({
         sessionToken: null,
         slotStartTime: null,
         slotEndTime: null,
         holdExpiresAt: null,
-      } : {})
-    });
-  },
+      }),
 
-  setDateTimeSlot: (date, providerId, token, start, end, expiresAt, providerName = null) => set({
-    holdExpiresAt: expiresAt, 
-    selectedDate: date, 
-    providerId, 
-    providerName,
-    sessionToken: token, 
-    slotStartTime: start, 
-    slotEndTime: end, 
-    step: 3 
-  }),
+      setService: (id, name, price = null, duration = null, isFree = null, showPrice = null) => {
+        const currentServiceId = get().serviceId;
+        const isDifferent = currentServiceId !== id;
+        set({ 
+          serviceId: id, 
+          serviceName: name, 
+          servicePrice: price, 
+          serviceIsFree: isFree,
+          serviceShowPrice: showPrice,
+          serviceDuration: duration, 
+          step: 2,
+          // Khi đổi dịch vụ khác, xoá hold cũ tránh lệch serviceId trong appointment
+          ...(isDifferent ? {
+            sessionToken: null,
+            slotStartTime: null,
+            slotEndTime: null,
+            holdExpiresAt: null,
+          } : {})
+        });
+      },
 
-  setPatientDraft: (draft) => set((state) => ({
-    patientDraft: {
-      ...state.patientDraft,
-      ...draft
+      setDateTimeSlot: (date, providerId, token, start, end, expiresAt, providerName = null) => set({
+        holdExpiresAt: expiresAt, 
+        selectedDate: date, 
+        providerId, 
+        providerName,
+        sessionToken: token, 
+        slotStartTime: start, 
+        slotEndTime: end, 
+        step: 3 
+      }),
+
+      setPatientDraft: (draft) => set((state) => ({
+        patientDraft: {
+          ...state.patientDraft,
+          ...draft
+        }
+      })),
+
+      setAppointmentSuccess: (id, name, phone, email = null, telegramId = null, botUsername = null) => set({
+        appointmentId: id,
+        patientName: name,
+        patientPhone: phone,
+        patientEmail: email,
+        patientTelegramId: telegramId,
+        telegramBotUsername: botUsername,
+        step: 5
+      }),
+
+      reset: () => set({
+        tenantId: null,
+        step: 1,
+        serviceId: null,
+        serviceName: null,
+        servicePrice: null,
+        serviceIsFree: null,
+        serviceShowPrice: null,
+        serviceDuration: null,
+        providerId: null,
+        providerName: null,
+        selectedDate: null,
+        sessionToken: null,
+        slotStartTime: null,
+        slotEndTime: null,
+        holdExpiresAt: null,
+        patientDraft: { ...initialPatientDraft },
+        appointmentId: null,
+        patientName: null,
+        patientPhone: null,
+        patientEmail: null,
+        patientTelegramId: null,
+        telegramBotUsername: null
+      }),
+    }),
+    {
+      name: 'booking-storage', // name of item in the storage (must be unique)
+      storage: createJSONStorage(() => sessionStorage), // (optional) by default, 'localStorage' is used
+      partialize: (state) => ({
+        // Keep these in storage
+        step: state.step,
+        serviceId: state.serviceId,
+        serviceName: state.serviceName,
+        servicePrice: state.servicePrice,
+        serviceIsFree: state.serviceIsFree,
+        serviceShowPrice: state.serviceShowPrice,
+        serviceDuration: state.serviceDuration,
+        providerId: state.providerId,
+        providerName: state.providerName,
+        selectedDate: state.selectedDate,
+        sessionToken: state.sessionToken,
+        slotStartTime: state.slotStartTime,
+        slotEndTime: state.slotEndTime,
+        holdExpiresAt: state.holdExpiresAt,
+        patientDraft: state.patientDraft,
+        // Do not persist tenantId, clinicProfile, bookingFormConfig, etc. (they should be fetched from URL on reload)
+      }),
     }
-  })),
-
-  setAppointmentSuccess: (id, name, phone, email = null, telegramId = null, botUsername = null) => set({
-    appointmentId: id,
-    patientName: name,
-    patientPhone: phone,
-    patientEmail: email,
-    patientTelegramId: telegramId,
-    telegramBotUsername: botUsername,
-    step: 5
-  }),
-
-  reset: () => set({
-  tenantId: null,
-    step: 1,
-    serviceId: null,
-    serviceName: null,
-    servicePrice: null,
-    serviceIsFree: null,
-    serviceShowPrice: null,
-    serviceDuration: null,
-    providerId: null,
-    providerName: null,
-    selectedDate: null,
-    sessionToken: null,
-    slotStartTime: null,
-    slotEndTime: null,
-    holdExpiresAt: null,
-    patientDraft: { ...initialPatientDraft },
-    appointmentId: null,
-    patientName: null,
-    patientPhone: null,
-    patientEmail: null,
-    patientTelegramId: null,
-    telegramBotUsername: null
-  }),
-}));
+  )
+);

@@ -16,6 +16,7 @@ import Patients from './Patients';
 import UsersManagement from './UsersManagement';
 import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
+import CreateAppointmentModal from './components/CreateAppointmentModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const [showScanner, setShowScanner] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showStorageReminder, setShowStorageReminder] = useState(false);
   
   // Reschedule Modal State
@@ -500,8 +502,14 @@ export default function Dashboard() {
                     <div className="p-2 border-t border-slate-50 flex flex-col gap-1">
                       {user?.tenantId && (
                         <button 
-                          onClick={() => {
-                            if (!isConnected) connectGoogleStore();
+                          onClick={async () => {
+                            if (!isConnected) {
+                              try {
+                                await connectGoogleStore();
+                              } catch (err: any) {
+                                // User cancellation is already handled in store
+                              }
+                            }
                           }}
                           className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${
                             isConnected 
@@ -751,20 +759,24 @@ export default function Dashboard() {
                   >
                     Làm mới
                   </button>
-                  {viewMode === 'list' && (
-                    <a 
-                      href="/book" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary text-white text-xs sm:text-sm font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-2xs ml-auto sm:ml-0"
-                    >
-                      <CalendarPlus className="w-4 h-4 shrink-0" />
-                      <span className="hidden sm:inline">Thêm lịch hẹn mới</span>
-                      <span className="sm:hidden">Đặt hẹn</span>
-                    </a>
-                  )}
+                  <button 
+                    type="button"
+                    onClick={() => setShowCreateModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary text-white text-xs sm:text-sm font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-2xs ml-auto sm:ml-0 cursor-pointer"
+                  >
+                    <CalendarPlus className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">Thêm lịch hẹn mới</span>
+                    <span className="sm:hidden">Thêm lịch</span>
+                  </button>
                 </div>
               </div>
+
+              {showCreateModal && (
+                <CreateAppointmentModal 
+                  onClose={() => setShowCreateModal(false)} 
+                  onSuccess={() => fetchAppointments()} 
+                />
+              )}
 
               {showExportModal && (
                 <ExportAppointmentsModal onClose={() => setShowExportModal(false)} />
@@ -1112,8 +1124,8 @@ export default function Dashboard() {
       
       {/* Cancel Modal */}
       {cancelModalData.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100 p-6">
+        <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100 p-6 my-auto">
             <h3 className="text-lg font-bold text-slate-800 mb-2">Hủy lịch hẹn</h3>
             <p className="text-sm text-slate-500 mb-4">Vui lòng nhập lý do hủy lịch để thông báo cho khách hàng.</p>
             <textarea
@@ -1151,8 +1163,8 @@ export default function Dashboard() {
 
       {/* Reschedule Modal */}
       {rescheduleData.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-amber-600" />

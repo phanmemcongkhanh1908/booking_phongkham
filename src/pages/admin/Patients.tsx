@@ -307,7 +307,14 @@ export default function Patients() {
         }
       }
     } catch (error: any) {
-      console.error(error);
+      if (error?.isCancelled || error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (error?.code === 'auth/popup-blocked') {
+        toast.error("Trình duyệt đã chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup và thử lại.");
+        return;
+      }
+      console.error('Google connect error:', error);
       toast.error("Không thể kết nối Google: " + (error.message || 'Lỗi không xác định'));
     }
   };

@@ -173,8 +173,17 @@ export default function SimpleBookingForm() {
     }
   };
 
+  const submittingRef = useRef(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || isSubmitting) return;
+
+    if (!navigator.onLine) {
+      toast.error('Thiết bị đang ngoại tuyến. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      return;
+    }
+
     if (!selectedService || !selectedSlot) {
       toast.error('Vui lòng chọn dịch vụ và thời gian khám');
       return;
@@ -184,6 +193,7 @@ export default function SimpleBookingForm() {
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       let sessionToken = activeSession?.token;
@@ -251,6 +261,7 @@ export default function SimpleBookingForm() {
       console.error(error);
       toast.error(error.response?.data?.error?.message || error.message || 'Có lỗi xảy ra, vui lòng thử lại.');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -580,7 +591,10 @@ export default function SimpleBookingForm() {
             Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám sắp xếp phục vụ bệnh nhân khác.
           </p>
         </div>
-<button
+
+        {/* Mobile Sticky / Desktop static Button */}
+        <div className="sticky bottom-0 left-0 right-0 sm:static bg-white/95 sm:bg-transparent p-4 sm:p-0 border-t sm:border-0 border-slate-200 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] sm:shadow-none z-40 -mx-4 -mb-4 sm:mx-0 sm:mb-0 mt-2 sm:mt-0">
+          <button
             type="submit"
             disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
             className="w-full sm:w-auto min-w-[280px] py-4 px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20"
@@ -591,6 +605,7 @@ export default function SimpleBookingForm() {
               <><Send className="w-5 h-5" /> XÁC NHẬN ĐẶT LỊCH HẸN</>
             )}
           </button>
+        </div>
         </div>
       </form>
     </div>

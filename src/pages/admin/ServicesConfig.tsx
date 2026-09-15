@@ -1,18 +1,45 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
-import { Input } from '../../components/ui/Input';
-import { Button } from '../../components/ui/Button';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Plus, 
+  Clock, 
+  Settings2, 
+  X, 
+  Trash2, 
+  Edit3, 
+  Sparkles, 
+  Stethoscope, 
+  Search, 
+  Calendar as CalendarIcon,
+  Check, 
+  CheckCircle2, 
+  AlertCircle, 
+  UserCheck, 
+  Flame, 
+  Tag, 
+  Copy, 
+  Sun, 
+  Moon, 
+  Coffee,
+  ShieldCheck,
+  Award,
+  Layers,
+  Activity
+} from 'lucide-react';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { Trash2, Edit2, Plus, Clock, Settings2, X } from 'lucide-react';
 
 export default function ServicesConfig() {
   const [services, setServices] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({ workingHours: {}, intervalStep: 30 });
   const [loading, setLoading] = useState(true);
+  const [savingConfig, setSavingConfig] = useState(false);
 
-  // Form states
+  // Search & Filter
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [providerSearch, setProviderSearch] = useState('');
+
+  // Form modal states
   const [editingService, setEditingService] = useState<any>(null);
   const [showServiceForm, setShowServiceForm] = useState(false);
   
@@ -27,11 +54,11 @@ export default function ServicesConfig() {
         api.get('/admin/providers'),
         api.get('/admin/config')
       ]);
-      setServices(resSvc.data.data || []);
-      setProviders(resPrv.data.data || []);
-      setConfig(resCfg.data.data || { workingHours: {}, intervalStep: 30 });
+      setServices(resSvc.data?.data || []);
+      setProviders(resPrv.data?.data || []);
+      setConfig(resCfg.data?.data || { workingHours: {}, intervalStep: 30 });
     } catch (err) {
-      toast.error('Lỗi khi tải dữ liệu');
+      toast.error('Lỗi khi tải dữ liệu cấu hình phòng khám');
     } finally {
       setLoading(false);
     }
@@ -41,6 +68,27 @@ export default function ServicesConfig() {
     fetchServicesAndConfig();
   }, []);
 
+  // Filtered Services
+  const filteredServices = useMemo(() => {
+    if (!serviceSearch.trim()) return services;
+    const q = serviceSearch.toLowerCase().trim();
+    return services.filter(s => 
+      (s.name && s.name.toLowerCase().includes(q)) ||
+      (s.description && s.description.toLowerCase().includes(q)) ||
+      (s.tags && s.tags.some((t: string) => t.toLowerCase().includes(q)))
+    );
+  }, [services, serviceSearch]);
+
+  // Filtered Providers
+  const filteredProviders = useMemo(() => {
+    if (!providerSearch.trim()) return providers;
+    const q = providerSearch.toLowerCase().trim();
+    return providers.filter(p => 
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.specialty && p.specialty.toLowerCase().includes(q))
+    );
+  }, [providers, providerSearch]);
+
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -49,18 +97,18 @@ export default function ServicesConfig() {
         toast.success('Cập nhật dịch vụ thành công');
       } else {
         await api.post('/admin/services', editingService);
-        toast.success('Thêm dịch vụ thành công');
+        toast.success('Thêm dịch vụ mới thành công');
       }
       setShowServiceForm(false);
       setEditingService(null);
       fetchServicesAndConfig();
     } catch (err) {
-      toast.error('Lỗi khi lưu dịch vụ');
+      toast.error('Lỗi khi lưu thông tin dịch vụ');
     }
   };
 
-  const handleDeleteService = async (id: string) => {
-    if (!window.confirm('Bạn có chắc muốn xóa dịch vụ này?')) return;
+  const handleDeleteService = async (id: string, name: string) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa dịch vụ "${name}"?`)) return;
     try {
       await api.delete(`/admin/services/${id}`);
       toast.success('Đã xóa dịch vụ');
@@ -75,10 +123,10 @@ export default function ServicesConfig() {
     try {
       if (editingProvider.id) {
         await api.put(`/admin/providers/${editingProvider.id}`, editingProvider);
-        toast.success('Cập nhật bác sĩ thành công');
+        toast.success('Cập nhật thông tin bác sĩ thành công');
       } else {
         await api.post('/admin/providers', editingProvider);
-        toast.success('Thêm bác sĩ thành công');
+        toast.success('Thêm bác sĩ mới thành công');
       }
       setShowProviderForm(false);
       setEditingProvider(null);
@@ -88,8 +136,8 @@ export default function ServicesConfig() {
     }
   };
 
-  const handleDeleteProvider = async (id: string) => {
-    if (!window.confirm('Bạn có chắc muốn xóa bác sĩ này?')) return;
+  const handleDeleteProvider = async (id: string, name: string) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa bác sĩ "${name}"?`)) return;
     try {
       await api.delete(`/admin/providers/${id}`);
       toast.success('Đã xóa bác sĩ');
@@ -101,28 +149,33 @@ export default function ServicesConfig() {
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSavingConfig(true);
     try {
       await api.put('/admin/config', config);
-      toast.success('Lưu cấu hình lịch làm việc thành công!');
+      toast.success('Đã cập nhật lịch làm việc phòng khám!');
     } catch (err) {
-      toast.error('Lỗi khi lưu cấu hình');
+      toast.error('Lỗi khi lưu cấu hình lịch');
+    } finally {
+      setSavingConfig(false);
     }
   };
 
   const daysOfWeek = [
-    { key: 'monday', label: 'Thứ 2' },
-    { key: 'tuesday', label: 'Thứ 3' },
-    { key: 'wednesday', label: 'Thứ 4' },
-    { key: 'thursday', label: 'Thứ 5' },
-    { key: 'friday', label: 'Thứ 6' },
-    { key: 'saturday', label: 'Thứ 7' },
-    { key: 'sunday', label: 'Chủ nhật' },
+    { key: 'monday', label: 'Thứ Hai', short: 'T2' },
+    { key: 'tuesday', label: 'Thứ Ba', short: 'T3' },
+    { key: 'wednesday', label: 'Thứ Tư', short: 'T4' },
+    { key: 'thursday', label: 'Thứ Năm', short: 'T5' },
+    { key: 'friday', label: 'Thứ Sáu', short: 'T6' },
+    { key: 'saturday', label: 'Thứ Bảy', short: 'T7' },
+    { key: 'sunday', label: 'Chủ Nhật', short: 'CN' },
   ];
 
-  const handleUpdateShift = (dayKey: string, shiftIndex: number, field: 'start' | 'end', value: string) => {
+  const handleUpdateShift = (dayKey: string, field: 'start' | 'end', value: string) => {
     const newConfig = { ...config };
-    if (!newConfig.workingHours[dayKey]) newConfig.workingHours[dayKey] = [{ start: '', end: '' }];
-    newConfig.workingHours[dayKey][shiftIndex][field] = value;
+    if (!newConfig.workingHours[dayKey] || newConfig.workingHours[dayKey].length === 0) {
+      newConfig.workingHours[dayKey] = [{ start: '08:00', end: '17:00' }];
+    }
+    newConfig.workingHours[dayKey][0][field] = value;
     setConfig(newConfig);
   };
 
@@ -136,324 +189,828 @@ export default function ServicesConfig() {
     setConfig(newConfig);
   };
 
-  if (loading) return <div className="p-8 text-center text-text-muted">Đang tải...</div>;
+  // Quick Preset Handlers
+  const applyStandardHoursAllWeek = () => {
+    const newConfig = { ...config };
+    daysOfWeek.forEach(d => {
+      newConfig.workingHours[d.key] = [{ start: '08:00', end: '17:00' }];
+    });
+    setConfig(newConfig);
+    toast.success('Đã thiết lập 08:00 - 17:00 cho tất cả các ngày');
+  };
+
+  const applyWeekendOff = () => {
+    const newConfig = { ...config };
+    daysOfWeek.forEach(d => {
+      if (d.key === 'saturday' || d.key === 'sunday') {
+        newConfig.workingHours[d.key] = [];
+      } else {
+        newConfig.workingHours[d.key] = [{ start: '08:00', end: '17:00' }];
+      }
+    });
+    setConfig(newConfig);
+    toast.success('Đã áp dụng nghỉ Thứ Bảy và Chủ Nhật');
+  };
+
+  // Helper to pick dental service icon and colors
+  const getServiceVisuals = (name: string = '') => {
+    const lower = name.toLowerCase();
+    if (lower.includes('nhổ') || lower.includes('tiểu phẫu')) {
+      return { bg: 'bg-amber-50 text-amber-700 border-amber-200', icon: Activity };
+    }
+    if (lower.includes('trắng') || lower.includes('thẩm mỹ')) {
+      return { bg: 'bg-cyan-50 text-cyan-700 border-cyan-200', icon: Sparkles };
+    }
+    if (lower.includes('cạo vôi') || lower.includes('đánh bóng') || lower.includes('vệ sinh')) {
+      return { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: ShieldCheck };
+    }
+    if (lower.includes('implant') || lower.includes('sứ') || lower.includes('niềng')) {
+      return { bg: 'bg-purple-50 text-purple-700 border-purple-200', icon: Layers };
+    }
+    return { bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: Stethoscope };
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[380px] p-8 space-y-3">
+        <div className="w-10 h-10 border-3 border-teal-100 border-t-teal-600 rounded-full animate-spin"></div>
+        <p className="text-sm font-semibold text-slate-700">Đang tải danh mục dịch vụ & lịch làm việc...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      {/* Cấu hình Dịch vụ */}
-      <Card className="col-span-1 md:col-span-2 lg:col-span-1">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Danh sách Dịch vụ</CardTitle>
-          <Button size="sm" onClick={() => { setEditingService({ name: '', durationMins: 30, bufferBefore: 0, bufferAfter: 0, price: '', showPrice: false, isHot: false, isFree: false, isActive: true }); setShowServiceForm(true); }}>
-            <Plus className="w-4 h-4 mr-1" /> Thêm dịch vụ
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {showServiceForm && editingService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
-              <h4 className="font-bold text-slate-800 text-lg">{editingService.id ? 'Sửa dịch vụ' : 'Thêm dịch vụ mới'}</h4>
-              <button onClick={() => setShowServiceForm(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+    <div className="space-y-6 pb-12">
+      {/* Top Banner Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-100 shadow-2xs">
+            <Layers className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                Quản lý Dịch vụ & Lịch làm việc
+              </h2>
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                {services.length} Dịch vụ • {providers.length} Bác sĩ
+              </span>
             </div>
-            <div className="p-5 max-h-[80vh] overflow-y-auto">
-
-              <h4 className="font-semibold mb-4 text-sm">{editingService.id ? 'Sửa dịch vụ' : 'Thêm dịch vụ mới'}</h4>
-              <form onSubmit={handleSaveService} className="space-y-4">
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên dịch vụ</label>
-                  <Input required value={editingService.name || ''} onChange={e => setEditingService({...editingService, name: e.target.value})} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Thời gian khám (phút)</label>
-                    <Input type="number" required value={editingService.durationMins || ''} onChange={e => setEditingService({...editingService, durationMins: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Buffer sau khám (phút)</label>
-                    <Input type="number" value={editingService.bufferAfter || ''} onChange={e => setEditingService({...editingService, bufferAfter: e.target.value})} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Giá dịch vụ (VNĐ)</label>
-                  <Input 
-                    type="text" 
-                    placeholder="Ví dụ: 500,000" 
-                    value={editingService.price != null && editingService.price !== '' ? editingService.price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : ''} 
-                    onChange={e => {
-                      const val = e.target.value.replace(/\D/g, '');
-                      setEditingService({...editingService, price: val !== '' ? parseInt(val) : ''})
-                    }} 
-                    disabled={editingService.isFree}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tag Dịch vụ Cao cấp</label>
-                  <Input 
-                    placeholder="VD: KHÔNG ĐAU, TRẢ GÓP 0% (cách nhau bằng dấu phẩy)"
-                    value={(editingService.tags || []).join(', ')} 
-                    onChange={e => setEditingService({...editingService, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} 
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Các tag này sẽ hiển thị nổi bật ở bước Chọn Dịch Vụ.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-6 pt-2">
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input type="checkbox" checked={editingService.isActive !== false} onChange={e => setEditingService({...editingService, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
-                    <span>Đang hoạt động</span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={editingService.isFree || false} 
-                      onChange={e => setEditingService({...editingService, isFree: e.target.checked, price: e.target.checked ? '' : editingService.price})} 
-                      className="rounded border-border-subtle text-primary focus:ring-teal-600" 
-                    />
-                    <span>Miễn phí</span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input type="checkbox" checked={editingService.showPrice || false} onChange={e => setEditingService({...editingService, showPrice: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
-                    <span>Hiển thị giá</span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input type="checkbox" checked={editingService.isHot || false} onChange={e => setEditingService({...editingService, isHot: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
-                    <span>Nổi bật (HOT)</span>
-                  </label>
-                </div>
-                <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-slate-100">
-                  <Button type="button" variant="outline" className="rounded-xl font-bold" onClick={() => setShowServiceForm(false)}>Hủy</Button>
-                  <Button type="submit" className="rounded-xl font-bold bg-teal-600 hover:bg-teal-700">Lưu dịch vụ</Button>
-                </div>
-              </form>
-            </div>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              Tùy chỉnh danh mục khám chữa, phân bổ bác sĩ chuyên môn và cấu hình thời gian mở cửa
+            </p>
           </div>
         </div>
-      )}
 
-          <div className="space-y-3">
-            {services.map(svc => (
-              <div key={svc.id} className={`flex justify-between items-center p-3 border border-slate-200 rounded-xl transition-all ${svc.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className={`font-medium text-sm ${svc.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{svc.name}</h4>
-                    {svc.isHot && svc.isActive !== false && (
-                      <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-sm">HOT</span>
-                    )}
-                    {svc.isActive === false && (
-                      <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">Ngừng hoạt động</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-text-muted mt-1">
-                    <span className="flex items-center">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {svc.durationMins} phút khám
-                      {svc.bufferAfter > 0 && ` + ${svc.bufferAfter} phút dọn dẹp`}
-                    </span>
-                    {svc.price && svc.showPrice && (
-                      <span className="font-medium text-teal-600">
-                        {Number(svc.price).toLocaleString('vi-VN')}đ
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <button onClick={() => { setEditingService(svc); setShowServiceForm(true); }} className="p-1 text-text-muted/60 hover:text-primary transition-colors">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => handleDeleteService(svc.id)} className="p-1 text-text-muted/60 hover:text-status-cancelled transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {services.length === 0 && <p className="text-sm text-text-muted">Chưa có dịch vụ nào.</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Cấu hình Bác sĩ */}
-      <Card className="col-span-1 md:col-span-2 lg:col-span-1">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Danh sách Bác sĩ</CardTitle>
-          <Button size="sm" onClick={() => { setEditingProvider({ name: '', specialty: '', isDefault: false, isActive: true, bookingEnabled: true }); setShowProviderForm(true); }}>
-            <Plus className="w-4 h-4 mr-1" /> Thêm bác sĩ
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {showProviderForm && editingProvider && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
-              <h4 className="font-bold text-slate-800 text-lg">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
-              <button onClick={() => setShowProviderForm(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 max-h-[80vh] overflow-y-auto">
-              <h4 className="font-semibold mb-4 text-sm">{editingProvider.id ? 'Sửa bác sĩ' : 'Thêm bác sĩ mới'}</h4>
-              <form onSubmit={handleSaveProvider} className="space-y-4">
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên bác sĩ</label>
-                  <Input required placeholder="VD: BS. Nguyễn Văn A" value={editingProvider.name || ''} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Chuyên khoa</label>
-                  <Input placeholder="VD: Chuyên khoa Răng Hàm Mặt" value={editingProvider.specialty || ''} onChange={e => setEditingProvider({...editingProvider, specialty: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Kinh nghiệm</label>
-                  <Input placeholder="VD: 10 năm kinh nghiệm" value={editingProvider.experience || ''} onChange={e => setEditingProvider({...editingProvider, experience: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Thế mạnh chuyên môn (Tags)</label>
-                  <Input 
-                    placeholder="VD: CHỈNH NHA, IMPLANT NHA KHOA (cách nhau bằng dấu phẩy)" 
-                    value={(editingProvider.specialties || []).join(', ')} 
-                    onChange={e => setEditingProvider({...editingProvider, specialties: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} 
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Các tag này hiển thị nổi bật dưới tên bác sĩ.</p>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Bằng cấp & Chứng chỉ</label>
-                  <textarea 
-                    className="flex min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2"
-                    placeholder="Mỗi dòng một chứng chỉ&#10;VD: Chứng chỉ Cấy ghép Implant (Bộ Y Tế)"
-                    value={(editingProvider.certificates || []).join('\n')}
-                    onChange={e => setEditingProvider({...editingProvider, certificates: e.target.value.split('\n').filter(Boolean)})}
-                  ></textarea>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-6 pt-2">
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input type="checkbox" checked={editingProvider.isActive !== false} onChange={e => setEditingProvider({...editingProvider, isActive: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
-                    <span>Đang hoạt động</span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer">
-                    <input type="checkbox" checked={editingProvider.isDefault || false} onChange={e => setEditingProvider({...editingProvider, isDefault: e.target.checked})} className="rounded border-border-subtle text-primary focus:ring-teal-600" />
-                    <span>Bác sĩ mặc định</span>
-                  </label>
-                </div>
-                <div className="flex justify-end space-x-3 pt-6 mt-6 border-t border-slate-100">
-                  <Button type="button" variant="outline" className="rounded-xl font-bold" onClick={() => setShowProviderForm(false)}>Hủy</Button>
-                  <Button type="submit" className="rounded-xl font-bold bg-teal-600 hover:bg-teal-700">Lưu hồ sơ</Button>
-                </div>
-              </form>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 self-end sm:self-center">
+          <button
+            type="button"
+            onClick={() => {
+              setEditingService({ 
+                name: '', 
+                durationMins: 30, 
+                bufferBefore: 0, 
+                bufferAfter: 10, 
+                price: '', 
+                showPrice: true, 
+                isHot: false, 
+                isFree: false, 
+                isActive: true,
+                tags: []
+              });
+              setShowServiceForm(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-700 active:scale-98 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Thêm dịch vụ</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingProvider({ 
+                name: '', 
+                specialty: '', 
+                experience: '',
+                isDefault: false, 
+                isActive: true, 
+                bookingEnabled: true,
+                specialties: [],
+                certificates: []
+              });
+              setShowProviderForm(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Thêm bác sĩ</span>
+          </button>
         </div>
-      )}
+      </div>
 
-          <div className="space-y-3">
-            {providers.map(prv => (
-              <div key={prv.id} className={`flex justify-between items-center p-3 border border-slate-200 rounded-xl transition-all ${prv.isActive === false ? 'bg-slate-50 opacity-60' : 'hover:bg-bg-base'}`}>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className={`font-medium text-sm ${prv.isActive === false ? 'text-slate-500 line-through' : 'text-text-main'}`}>{prv.name}</h4>
-                    {prv.isDefault && prv.isActive !== false && (
-                      <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm">Mặc định</span>
-                    )}
-                    {prv.isActive === false && (
-                      <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-sm">Ngừng hoạt động</span>
-                    )}
-                  </div>
-                  {prv.specialty && (
-                    <div className="text-xs text-text-muted mt-1">{prv.specialty}</div>
-                  )}
-                  {prv.experience && (
-                    <div className="text-[11px] text-teal-600 mt-0.5">{prv.experience}</div>
-                  )}
-                </div>
-                <div className="flex space-x-2">
-                  <button onClick={() => { setEditingProvider(prv); setShowProviderForm(true); }} className="p-1 text-text-muted/60 hover:text-primary transition-colors">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => handleDeleteProvider(prv.id)} className="p-1 text-text-muted/60 hover:text-status-cancelled transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {providers.length === 0 && <p className="text-sm text-text-muted">Chưa có bác sĩ nào.</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Cấu hình Lịch làm việc */}
-      <Card className="col-span-1 md:col-span-2 lg:col-span-1">
-        <CardHeader>
-          <CardTitle>Khung giờ & Ngày làm việc</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSaveConfig} className="space-y-6">
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-text-main flex items-center">
-                <Settings2 className="w-4 h-4 mr-2" />
-                Khoảng chia lịch (Interval)
-              </label>
-              <p className="text-xs text-text-muted mb-2">Chia nhỏ lịch hẹn thành từng đoạn bao nhiêu phút trên màn hình chọn giờ?</p>
-              <select 
-                className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
-                value={config.intervalStep || ''}
-                onChange={e => setConfig({...config, intervalStep: parseInt(e.target.value)})}
-              >
-                <option value={15}>15 phút / slot</option>
-                <option value={30}>30 phút / slot</option>
-                <option value={45}>45 phút / slot</option>
-                <option value={60}>60 phút / slot</option>
-              </select>
+      {/* Grid: 2 Cột Dịch vụ & Bác sĩ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* CỘT 1: DANH SÁCH DỊCH VỤ */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col">
+          {/* Header Card */}
+          <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Stethoscope className="w-4 h-4 text-teal-600" />
+              <h3 className="font-bold text-slate-800 text-base">Danh mục Dịch vụ ({filteredServices.length})</h3>
             </div>
+            {/* Search */}
+            <div className="relative w-full sm:w-56">
+              <input
+                type="text"
+                placeholder="Tìm tên dịch vụ, tag..."
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all font-medium"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              {serviceSearch && (
+                <button
+                  onClick={() => setServiceSearch('')}
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
 
-            <div className="space-y-4">
-              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Các ngày mở cửa trong tuần</label>
-              {daysOfWeek.map(day => {
-                const isActive = config.workingHours[day.key] && config.workingHours[day.key].length > 0;
+          {/* List Items */}
+          <div className="p-4 sm:p-5 flex-1 space-y-3 max-h-[580px] overflow-y-auto">
+            {filteredServices.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs">
+                {serviceSearch ? 'Không tìm thấy dịch vụ phù hợp với từ khóa.' : 'Chưa có dịch vụ nào trong hệ thống.'}
+              </div>
+            ) : (
+              filteredServices.map(svc => {
+                const visual = getServiceVisuals(svc.name);
+                const IconComp = visual.icon;
+                const isInactive = svc.isActive === false;
+
                 return (
-                  <div key={day.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 p-2.5 rounded-xl bg-bg-base/60 sm:bg-transparent border border-border-subtle sm:border-0">
-                    <div className="w-full sm:w-28 flex items-center justify-between sm:justify-start">
-                      <label className="flex items-center space-x-2 text-sm text-text-main cursor-pointer font-medium">
-                        <input 
-                          type="checkbox" 
-                          checked={isActive} 
-                          onChange={() => handleToggleDay(day.key)}
-                          className="rounded border-border-subtle text-primary focus:ring-teal-600"
-                        />
-                        <span>{day.label}</span>
-                      </label>
-                      <span className="sm:hidden text-xs text-text-muted">
-                        {isActive ? 'Mở cửa' : 'Nghỉ'}
-                      </span>
+                  <div
+                    key={svc.id}
+                    className={`group relative p-3.5 sm:p-4 rounded-2xl border transition-all duration-150 flex items-start justify-between gap-3 ${
+                      isInactive 
+                        ? 'bg-slate-50/70 border-slate-200/60 opacity-60' 
+                        : 'bg-white border-slate-200/80 hover:border-teal-300 hover:shadow-xs hover:bg-teal-50/10'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      {/* Visual Icon */}
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${visual.bg} shadow-2xs`}>
+                        <IconComp className="w-5 h-5" />
+                      </div>
+
+                      {/* Content */}
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className={`text-sm font-bold truncate ${isInactive ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                            {svc.name}
+                          </h4>
+                          {svc.isHot && !isInactive && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-extrabold bg-gradient-to-r from-rose-500 to-amber-500 text-white px-1.5 py-0.5 rounded-md shadow-2xs uppercase">
+                              <Flame className="w-2.5 h-2.5 fill-white" /> HOT
+                            </span>
+                          )}
+                          {isInactive && (
+                            <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
+                              Tạm ngưng
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Details: Duration & Price */}
+                        <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-500 flex-wrap">
+                          <span className="inline-flex items-center gap-1 font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200/60">
+                            <Clock className="w-3 h-3 text-teal-600" />
+                            {svc.durationMins || 30} phút
+                            {svc.bufferAfter > 0 && <span className="text-slate-400">+{svc.bufferAfter}p dọn dẹp</span>}
+                          </span>
+
+                          {/* Price Tag */}
+                          {svc.isFree ? (
+                            <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/60 text-xs">
+                              Miễn phí
+                            </span>
+                          ) : (svc.price != null && svc.price !== '' && svc.showPrice !== false) ? (
+                            <span className="font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200/60 text-xs">
+                              {Number(svc.price).toLocaleString('vi-VN')} đ
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">
+                              Tư vấn báo giá
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Extra tags */}
+                        {svc.tags && svc.tags.length > 0 && (
+                          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                            {svc.tags.map((t: string, idx: number) => (
+                              <span key={idx} className="text-[10px] font-medium text-slate-500 bg-slate-50 border border-slate-200/70 px-1.5 py-0.2 rounded-md">
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {isActive ? (
-                      <div className="flex flex-1 items-center space-x-2">
-                        <Input 
-                          type="time" 
-                          className="h-8 text-xs sm:text-sm flex-1" 
-                          value={config.workingHours[day.key][0]?.start || '08:00'} 
-                          onChange={e => handleUpdateShift(day.key, 0, 'start', e.target.value)} 
-                        />
-                        <span className="text-text-muted/60">-</span>
-                        <Input 
-                          type="time" 
-                          className="h-8 text-xs sm:text-sm flex-1" 
-                          value={config.workingHours[day.key][0]?.end || '17:00'} 
-                          onChange={e => handleUpdateShift(day.key, 0, 'end', e.target.value)} 
-                        />
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingService({ ...svc });
+                          setShowServiceForm(true);
+                        }}
+                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Chỉnh sửa dịch vụ"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteService(svc.id, svc.name)}
+                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Xóa dịch vụ"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* CỘT 2: DANH SÁCH BÁC SĨ */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col">
+          {/* Header Card */}
+          <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-teal-600" />
+              <h3 className="font-bold text-slate-800 text-base">Đội ngũ Bác sĩ ({filteredProviders.length})</h3>
+            </div>
+            {/* Search */}
+            <div className="relative w-full sm:w-56">
+              <input
+                type="text"
+                placeholder="Tìm tên bác sĩ, chuyên khoa..."
+                value={providerSearch}
+                onChange={(e) => setProviderSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all font-medium"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              {providerSearch && (
+                <button
+                  onClick={() => setProviderSearch('')}
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* List Items */}
+          <div className="p-4 sm:p-5 flex-1 space-y-3 max-h-[580px] overflow-y-auto">
+            {filteredProviders.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs">
+                {providerSearch ? 'Không tìm thấy bác sĩ phù hợp.' : 'Chưa có bác sĩ nào trong hệ thống.'}
+              </div>
+            ) : (
+              filteredProviders.map(prv => {
+                const isInactive = prv.isActive === false;
+                const initials = prv.name ? prv.name.split(' ').map((n: string) => n[0]).slice(-2).join('').toUpperCase() : 'BS';
+
+                return (
+                  <div
+                    key={prv.id}
+                    className={`group relative p-3.5 sm:p-4 rounded-2xl border transition-all duration-150 flex items-start justify-between gap-3 ${
+                      isInactive 
+                        ? 'bg-slate-50/70 border-slate-200/60 opacity-60' 
+                        : 'bg-white border-slate-200/80 hover:border-teal-300 hover:shadow-xs hover:bg-teal-50/10'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      {/* Avatar */}
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white font-bold flex items-center justify-center shrink-0 shadow-xs text-sm">
+                        {initials}
+                      </div>
+
+                      {/* Info */}
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className={`text-sm font-bold truncate ${isInactive ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                            {prv.name}
+                          </h4>
+                          {prv.isDefault && !isInactive && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md">
+                              ⭐ Mặc định
+                            </span>
+                          )}
+                          {isInactive && (
+                            <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
+                              Nghỉ phép
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Specialty & Exp */}
+                        <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+                          <span className="font-medium text-slate-700">
+                            {prv.specialty || 'Chuyên khoa Nha tổng quát'}
+                          </span>
+                          {prv.experience && (
+                            <span className="text-teal-700 font-semibold bg-teal-50 px-2 py-0.5 rounded-md text-[11px] border border-teal-200/60">
+                              {prv.experience}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Badges / Specialties */}
+                        {prv.specialties && prv.specialties.length > 0 && (
+                          <div className="flex items-center gap-1 pt-1 flex-wrap">
+                            {prv.specialties.map((spec: string, idx: number) => (
+                              <span key={idx} className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md">
+                                {spec}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProvider({ ...prv });
+                          setShowProviderForm(true);
+                        }}
+                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Chỉnh sửa bác sĩ"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProvider(prv.id, prv.name)}
+                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Xóa bác sĩ"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* TẦNG DƯỚI: CẤU HÌNH LỊCH LÀM VIỆC (WORKING HOURS & CALENDAR INTERVAL) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        {/* Header */}
+        <div className="p-4 sm:p-6 border-b border-slate-100 bg-gradient-to-r from-teal-50/40 via-white to-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-xs">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800 text-base sm:text-lg">Khung giờ & Ngày làm việc phòng khám</h3>
+              <p className="text-xs text-slate-500">Cấu hình thời gian tiếp nhận bệnh nhân và khoảng phân đoạn lịch hẹn</p>
+            </div>
+          </div>
+
+          {/* Quick Preset Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={applyStandardHoursAllWeek}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-800 transition-colors shadow-2xs cursor-pointer"
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span>Chuẩn 08:00 - 17:00</span>
+            </button>
+            <button
+              type="button"
+              onClick={applyWeekendOff}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors shadow-2xs cursor-pointer"
+            >
+              <Coffee className="w-3.5 h-3.5 text-slate-500" />
+              <span>Nghỉ Thứ 7 & CN</span>
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveConfig} className="p-4 sm:p-6 space-y-6">
+          {/* 1. Khoảng chia lịch (Interval) */}
+          <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Settings2 className="w-3.5 h-3.5 text-teal-600" />
+                  Khoảng chia lịch (Slot Interval)
+                </label>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Chia nhỏ thời gian đặt hẹn thành các mốc bao nhiêu phút trên màn hình chọn giờ của bệnh nhân
+                </p>
+              </div>
+            </div>
+
+            {/* Radio Slot cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[15, 30, 45, 60].map((step) => {
+                const isSelected = (config.intervalStep || 30) === step;
+                return (
+                  <button
+                    key={step}
+                    type="button"
+                    onClick={() => setConfig({ ...config, intervalStep: step })}
+                    className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+                      isSelected 
+                        ? 'bg-teal-600 text-white border-teal-600 shadow-xs' 
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="text-sm sm:text-base font-bold">{step} phút / slot</div>
+                    <div className={`text-[11px] mt-0.5 ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
+                      {step === 30 ? 'Phổ biến nhất' : `${60 / step} ca / giờ`}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. Lịch mở cửa 7 ngày trong tuần */}
+          <div>
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 block">
+              Thời gian mở cửa từng ngày trong tuần
+            </label>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {daysOfWeek.map(day => {
+                const isOpen = config.workingHours[day.key] && config.workingHours[day.key].length > 0;
+                const shift = isOpen ? config.workingHours[day.key][0] : null;
+
+                return (
+                  <div
+                    key={day.key}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isOpen 
+                        ? 'bg-white border-slate-200/90 shadow-2xs' 
+                        : 'bg-slate-50/80 border-slate-200/60 opacity-70'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
+                          isOpen ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {day.short}
+                        </span>
+                        <span className="text-sm font-bold text-slate-800">{day.label}</span>
+                      </div>
+
+                      {/* Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleDay(day.key)}
+                        className={`text-xs font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                          isOpen 
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200' 
+                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        }`}
+                      >
+                        {isOpen ? 'Mở cửa' : 'Nghỉ'}
+                      </button>
+                    </div>
+
+                    {isOpen && shift ? (
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="time"
+                            value={shift.start || '08:00'}
+                            onChange={(e) => handleUpdateShift(day.key, 'start', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-slate-400 text-xs font-bold">-</span>
+                        <div className="relative flex-1">
+                          <input
+                            type="time"
+                            value={shift.end || '17:00'}
+                            onChange={(e) => handleUpdateShift(day.key, 'end', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                          />
+                        </div>
                       </div>
                     ) : (
-                      <span className="hidden sm:inline text-sm text-text-muted/60 italic">Nghỉ</span>
+                      <div className="text-xs text-slate-400 italic py-1 text-center bg-slate-100/60 rounded-xl">
+                        Không tiếp nhận lịch hẹn trong ngày này
+                      </div>
                     )}
                   </div>
                 );
               })}
             </div>
+          </div>
 
-            <Button type="submit" className="w-full">Lưu cấu hình</Button>
-          </form>
-        </CardContent>
-      </Card>
+          {/* Footer Save Button */}
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={savingConfig}
+              className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-98 text-white text-xs sm:text-sm font-bold shadow-md shadow-teal-600/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {savingConfig ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Đang lưu...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Lưu cấu hình lịch làm việc</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* MODAL: THÊM / SỬA DỊCH VỤ */}
+      {showServiceForm && editingService && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-teal-50/50 via-white to-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-xs">
+                  <Stethoscope className="w-4 h-4" />
+                </div>
+                <h4 className="font-bold text-slate-800 text-base sm:text-lg">
+                  {editingService.id ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ nha khoa mới'}
+                </h4>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowServiceForm(false)} 
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveService} className="p-5 overflow-y-auto space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Tên dịch vụ *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Cạo vôi răng & Đánh bóng"
+                  value={editingService.name || ''}
+                  onChange={e => setEditingService({ ...editingService, name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Thời gian khám (phút) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={5}
+                    step={5}
+                    value={editingService.durationMins || 30}
+                    onChange={e => setEditingService({ ...editingService, durationMins: parseInt(e.target.value) || 30 })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Thời gian dọn dẹp (phút)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={5}
+                    value={editingService.bufferAfter || 0}
+                    onChange={e => setEditingService({ ...editingService, bufferAfter: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Giá dịch vụ (VNĐ)</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 300,000"
+                  disabled={editingService.isFree}
+                  value={editingService.price != null && editingService.price !== '' ? Number(editingService.price).toLocaleString('vi-VN') : ''}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/\D/g, '');
+                    setEditingService({ ...editingService, price: raw ? parseInt(raw) : '' });
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Tag nổi bật (Cách nhau bởi dấu phẩy)</label>
+                <input
+                  type="text"
+                  placeholder="VD: KHÔNG ĐAU, TRẢ GÓP 0%, BẢO HÀNH 5 NĂM"
+                  value={(editingService.tags || []).join(', ')}
+                  onChange={e => setEditingService({ ...editingService, tags: e.target.value.split(',').map((t: string) => t.trim()).filter(Boolean) })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              {/* Checkbox Options */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingService.isActive !== false}
+                    onChange={e => setEditingService({ ...editingService, isActive: e.target.checked })}
+                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                  />
+                  <span>Đang hoạt động</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingService.isHot || false}
+                    onChange={e => setEditingService({ ...editingService, isHot: e.target.checked })}
+                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                  />
+                  <span>Dịch vụ nổi bật (HOT)</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingService.isFree || false}
+                    onChange={e => setEditingService({ ...editingService, isFree: e.target.checked, price: e.target.checked ? '' : editingService.price })}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>Miễn phí khám</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingService.showPrice !== false}
+                    onChange={e => setEditingService({ ...editingService, showPrice: e.target.checked })}
+                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                  />
+                  <span>Công khai giá trên web</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowServiceForm(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-xs"
+                >
+                  Lưu dịch vụ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: THÊM / SỬA BÁC SĨ */}
+      {showProviderForm && editingProvider && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-teal-50/50 via-white to-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <h4 className="font-bold text-slate-800 text-base sm:text-lg">
+                  {editingProvider.id ? 'Chỉnh sửa bác sĩ' : 'Thêm bác sĩ điều trị mới'}
+                </h4>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowProviderForm(false)} 
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProvider} className="p-5 overflow-y-auto space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Họ và tên Bác sĩ *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: BS. CKI Nguyễn Văn A"
+                  value={editingProvider.name || ''}
+                  onChange={e => setEditingProvider({ ...editingProvider, name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Chuyên khoa</label>
+                <input
+                  type="text"
+                  placeholder="VD: Chuyên khoa Răng Hàm Mặt, Chỉnh nha & Thẩm mỹ"
+                  value={editingProvider.specialty || ''}
+                  onChange={e => setEditingProvider({ ...editingProvider, specialty: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Kinh nghiệm chuyên môn</label>
+                <input
+                  type="text"
+                  placeholder="VD: Hơn 10 năm kinh nghiệm tại BV Răng Hàm Mặt"
+                  value={editingProvider.experience || ''}
+                  onChange={e => setEditingProvider({ ...editingProvider, experience: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 block">Thế mạnh điều trị (Tags - Cách nhau bởi dấu phẩy)</label>
+                <input
+                  type="text"
+                  placeholder="VD: Cấy ghép Implant, Chỉnh nha trong suốt, Phục hình sứ"
+                  value={(editingProvider.specialties || []).join(', ')}
+                  onChange={e => setEditingProvider({ ...editingProvider, specialties: e.target.value.split(',').map((t: string) => t.trim()).filter(Boolean) })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              {/* Checkboxes */}
+              <div className="flex items-center gap-6 pt-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingProvider.isActive !== false}
+                    onChange={e => setEditingProvider({ ...editingProvider, isActive: e.target.checked })}
+                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                  />
+                  <span>Đang tiếp nhận bệnh nhân</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingProvider.isDefault || false}
+                    onChange={e => setEditingProvider({ ...editingProvider, isDefault: e.target.checked })}
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <span>Bác sĩ chỉ định mặc định</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowProviderForm(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs"
+                >
+                  Lưu hồ sơ bác sĩ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
