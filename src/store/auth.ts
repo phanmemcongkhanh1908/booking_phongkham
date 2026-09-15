@@ -8,16 +8,16 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('token'),
-  user: JSON.parse(localStorage.getItem('user') || 'null'),
+  token: localStorage.getItem('admin_token'),
+  user: JSON.parse(localStorage.getItem('admin_user') || 'null'),
   setAuth: (token, user) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('admin_token', token);
+    localStorage.setItem('admin_user', JSON.stringify(user));
     set({ token, user });
   },
   logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
     set({ token: null, user: null });
   },
 }));

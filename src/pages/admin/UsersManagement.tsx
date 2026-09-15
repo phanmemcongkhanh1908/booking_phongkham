@@ -35,6 +35,7 @@ const PERMISSION_MATRIX = [
       { id: 'appointment.create', label: 'Thêm/Sửa lịch' },
       { id: 'appointment.update', label: 'Xóa lịch hẹn' },
       { id: 'patient.view', label: 'Xem/Thêm hồ sơ bệnh nhân' },
+      { id: 'recall.view', label: 'Xem lịch nhắc tái khám' },
     ]
   },
   {
@@ -49,6 +50,7 @@ const PERMISSION_MATRIX = [
     module: 'Quản lý phòng khám',
     permissions: [
       { id: 'service.manage', label: 'Quản lý dịch vụ' },
+      { id: 'provider.manage', label: 'Quản lý bác sĩ' },
       { id: 'analytics.view', label: 'Xem báo cáo doanh thu' },
       { id: 'user.create', label: 'Quản lý nhân sự' },
       { id: 'setting.manage', label: 'Cấu hình hệ thống' },

@@ -484,10 +484,19 @@ class QueryBuilder {
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
       const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
+      
+      const ctx = appContext.getStore();
+      const tenantId = ctx?.tenantId;
+      const isFullAdmin = ctx?.isFullAdmin;
 
       const updated = [];
       const cleanedUpdate = removeUndefined(this.data);
       for (const docData of docsData) {
+        if (!isFullAdmin && tenantId && tableName !== "roles") {
+          if (docData.tenantId && docData.tenantId !== tenantId) {
+             continue;
+          }
+        }
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
           const newDoc = { ...docData, ...cleanedUpdate };
@@ -505,9 +514,18 @@ class QueryBuilder {
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
       const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
+      
+      const ctx = appContext.getStore();
+      const tenantId = ctx?.tenantId;
+      const isFullAdmin = ctx?.isFullAdmin;
 
       const deleted = [];
       for (const docData of docsData) {
+        if (!isFullAdmin && tenantId && tableName !== "roles") {
+          if (docData.tenantId && docData.tenantId !== tenantId) {
+             continue;
+          }
+        }
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
           delete memoryStore[tableName][docData.id];

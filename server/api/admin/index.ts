@@ -120,6 +120,7 @@ adminRouter.post("/providers", requirePermission("provider.manage"), async (req,
 });
 
 adminRouter.put("/providers/:id", requirePermission("provider.manage"), async (req, res, next) => {
+console.log("PUT /providers/:id called. req.user=", req.user);
   try {
     if (req.body.isDefault) {
        const allProviders = await db.select().from(providers);

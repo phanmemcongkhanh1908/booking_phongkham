@@ -27,12 +27,14 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+import { usePermissions } from '../../hooks/usePermissions';
 
 export default function ServicesConfig() {
   const [services, setServices] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({ workingHours: {}, intervalStep: 30 });
   const [loading, setLoading] = useState(true);
+  const { hasPermission } = usePermissions();
   const [savingConfig, setSavingConfig] = useState(false);
 
   // Search & Filter
@@ -263,6 +265,7 @@ export default function ServicesConfig() {
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-center">
+          {hasPermission('service.manage') && (
           <button
             type="button"
             onClick={() => {
@@ -285,6 +288,8 @@ export default function ServicesConfig() {
             <Plus className="w-4 h-4" />
             <span>Thêm dịch vụ</span>
           </button>
+          )}
+          {hasPermission('provider.manage') && (
           <button
             type="button"
             onClick={() => {
@@ -305,6 +310,7 @@ export default function ServicesConfig() {
             <Plus className="w-4 h-4" />
             <span>Thêm bác sĩ</span>
           </button>
+          )}
         </div>
       </div>
 
@@ -422,27 +428,29 @@ export default function ServicesConfig() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingService({ ...svc });
-                          setShowServiceForm(true);
-                        }}
-                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
-                        title="Chỉnh sửa dịch vụ"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteService(svc.id, svc.name)}
-                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
-                        title="Xóa dịch vụ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {hasPermission('service.manage') && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingService({ ...svc });
+                            setShowServiceForm(true);
+                          }}
+                          className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Chỉnh sửa dịch vụ"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteService(svc.id, svc.name)}
+                          className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Xóa dịch vụ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -549,27 +557,29 @@ export default function ServicesConfig() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingProvider({ ...prv });
-                          setShowProviderForm(true);
-                        }}
-                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
-                        title="Chỉnh sửa bác sĩ"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProvider(prv.id, prv.name)}
-                        className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
-                        title="Xóa bác sĩ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {hasPermission('provider.manage') && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProvider({ ...prv });
+                            setShowProviderForm(true);
+                          }}
+                          className="w-8 h-8 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Chỉnh sửa bác sĩ"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProvider(prv.id, prv.name)}
+                          className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Xóa bác sĩ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })

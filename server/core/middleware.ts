@@ -59,7 +59,7 @@ export const requirePermission = (requiredPermission: string) => {
         permissions.includes(requiredPermission);
       
       if (!hasPermission) {
-        throw new ForbiddenError("Bạn không có quyền thực hiện hành động này");
+        console.log("ForbiddenError thrown. Role:", req.user.role, "Permissions:", req.user.permissions, "Required:", requiredPermission); throw new ForbiddenError("Bạn không có quyền thực hiện hành động này");
       }
       
       next();
