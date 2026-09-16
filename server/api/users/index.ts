@@ -166,7 +166,7 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       
       const { settings } = await import('../../db/schema.js');
       await db.insert(settings).values({
-        tenantId: newUser[0].id,
+        tenantId: newTenantId || undefined,
         key: 'clinic_profile',
         value: JSON.stringify(basicSettings)
       });
