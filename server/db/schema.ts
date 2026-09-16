@@ -24,6 +24,7 @@ export const waitlist: any = createTable("waitlist");
 export const patientRecalls: any = createTable("patient_recalls");
 export const pushSubscriptions: any = createTable("push_subscriptions");
 export const settings: any = createTable("settings");
+export const system_metrics: any = createTable("system_metrics");
 
 export const patientsRelations: any = {};
 export const appointmentsRelations: any = {};

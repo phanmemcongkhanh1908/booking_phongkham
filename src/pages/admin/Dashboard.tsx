@@ -11,6 +11,7 @@ import Settings from './Settings';
 import CalendarView from './CalendarView';
 import ServicesConfig from './ServicesConfig';
 import Analytics from './Analytics';
+import OtpQuotaWidget from './components/OtpQuotaWidget';
 import IdleTimeoutManager from '../../components/admin/IdleTimeoutManager';
 import Patients from './Patients';
 import UsersManagement from './UsersManagement';

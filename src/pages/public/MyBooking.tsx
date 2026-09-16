@@ -4,7 +4,7 @@ import { Card, CardContent } from '../../components/ui/Card';
 import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import { APPOINTMENT_STATUSES } from '../../constants/appointmentStatus';
+import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
 import { toast } from 'react-hot-toast';
 import RescheduleModal from './components/RescheduleModal';
 
@@ -224,7 +224,9 @@ export default function MyBooking() {
               </div>
             )}
             {appointments.map(apt => {
-              const statusConfig = APPOINTMENT_STATUSES[apt.status as keyof typeof APPOINTMENT_STATUSES] || APPOINTMENT_STATUSES.PENDING;
+              const mappedStatus = STATUS_ALIASES[apt.status] || apt.status;
+              const statusConfig = APPOINTMENT_STATUSES[mappedStatus as keyof typeof APPOINTMENT_STATUSES] || APPOINTMENT_STATUSES.PENDING;
+              const displayLabel = LABEL_OVERRIDES[apt.status] || statusConfig.label;
               const StatusIcon = statusConfig.icon;
               return (
                 <Card key={apt.id} className="border border-border-subtle shadow-soft bg-surface">
@@ -239,7 +241,7 @@ export default function MyBooking() {
                       </div>
                       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: statusConfig.bg, color: statusConfig.color }}>
                         <StatusIcon className="w-3.5 h-3.5" />
-                        {statusConfig.label}
+                        {displayLabel}
                       </div>
                     </div>
                     

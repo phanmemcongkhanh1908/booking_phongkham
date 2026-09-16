@@ -459,10 +459,57 @@ publicRouter.get("/patients/check", patientVerifyLimiter, async (req, res, next)
 });
 
 // Endpoint xác thực khách hàng cũ bằng SĐT + Họ tên (Fuzzy Match)
+
+
+
+import { adminAuth } from "../../lib/firebase-admin.js";
+
 publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, next) => {
   try {
-    const { phone, fullName } = req.body;
-    if (!phone || !fullName) return res.json({ success: false, match: false });
+    const { phone, fullName, firebaseToken } = req.body;
+    if (!phone) return res.json({ success: false, match: false });
+
+    let isOtpVerified = false;
+
+    // Check Firebase Token if provided
+    if (firebaseToken) {
+      try {
+        const decodedToken = await adminAuth.verifyIdToken(firebaseToken);
+        
+        // --- START QUOTA TRACKER ---
+        try {
+          const { system_metrics } = await import('../../db/schema.js');
+          const date = new Date();
+          const monthKey = `otp_sent_${date.getFullYear()}_${date.getMonth() + 1}`;
+          const metrics = await db.select().from(system_metrics).where(eq(system_metrics.id, monthKey)).limit(1);
+          if (metrics.length > 0) {
+            await db.update(system_metrics).set({ value: (Number(metrics[0].value) || 0) + 1 }).where(eq(system_metrics.id, monthKey));
+          } else {
+            await db.insert(system_metrics).values({ id: monthKey, value: 1, updatedAt: new Date().toISOString() });
+          }
+        } catch(e) {
+          console.error("Lỗi đếm quota OTP", e);
+        }
+        // --- END QUOTA TRACKER ---
+        
+        // Ensure the phone number matches
+        const tokenPhone = decodedToken.phone_number; // Format: +84...
+        const rawPhone = String(phone).trim().replace(/\D/g, "");
+        const rawTokenPhone = (tokenPhone || "").replace(/\D/g, "");
+        
+        // Match the last 9 digits (since 84912345678 and 0912345678 both end in 912345678)
+        if (rawTokenPhone.length >= 9 && rawPhone.length >= 9 && rawTokenPhone.slice(-9) === rawPhone.slice(-9)) {
+          isOtpVerified = true;
+        } else {
+          return res.json({ success: false, error: "Số điện thoại xác thực không khớp" });
+        }
+      } catch (err) {
+         console.error("Firebase Auth Error", err);
+         return res.json({ success: false, error: "Mã xác thực Firebase không hợp lệ hoặc đã hết hạn" });
+      }
+    } else if (!fullName) {
+       return res.json({ success: false, match: false });
+    }
 
     const rawPhone = String(phone).trim();
     const cleaned = rawPhone.replace(/\D/g, "");
@@ -482,11 +529,17 @@ publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, nex
     for (const p of pts) {
       if (!p.phone) continue;
       if (variants.has(String(p.phone).replace(/\D/g, ""))) {
-        const pName = normalizeName(p.fullName);
-        const searchName = normalizeName(fullName);
-        if (pName && searchName && (pName === searchName)) { // STRICT MATCH
+        // If OTP verified, we just match by phone directly
+        if (isOtpVerified) {
           matchedPatient = p;
           break;
+        } else {
+          const pName = normalizeName(p.fullName);
+          const searchName = normalizeName(fullName || "");
+          if (pName && searchName && (pName === searchName)) { // STRICT MATCH
+            matchedPatient = p;
+            break;
+          }
         }
       }
     }
@@ -828,7 +881,11 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
     }
     
     const pt = await db.select().from(patients).where(eq(patients.id, apts[0].patientId)).limit(1);
-    if (pt.length === 0 || pt[0].phone !== phone) {
+    const rawPhone = String(phone).replace(/\D/g, "");
+    const ptPhone = (pt.length > 0 && pt[0].phone) ? String(pt[0].phone).replace(/\D/g, "") : "";
+    
+    // So sánh linh hoạt hơn với 9 số cuối
+    if (pt.length === 0 || !ptPhone || !rawPhone || ptPhone.slice(-9) !== rawPhone.slice(-9)) {
       return res.status(403).json({ success: false, error: { message: "Số điện thoại không khớp với hồ sơ đặt lịch" } });
     }
     
