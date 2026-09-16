@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { patients } from "../../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, like, or, gt, and } from "drizzle-orm";
 import { sendPatientDocument } from "../../core/telegram.js";
 import { requireAuth } from "../../core/middleware.js";
 
@@ -12,23 +12,43 @@ patientsRouter.get("/", requireAuth, async (req, res, next) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = (page - 1) * limit;
+    const search = req.query.search as string || '';
+    const filter = req.query.filter as string || 'all';
+
+    const conditions = [];
+    if (search) {
+       conditions.push(or(
+         like(patients.fullName, `%${search}%`),
+         like(patients.phone, `%${search}%`)
+       ));
+    }
+    if (filter === 'debt') {
+       conditions.push(gt(patients.debt, 0));
+    }
+    // For 'has_docs', we might need to check json if it's stored as JSON string. We can skip it here and just let client filter if needed, or check like '%documents%'.
+    if (filter === 'has_docs') {
+       conditions.push(like(patients.notes, '%"documents":[%{%]%'));
+    }
 
     const allPatients = await db
       .select()
       .from(patients)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(patients.updatedAt))
       .limit(limit)
       .offset(offset);
 
-    // Drizzle doesn't have a simple count query for sqlite without specific functions, 
-    // but we can return data and a hasMore flag based on if we got exactly 'limit' rows
+    const countQuery = await db.select({ id: patients.id }).from(patients).where(conditions.length > 0 ? and(...conditions) : undefined);
+    const total = countQuery.length;
+
     res.json({ 
       success: true, 
       data: allPatients,
       pagination: {
+        total,
         page,
         limit,
-        hasMore: allPatients.length === limit
+        totalPages: Math.ceil(total / limit)
       }
     });
   } catch (error) {

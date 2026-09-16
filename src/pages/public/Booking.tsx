@@ -27,6 +27,9 @@ export default function Booking() {
   const { slug } = useParams();
   const basePath = slug ? `/booking/${slug}` : '/book';
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isCompact = searchParams.get('compact') === 'true' || window.self !== window.top;
+
 
   const clinicProfile = useBookingStore(s => s.clinicProfile);
   const setClinicProfile = useBookingStore(s => s.setClinicProfile);
@@ -123,7 +126,7 @@ export default function Booking() {
   return (
     <div className="min-h-screen bg-slate-50/60 text-slate-800 flex flex-col selection:bg-teal-600/20 antialiased font-sans">
       {/* Top Luxury Healthcare Navigation Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
+      {!isCompact && (<header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-20 flex items-center justify-between gap-3">
           {/* Brand & Clinic Info */}
           <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
@@ -178,7 +181,7 @@ export default function Booking() {
             </Link>
           </div>
         </div>
-      </header>
+      </header>)}
 
       {/* Announcement Banner */}
       {announcementBanner?.isVisible && announcementBanner.message && (
@@ -207,12 +210,12 @@ export default function Booking() {
       )}
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-5 sm:space-y-6 pb-24 lg:pb-8">
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 ${isCompact ? "py-2 space-y-3 pb-safe" : "py-4 sm:py-8 space-y-5 sm:space-y-6 pb-24 lg:pb-8"}`}>
         {/* Stepper Progress Ribbon (Visible in Steps 1, 2, 3, 4) - Hidden if Simple Version */}
         {step < 5 && bookingFormConfig?.uiVersion !== 'simple' && (
           <>
             {/* Desktop Full Stepper */}
-            <div className="hidden sm:block rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white p-3 sm:p-5 shadow-sm">
+            {!isCompact && (<div className="hidden sm:block rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white p-3 sm:p-5 shadow-sm">
               <div className="max-w-3xl mx-auto px-2 sm:px-0">
                 <div className="relative flex items-center justify-between">
                   {/* Connector Line Background */}
@@ -271,7 +274,7 @@ export default function Booking() {
                   })}
                 </div>
               </div>
-            </div>
+            </div>)}
 
             {/* Mobile Compact Progress Bar */}
             <div className="sm:hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm space-y-3">

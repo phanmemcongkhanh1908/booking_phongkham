@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Ho_Chi_Minh';
 import webpush from 'web-push';
 import nodeCron from 'node-cron';
 import express from "express";

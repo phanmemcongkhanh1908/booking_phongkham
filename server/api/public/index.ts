@@ -227,7 +227,7 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
 });
 
 // [M01] Xác nhận đặt lịch chính thức
-publicRouter.post("/appointments", async (req, res, next) => {
+publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) => {
   try {
     const data = BookAppointmentSchema.parse(req.body);
 
@@ -316,7 +316,21 @@ publicRouter.post("/appointments", async (req, res, next) => {
       const aptStartAt = hold.startAt instanceof Date ? hold.startAt : new Date(hold.startAt);
       const aptEndAt = hold.endAt instanceof Date ? hold.endAt : new Date(hold.endAt);
 
-      // 4. Create the Appointment
+      // 4. Check for overlap again just to be safe (prevent race condition bypass)
+      const conflictingBookings = await tx.select().from(appointments).where(
+        and(
+          eq(appointments.providerId, hold.providerId),
+          lt(appointments.startAt, aptEndAt),
+          gt(appointments.endAt, aptStartAt),
+          sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`
+        )
+      );
+
+      if (conflictingBookings.length > 0) {
+        throw new ConflictError("Khung giờ này đã có người khác đặt trong tích tắc. Vui lòng thử lại với giờ khác.");
+      }
+
+      // 5. Create the Appointment
       const newAppointment = await tx.insert(appointments).values({
         patientId,
         providerId: hold.providerId,
@@ -913,40 +927,4 @@ publicRouter.post("/shorten", async (req, res, next) => {
 
 
 // Endpoint giữ chỗ đặt lịch tạm thời
-publicRouter.post("/slots/hold", async (req, res, next) => {
-  try {
-    const { serviceId, date, time } = req.body;
-    if (!serviceId || !date || !time) return res.status(400).json({ success: false });
-
-    // Check if slot is already held by someone else
-    const now = new Date();
-    const existingHold = await db.select().from(appointmentHolds)
-      .where(
-        eq(appointmentHolds.date, date) && 
-        eq(appointmentHolds.time, time)
-      ).limit(1);
-
-    if (existingHold.length > 0) {
-      const hold = existingHold[0];
-      if (new Date(hold.expiresAt) > now) {
-        return res.status(409).json({ success: false, error: 'Khung giờ này vừa có người khác chọn. Vui lòng chọn giờ khác.' });
-      }
-      // If expired, we can overwrite it
-      await db.update(appointmentHolds)
-        .set({ expiresAt: new Date(now.getTime() + 5 * 60000) })
-        .where(eq(appointmentHolds.id, hold.id));
-    } else {
-      await db.insert(appointmentHolds).values({
-        serviceId,
-        date,
-        time,
-        expiresAt: new Date(now.getTime() + 5 * 60000),
-        createdAt: now
-      });
-    }
-
-    return res.json({ success: true, expiresAt: now.getTime() + 5 * 60000 });
-  } catch (error) { next(error); }
-});
-
 export default publicRouter;

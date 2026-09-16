@@ -25,7 +25,7 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-export default function CalendarView({ appointments, handleUpdateStatus, refreshAppointments }: { appointments: any[], handleUpdateStatus: (id: string, status: string) => void, refreshAppointments?: () => void }) {
+export default function CalendarView({ appointments, handleUpdateStatus, refreshAppointments, onRangeChange }: { appointments: any[], handleUpdateStatus: (id: string, status: string) => void, refreshAppointments?: () => void, onRangeChange?: (range: {start: Date, end: Date}) => void }) {
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showNextAptForm, setShowNextAptForm] = useState(false);
   const [services, setServices] = useState<any[]>([]);
@@ -34,8 +34,31 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
   const [nextService, setNextService] = useState('');
   
   // Trạng thái cho Calendar view và date
-  const [view, setView] = useState<any>(Views.WEEK);
-  const [date, setDate] = useState(new Date());
+  const [view, setView] = useState<any>(typeof window !== 'undefined' && window.innerWidth < 768 ? Views.AGENDA : Views.WEEK);
+  
+const [date, setDate] = useState(new Date());
+  useEffect(() => {
+    if (onRangeChange) {
+      let start = new Date(date);
+      let end = new Date(date);
+      
+      if (view === Views.MONTH) {
+        start.setDate(1);
+        start.setDate(start.getDate() - start.getDay() - 7);
+        end.setMonth(end.getMonth() + 1);
+        end.setDate(0);
+        end.setDate(end.getDate() + (6 - end.getDay()) + 7);
+      } else if (view === Views.WEEK) {
+        start = startOfWeek(date, { weekStartsOn: 1 });
+        end = addDays(start, 7);
+      } else {
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+      }
+      onRangeChange({ start, end });
+    }
+  }, [date, view]);
+  
   
   // Trạng thái cho popup chọn thời gian
   const [slotMenu, setSlotMenu] = useState<{ start: Date, end: Date } | null>(null);
@@ -226,6 +249,7 @@ export default function CalendarView({ appointments, handleUpdateStatus, refresh
       <div className="flex-1 overflow-x-auto">
         <div className={`${view === Views.DAY || view === Views.AGENDA ? 'w-full min-w-full' : 'min-w-[650px] sm:min-w-[768px]'} h-full`}>
           <DnDCalendar
+            draggableAccessor={() => window.innerWidth > 768}
             localizer={localizer}
             events={events}
             style={{ height: '100%' }}

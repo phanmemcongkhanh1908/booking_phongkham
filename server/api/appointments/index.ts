@@ -37,8 +37,12 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
     if (query.status) {
       conditions.push(eq(appointments.status, query.status));
     }
+    
+    // Check for pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 0;
 
-    const results = await db
+    let queryBuilder = db
       .select({
         id: appointments.id,
         startAt: appointments.startAt,
@@ -64,10 +68,31 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(appointments.startAt);
 
-    res.json({
-      success: true,
-      data: results,
-    });
+    if (limit > 0) {
+      const offset = (page - 1) * limit;
+      const results = await queryBuilder.limit(limit).offset(offset);
+      
+      const countQuery = db.select({ id: appointments.id }).from(appointments).where(conditions.length > 0 ? and(...conditions) : undefined);
+      const countResult = await countQuery;
+      const total = countResult.length;
+      
+      return res.json({ 
+        success: true, 
+        data: results,
+        pagination: {
+           total,
+           page,
+           limit,
+           totalPages: Math.ceil(total / limit)
+        }
+      });
+    } else {
+      const results = await queryBuilder;
+      res.json({
+        success: true,
+        data: results,
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -245,19 +270,30 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
 
       if (!patientId) {
         const cleanPhone = phone.replace(/\D/g, '');
-        let patientRecords = await tx.select().from(patients).where(eq(patients.phone, cleanPhone)).limit(1);
+        let patientRecords = await tx.select().from(patients).where(eq(patients.phone, cleanPhone));
+        
+        const incomingName = patientName.trim().toLowerCase().replace(/\s+/g, ' ');
+        let existingPatient = null;
+        for (const p of patientRecords) {
+           if (p.fullName && p.fullName.trim().toLowerCase().replace(/\s+/g, ' ') === incomingName) {
+              existingPatient = p;
+              break;
+           }
+        }
 
-        if (patientRecords.length === 0) {
+        if (existingPatient) {
+           patientId = existingPatient.id;
+        } else {
+          let notesVal = undefined;
+          if (patientRecords.length > 0) {
+             notesVal = JSON.stringify({ text: `[HỆ THỐNG]: Cùng số điện thoại với bệnh nhân ${patientRecords[0].fullName}`, diagnosis: '', treatmentPlan: '', documents: [] });
+          }
           const newPatient = await tx.insert(patients).values({
             fullName: patientName.trim(),
             phone: cleanPhone,
+            notes: notesVal
           }).returning();
           patientId = newPatient[0].id;
-        } else {
-          patientId = patientRecords[0].id;
-          if (patientName.trim() && patientRecords[0].fullName !== patientName.trim()) {
-            await tx.update(patients).set({ fullName: patientName.trim() }).where(eq(patients.id, patientId));
-          }
         }
       }
 
@@ -337,6 +373,9 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
 appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const { startAt, endAt } = req.body;
+
+    const oldApt = await db.select().from(appointments).where(eq(appointments.id, req.params.id)).limit(1);
+    
     const updated = await db.update(appointments)
       .set({ 
         startAt: new Date(startAt), 
@@ -347,6 +386,12 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
       .returning();
     
     if (updated.length === 0) throw new NotFoundError("Không tìm thấy lịch hẹn");
+
+    // Trigger waitlist since the old slot is now freed up
+    if (oldApt.length > 0) {
+      triggerWaitlistMatching(oldApt[0]).catch(console.error);
+    }
+
     res.json({ success: true, data: updated[0] });
   } catch (error) {
     next(error);

@@ -126,6 +126,9 @@ function formatFileSize(bytes: number): string {
 
 export default function Patients() {
   const [patients, setPatients] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -244,19 +247,23 @@ export default function Patients() {
   const [newPatientDob, setNewPatientDob] = useState('');
 
   useEffect(() => {
-    fetchPatients();
-    fetchAppointments();
+    fetchAppointments(); // fetchPatients handled by search effect
     const savedSheetId = localStorage.getItem('emr_spreadsheet_id');
     if (savedSheetId && !spreadsheetId) {
       setSpreadsheetInfo(savedSheetId, `https://docs.google.com/spreadsheets/d/${savedSheetId}/edit`);
     }
   }, [spreadsheetId, setSpreadsheetInfo]);
 
-  const fetchPatients = async () => {
+  const fetchPatients = async (fetchPage = page, currentSearch = searchTerm, currentFilter = filterType) => {
     try {
-      const res = await api.get('/patients');
+      setLoading(true);
+      const res = await api.get('/patients', { params: { page: fetchPage, limit: 50, search: currentSearch, filter: currentFilter } });
       if (res.data.success) {
         setPatients(res.data.data);
+        if (res.data.pagination) {
+           setTotalPages(res.data.pagination.totalPages);
+           setTotalItems(res.data.pagination.total);
+        }
       }
     } catch (error) {
       toast.error('Lỗi khi tải danh sách bệnh nhân');
@@ -649,19 +656,15 @@ export default function Patients() {
   };
 
   // Filter patients
-  const filteredPatients = patients.filter(p => {
-    const matchesSearch = 
-      p.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      p.phone.includes(searchTerm);
-    if (!matchesSearch) return false;
-
-    if (filterType === 'debt') return (p.debt || 0) > 0;
-    if (filterType === 'has_docs') {
-      const parsed = parseNotes(p.notes);
-      return parsed.documents && parsed.documents.some(d => d.files && d.files.length > 0);
-    }
-    return true;
-  });
+  const filteredPatients = patients;
+  
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      setPage(1);
+      fetchPatients(1, searchTerm, filterType);
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, filterType]);
 
   // Patient appointments
   const patientAppointments = selectedPatient ? appointments.filter(a => 

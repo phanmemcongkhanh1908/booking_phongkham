@@ -19,6 +19,12 @@ const CreateUserSchema = z.object({
   permissions: z.array(z.string()).optional(),
   uiMode: z.string().optional(),
   slug: z.string().optional(),
+  clinicName: z.string().optional(),
+  slogan: z.string().optional(),
+  doctorName: z.string().optional(),
+  workingHoursStr: z.string().optional(),
+  address: z.string().optional(),
+  hotline: z.string().optional(),
 }).refine(data => !!(data.username?.trim() || data.email?.trim()), {
   message: "Vui lòng nhập tên tài khoản hoặc email",
 });
@@ -67,7 +73,7 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     console.log("[Users API] Request body keys:", Object.keys(req.body));
     console.log("[Users API] Initiator user ID:", req.user?.userId, "Tenant:", req.user?.tenantId);
     
-    const { email, username, password, roleId, permissions, uiMode, slug } = CreateUserSchema.parse(req.body);
+    const { email, username, password, roleId, permissions, uiMode, slug, clinicName, slogan, doctorName, workingHoursStr, address, hotline } = CreateUserSchema.parse(req.body);
     const rawIdentifier = (username || email || "").trim();
     const identifier = rawIdentifier.toLowerCase();
     
@@ -146,6 +152,27 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     }).returning();
     
     console.log("[Users API] User inserted successfully. User ID:", newUser[0]?.id);
+    
+    // Auto-create basic settings for the new tenant
+    try {
+      const basicSettings = {
+        clinicName: clinicName || "Nha Khoa Dental Smart",
+        slogan: slogan || "Nụ cười rạng rỡ, tự tin đón tương lai",
+        doctorName: doctorName || "Bs. Chuyên Khoa Răng Hàm Mặt",
+        workingHours: workingHoursStr || "T2 - CN: 08:00 - 20:00",
+        address: address || "123 Nguyễn Văn Cừ, Quận 5, TP. Hồ Chí Minh",
+        hotline: hotline || "0901234567"
+      };
+      
+      const { settings } = await import('../../db/schema.js');
+      await db.insert(settings).values({
+        tenantId: newUser[0].id,
+        key: 'clinic_profile',
+        value: JSON.stringify(basicSettings)
+      });
+    } catch(e) {
+      console.log("Error creating default settings:", e);
+    }
 
     res.json({
       success: true,

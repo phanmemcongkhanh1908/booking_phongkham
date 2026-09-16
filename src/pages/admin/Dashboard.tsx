@@ -52,6 +52,8 @@ export default function Dashboard() {
     reason: ''
   });
 
+
+
   useEffect(() => {
     if (user?.tenantId && isConnected) {
       const lastCheck = localStorage.getItem('lastStorageCheckDate_' + user.id);
@@ -82,8 +84,19 @@ export default function Dashboard() {
           : 'settings';
 
   const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(defaultTab as any);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
+  const [dateRange, setDateRange] = useState<{start: Date, end: Date} | null>(null);
+
+  useEffect(() => {
+    if (dateRange && viewMode === 'calendar') {
+      fetchAppointments(true);
+    }
+  }, [dateRange, viewMode]);
   const [clinicProfile, setClinicProfile] = useState<any>(null);
   const [bookingFormConfig, setBookingFormConfig] = useState<any>(null);
   const { enabled: audioEnabled, setEnabled: setAudioEnabled } = useVoiceStore();
@@ -126,23 +139,40 @@ export default function Dashboard() {
 
 
   
-  const fetchAppointments = async (showLoading = true) => {
+  const fetchAppointments = async (showLoading = true, fetchPage = page) => {
     if (showLoading && isInitialLoad.current) setLoading(true);
     try {
+      let start, end;
       
-      // Load current month's appointments to cover calendar view and list view
-      const start = startOfWeek(new Date(), { weekStartsOn: 1 });
-      const end = new Date();
-      end.setMonth(end.getMonth() + 2); // get up to next month
+      if (viewMode === 'calendar' && dateRange) {
+        start = dateRange.start;
+        end = dateRange.end;
+      } else {
+        // List mode default range (Current week to +30 days) to keep it light
+        start = startOfWeek(new Date(), { weekStartsOn: 1 });
+        end = new Date();
+        end.setDate(end.getDate() + 30);
+      }
       
-      const res = await api.get('/appointments', {
-        params: {
-          startDate: start.toISOString().split('T')[0],
-          endDate: end.toISOString().split('T')[0]
-        }
-      });
+      const isListViewAll = viewMode === 'list' && statusFilter === 'ALL';
+      
+      const params: any = {
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0]
+      };
+      
+      if (isListViewAll) {
+         params.page = fetchPage;
+         params.limit = 50;
+      }
+
+      const res = await api.get('/appointments', { params });
 
       if (res.data.success) {
+        if (isListViewAll && res.data.pagination) {
+           setTotalPages(res.data.pagination.totalPages);
+           setTotalItems(res.data.pagination.total);
+        }
         const fetchedAppts = res.data.data;
         
         if (!isInitialLoad.current) {
@@ -813,7 +843,7 @@ export default function Dashboard() {
 
               {viewMode === 'calendar' ? (
                 <div className="p-2.5 sm:p-4">
-                  <CalendarView appointments={appointments} handleUpdateStatus={handleUpdateStatus} refreshAppointments={fetchAppointments} />
+                  <CalendarView appointments={appointments} handleUpdateStatus={handleUpdateStatus} refreshAppointments={fetchAppointments} onRangeChange={setDateRange} />
                 </div>
               ) : (
                 <>
@@ -1139,6 +1169,37 @@ export default function Dashboard() {
                       </tbody>
                     </table>
                   </div>
+                  {statusFilter === 'ALL' && totalPages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
+                      <div className="text-sm text-slate-500">
+                        Hiển thị trang <span className="font-semibold text-slate-900">{page}</span> / <span className="font-semibold text-slate-900">{totalPages}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const newPage = Math.max(1, page - 1);
+                            setPage(newPage);
+                            fetchAppointments(true, newPage);
+                          }}
+                          disabled={page === 1}
+                          className="px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Trang trước
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newPage = Math.min(totalPages, page + 1);
+                            setPage(newPage);
+                            fetchAppointments(true, newPage);
+                          }}
+                          disabled={page === totalPages}
+                          className="px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Trang sau
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1252,8 +1313,8 @@ export default function Dashboard() {
 
       
       {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)] print:hidden">
-        <div className="flex items-center justify-start sm:justify-around px-2 h-16 overflow-x-auto gap-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[max(env(safe-area-inset-bottom),10px)] print:hidden">
+        <div className="flex items-center justify-around px-2 h-16 gap-1">
           {hasPermission('appointment.view') && (
             <button 
               onClick={() => setActiveTab('appointments')}
