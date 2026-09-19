@@ -8,7 +8,7 @@ import { AppointmentQuerySchema, UpdateStatusSchema } from "../../../shared/appo
 import { NotFoundError, BadRequestError } from "../../core/errors.js";
 import { startOfDay, endOfDay, parseISO, format } from "date-fns";
 import { safeFormatDate } from "../../utils/dateFormat.js";
-import { sendWebPush } from "../../services/notification.js";
+import { sendWebPush, sendAppointmentStatusPush } from "../../services/notification.js";
 import { triggerWaitlistMatching } from "../../jobs/waitlistMatcher.js";
 import { generateRecall } from "../../jobs/recallGenerator.js";
 import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
@@ -60,6 +60,10 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         serviceId: services.id,
         serviceName: services.name,
         durationMins: services.durationMins,
+        rating: appointments.rating,
+        reviewComment: appointments.reviewComment,
+        reviewTags: appointments.reviewTags,
+        reviewedAt: appointments.reviewedAt,
       })
       .from(appointments)
       .leftJoin(patients, eq(appointments.patientId, patients.id))
@@ -387,6 +391,9 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
     
     if (updated.length === 0) throw new NotFoundError("Không tìm thấy lịch hẹn");
 
+    // Trigger push notification to patient about rescheduled time
+    sendAppointmentStatusPush(req.params.id, "RESCHEDULED", { newStartAt: startAt }).catch(console.error);
+
     // Trigger waitlist since the old slot is now freed up
     if (oldApt.length > 0) {
       triggerWaitlistMatching(oldApt[0]).catch(console.error);
@@ -425,6 +432,12 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     if (cancelReason && nextStatus === "CANCEL_CLINIC") {
       updateData.cancelReason = cancelReason;
     }
+    if (req.body.rating !== undefined) {
+      updateData.rating = Math.min(5, Math.max(1, Number(req.body.rating)));
+      updateData.reviewComment = req.body.reviewComment ? String(req.body.reviewComment).trim() : "";
+      updateData.reviewTags = Array.isArray(req.body.reviewTags) ? req.body.reviewTags : [];
+      updateData.reviewedAt = new Date();
+    }
     const updated = await db.update(appointments)
       .set(updateData)
       .where(eq(appointments.id, appointmentId))
@@ -432,26 +445,18 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
 
     const appointment = updated[0];
 
-    // Notification Engine, Waitlist & Recall Triggers
+    // Notification Engine, Web Push (VAPID), Waitlist & Recall Triggers
+    // 1. Send push notification for patient for ANY status update
+    sendAppointmentStatusPush(appointment.id, nextStatus, { cancelReason }).catch(console.error);
+
+    // 2. Specific channel integrations
     if (nextStatus === "CONFIRMED") {
-      const timeStr = safeFormatDate(appointment.startAt, "HH:mm dd/MM/yyyy");
-      await sendWebPush(appointment.patientId, {
-        title: "Lịch hẹn đã được xác nhận",
-        body: `Lịch hẹn của bạn vào lúc ${timeStr} đã được xác nhận.`,
-      });
       // Tự động gửi thông báo qua Telegram và Email cho bệnh nhân
       notifyPatientAppointment(appointment.id, "CONFIRMED").catch(console.error);
     } else if (nextStatus === "COMPLETED") {
       // Trigger Recall Engine
       generateRecall(appointment).catch(console.error);
     } else if (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT") {
-      if (nextStatus === "CANCEL_CLINIC") {
-        const timeStr = safeFormatDate(appointment.startAt, "HH:mm dd/MM/yyyy");
-        await sendWebPush(appointment.patientId, {
-          title: "Lịch hẹn đã bị hủy",
-          body: `Lịch hẹn của bạn vào lúc ${timeStr} đã bị hủy. ${cancelReason ? 'Lý do: ' + cancelReason : ''}`,
-        });
-      }
       // Tự động thông báo hủy qua Telegram / Email cho bệnh nhân
       notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
       
@@ -462,6 +467,42 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     res.json({
       success: true,
       data: appointment,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cập nhật hoặc lưu đánh giá của bệnh nhân cho lịch hẹn
+appointmentRouter.post("/:id/review", requirePermission("appointment.update"), async (req, res, next) => {
+  try {
+    const appointmentId = req.params.id;
+    const { rating, reviewComment, reviewTags } = req.body;
+
+    if (rating === undefined || rating === null) {
+      throw new BadRequestError("Vui lòng chọn số sao đánh giá (1-5 sao)");
+    }
+
+    const numericRating = Math.min(5, Math.max(1, Number(rating)));
+    const updated = await db.update(appointments)
+      .set({
+        rating: numericRating,
+        reviewComment: reviewComment ? String(reviewComment).trim() : "",
+        reviewTags: Array.isArray(reviewTags) ? reviewTags : [],
+        reviewedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+
+    if (updated.length === 0) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
+    res.json({
+      success: true,
+      data: updated[0],
+      message: "Lưu đánh giá thành công"
     });
   } catch (error) {
     next(error);

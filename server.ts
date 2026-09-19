@@ -53,9 +53,9 @@ const app = express();
   });
 
   app.post('/api/push/subscribe', async (req, res) => {
-    const { subscription, phone } = req.body;
-    if (!subscription || !phone) {
-      return res.status(400).json({ error: 'Subscription and phone required' });
+    const { subscription, phone, patientId } = req.body;
+    if (!subscription || (!phone && !patientId)) {
+      return res.status(400).json({ error: 'Subscription and phone/patientId required' });
     }
     
     try {
@@ -63,22 +63,61 @@ const app = express();
       const { patients, pushSubscriptions } = await import('./server/db/schema.js');
       const { eq } = await import('drizzle-orm');
 
-      const pts = await db.select().from(patients).where(eq(patients.phone, phone));
-      if (pts.length > 0) {
-         const patientId = pts[0].id;
-         await db.insert(pushSubscriptions).values({
-            id: Math.random().toString(36).substring(7),
-            patientId: patientId,
-            endpoint: subscription.endpoint,
-            p256dh: subscription.keys.p256dh,
-            auth: subscription.keys.auth,
-         });
+      const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+      let resolvedPatientId = patientId;
+
+      if (!resolvedPatientId && cleanPhone) {
+        const pts = await db.select().from(patients).where(eq(patients.phone, cleanPhone));
+        if (pts.length > 0) {
+          resolvedPatientId = pts[0].id;
+        }
+      }
+
+      // Check if subscription endpoint already exists
+      const existing = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, subscription.endpoint));
+      if (existing.length > 0) {
+        await db.update(pushSubscriptions).set({
+          patientId: resolvedPatientId || existing[0].patientId,
+          phone: cleanPhone || existing[0].phone,
+          p256dh: subscription.keys?.p256dh,
+          auth: subscription.keys?.auth,
+          updatedAt: new Date(),
+        }).where(eq(pushSubscriptions.id, existing[0].id));
+      } else {
+        await db.insert(pushSubscriptions).values({
+          id: 'sub_' + Math.random().toString(36).substring(2, 12),
+          patientId: resolvedPatientId || null,
+          phone: cleanPhone || phone || null,
+          endpoint: subscription.endpoint,
+          p256dh: subscription.keys?.p256dh,
+          auth: subscription.keys?.auth,
+          createdAt: new Date(),
+        });
       }
       
-      res.status(201).json({ success: true, message: 'Subscribed successfully.' });
+      res.status(201).json({ success: true, message: 'Đăng ký nhận thông báo đẩy thành công.' });
     } catch(err) {
-      console.error(err);
+      console.error('Push subscribe error:', err);
       res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.post('/api/push/test', async (req, res) => {
+    const { phone, patientId } = req.body;
+    try {
+      const { sendWebPush } = await import('./server/services/notification.js');
+      await sendWebPush(
+        { patientId, phone },
+        {
+          title: "🔔 Thử nghiệm thông báo đẩy",
+          body: "Tính năng thông báo Web Push đã hoạt động! Bạn sẽ nhận được thông báo tự động khi lịch khám được duyệt hoặc đổi trạng thái.",
+          url: "/lich-hen-cua-toi"
+        }
+      );
+      res.json({ success: true, message: 'Đã gửi thông báo thử nghiệm.' });
+    } catch (err: any) {
+      console.error('Push test error:', err);
+      res.status(500).json({ error: err?.message || 'Internal Server Error' });
     }
   });
 

@@ -21,7 +21,8 @@ import CreateAppointmentModal from './components/CreateAppointmentModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star } from 'lucide-react';
+import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -51,6 +52,10 @@ export default function Dashboard() {
     isOpen: false,
     appointmentId: null,
     reason: ''
+  });
+  const [completeReviewModalData, setCompleteReviewModalData] = useState<{isOpen: boolean, appointment: any | null}>({
+    isOpen: false,
+    appointment: null
   });
 
 
@@ -283,9 +288,30 @@ export default function Dashboard() {
   }, []);
 
   const handleUpdateStatus = async (id: string, newStatus: string, cancelReason?: string) => {
+    if (newStatus === 'COMPLETED') {
+      const apt = appointments.find(a => a.id === id);
+      if (apt) {
+        setCompleteReviewModalData({
+          isOpen: true,
+          appointment: apt
+        });
+        return;
+      }
+    }
     try {
       await api.patch(`/appointments/${id}/status`, { status: newStatus, cancelReason });
       useBroadcastStore.getState().dismissAppointment(id);
+      fetchAppointments();
+    } catch (error) {
+      alert("Không thể cập nhật trạng thái");
+      console.error(error);
+    }
+  };
+
+  const handleCompleteWithoutReview = async (appointmentId: string) => {
+    try {
+      await api.patch(`/appointments/${appointmentId}/status`, { status: 'COMPLETED' });
+      useBroadcastStore.getState().dismissAppointment(appointmentId);
       fetchAppointments();
     } catch (error) {
       alert("Không thể cập nhật trạng thái");
@@ -986,6 +1012,23 @@ export default function Dashboard() {
                                 {apt.status === 'IN_SERVICE' && (
                                   <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="flex-1 text-sm py-2.5 rounded-xl font-bold transition-all bg-teal-500 text-white hover:bg-teal-600 active:scale-95">Hoàn Thành</button>
                                 )}
+                                {apt.status === 'COMPLETED' && (
+                                  apt.rating ? (
+                                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                                      <span>{apt.rating}/5★</span>
+                                    </div>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
+                                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                                      title="Nhập đánh giá của bệnh nhân"
+                                    >
+                                      <Star className="w-3.5 h-3.5 text-amber-500" />
+                                      Đánh giá
+                                    </button>
+                                  )
+                                )}
                               </>
                             ) : (
                               <>
@@ -1006,6 +1049,23 @@ export default function Dashboard() {
                                 )}
                                 {apt.status === 'IN_SERVICE' && (
                                   <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="flex-1 text-sm py-2.5 rounded-xl font-semibold transition-all bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 active:scale-95">Xong</button>
+                                )}
+                                {apt.status === 'COMPLETED' && (
+                                  apt.rating ? (
+                                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                                      <span>{apt.rating}/5★</span>
+                                    </div>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
+                                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                                      title="Nhập đánh giá của bệnh nhân"
+                                    >
+                                      <Star className="w-3.5 h-3.5 text-amber-500" />
+                                      Đánh giá
+                                    </button>
+                                  )
                                 )}
                               </>
                             )}
@@ -1106,6 +1166,23 @@ export default function Dashboard() {
                                     {apt.status === 'IN_SERVICE' && (
                                       <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-2 rounded-lg font-bold shadow-sm transition-all bg-teal-500 text-white hover:bg-teal-600 border border-transparent">Hoàn Thành</button>
                                     )}
+                                    {apt.status === 'COMPLETED' && (
+                                      apt.rating ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                                          {apt.rating}★
+                                        </span>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
+                                          className="text-xs px-2.5 py-1.5 rounded-lg font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1 cursor-pointer"
+                                          title="Nhập đánh giá của bệnh nhân"
+                                        >
+                                          <Star className="w-3 h-3 text-amber-500" />
+                                          Đánh giá
+                                        </button>
+                                      )
+                                    )}
                                   </>
                                 ) : (
                                   <>
@@ -1126,6 +1203,23 @@ export default function Dashboard() {
                                     )}
                                     {apt.status === 'IN_SERVICE' && (
                                       <button onClick={() => handleUpdateStatus(apt.id, 'COMPLETED')} className="text-xs px-3 py-1.5 rounded-md font-bold shadow-sm border transition-all bg-green-50 text-green-700 hover:bg-green-100 border-transparent hover:border-current/10">Hoàn Thành</button>
+                                    )}
+                                    {apt.status === 'COMPLETED' && (
+                                      apt.rating ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                                          {apt.rating}★
+                                        </span>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
+                                          className="text-xs px-2.5 py-1 rounded-md font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1 cursor-pointer"
+                                          title="Nhập đánh giá của bệnh nhân"
+                                        >
+                                          <Star className="w-3 h-3 text-amber-500" />
+                                          Đánh giá
+                                        </button>
+                                      )
                                     )}
                                   </>
                                 )}
@@ -1311,6 +1405,25 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Appointment Review & Complete Modal */}
+      <AppointmentReviewModal
+        isOpen={completeReviewModalData.isOpen}
+        onClose={() => setCompleteReviewModalData({ isOpen: false, appointment: null })}
+        appointment={completeReviewModalData.appointment}
+        isStaffMode={true}
+        onSuccess={() => {
+          if (completeReviewModalData.appointment?.id) {
+            useBroadcastStore.getState().dismissAppointment(completeReviewModalData.appointment.id);
+          }
+          fetchAppointments();
+        }}
+        onCompleteWithoutReview={() => {
+          if (completeReviewModalData.appointment?.id) {
+            handleCompleteWithoutReview(completeReviewModalData.appointment.id);
+          }
+        }}
+      />
 
       
       {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}

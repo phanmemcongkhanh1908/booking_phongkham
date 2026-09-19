@@ -35,7 +35,7 @@ export default function OtpQuotaWidget() {
 
   return (
     <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs" title="Quota SMS Firebase (Free Tier)">
-      <div className={\`p-1.5 rounded-lg \${isDanger ? 'bg-rose-100 text-rose-600' : isWarning ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}\`}>
+      <div className={`p-1.5 rounded-lg ${isDanger ? 'bg-rose-100 text-rose-600' : isWarning ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
         {isWarning ? <AlertTriangle className="w-3.5 h-3.5" /> : <MessageSquare className="w-3.5 h-3.5" />}
       </div>
       <div className="flex flex-col gap-1 min-w-[120px]">
@@ -47,8 +47,8 @@ export default function OtpQuotaWidget() {
         </div>
         <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
           <div 
-            className={\`h-full transition-all \${isDanger ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-blue-500'}\`}
-            style={{ width: \`\${percentUsed}%\` }}
+            className={`h-full transition-all ${isDanger ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-blue-500'}`}
+            style={{ width: `${percentUsed}%` }}
           />
         </div>
       </div>

@@ -561,7 +561,7 @@ export default function DateTimeSelection() {
         {/* 28-Day Timeline Ribbon */}
         <div 
           ref={scrollContainerRef}
-          className="flex gap-2.5 overflow-x-auto pb-3 pt-1 scrollbar-hide snap-x scroll-smooth" 
+          className="flex gap-2.5 overflow-x-auto py-2.5 px-1.5 scrollbar-hide snap-x scroll-smooth" 
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {nextDays.map((date) => {
@@ -579,7 +579,7 @@ export default function DateTimeSelection() {
                 aria-pressed={isSelected}
                 className={`snap-center flex shrink-0 flex-col items-center justify-between py-2.5 px-2 rounded-2xl border-2 transition-all duration-200 focus:outline-none cursor-pointer ${
                   isSelected 
-                    ? 'border-teal-700 bg-teal-700 text-white shadow-lg shadow-teal-900/20 scale-105 z-10' 
+                    ? 'border-teal-700 bg-teal-700 text-white shadow-md shadow-teal-900/20 ring-2 ring-teal-600 ring-offset-2 ring-offset-white z-10' 
                     : isFull
                       ? 'border-slate-200 bg-slate-100/70 text-slate-400 opacity-60 hover:opacity-90 hover:border-slate-300'
                       : 'border-slate-200/90 bg-white text-slate-700 hover:border-teal-500 hover:bg-teal-50/50'

@@ -114,26 +114,27 @@ export default function RescheduleModal({ isOpen, appointmentId, serviceId, veri
         
         <div className="p-5 overflow-y-auto min-h-0">
           <div className="space-y-6">
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex gap-2 overflow-x-auto py-2 px-1 scrollbar-hide snap-x scroll-smooth">
               {nextDays.map(date => {
                 const isSelected = format(date, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd');
+                const isToday = format(date, 'yyyy-MM-dd') === format(startOfToday(), 'yyyy-MM-dd');
+                const isTomorrow = format(date, 'yyyy-MM-dd') === format(addDays(startOfToday(), 1), 'yyyy-MM-dd');
                 const dayOfWeek = format(date, 'EEEE', { locale: vi });
-                let shortDay = dayOfWeek.replace('thứ ', 'T').toUpperCase();
-                if (dayOfWeek === 'chủ nhật') shortDay = 'CN';
+                let shortDay = isToday ? 'Hôm nay' : isTomorrow ? 'Ngày mai' : dayOfWeek.toLowerCase() === 'chủ nhật' ? 'CN' : dayOfWeek.replace(/thứ\s+/i, 'T');
 
                 return (
                   <button
                     key={date.toISOString()}
                     type="button"
                     onClick={() => setSelectedDate(date)}
-                    className={`shrink-0 w-[4.5rem] py-2 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                    className={`shrink-0 w-[4.75rem] py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all snap-start cursor-pointer ${
                       isSelected 
-                        ? 'border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500' 
-                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-500/40 font-bold shadow-xs' 
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
-                    <span className="text-[10px] font-medium uppercase">{shortDay}</span>
-                    <span className={`text-lg font-bold ${isSelected ? 'text-amber-700' : 'text-slate-700'}`}>
+                    <span className="text-[10px] font-semibold truncate w-full text-center">{shortDay}</span>
+                    <span className={`text-base font-bold ${isSelected ? 'text-amber-800' : 'text-slate-800'}`}>
                       {format(date, 'dd/MM')}
                     </span>
                   </button>

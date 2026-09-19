@@ -41,7 +41,7 @@ export async function getTelegramBotUsername(): Promise<string> {
 export async function reloadBotConfig(token?: string, chatId?: string, username?: string) {
   if (bot) {
     try {
-      bot.stopPolling();
+      await bot.stopPolling();
     } catch (e) {}
     bot = null;
   }
@@ -55,16 +55,53 @@ export async function reloadBotConfig(token?: string, chatId?: string, username?
 
   if (finalToken) {
     try {
-      bot = new TelegramBot(finalToken, { polling: true });
-      console.log("Telegram Bot started. Polling enabled.");
+      bot = new TelegramBot(finalToken, {
+        polling: {
+          interval: 1000,
+          autoStart: true,
+          params: {
+            timeout: 10
+          }
+        }
+      });
+      console.log("[Telegram] Bot initialized. Polling listener active.");
+
+      bot.on('error', (error: any) => {
+        const errorMsg = error?.message || String(error || '');
+        console.warn('⚠️ [Telegram] Bot network notice:', errorMsg.slice(0, 120));
+      });
 
       bot.on('polling_error', (error: any) => {
-        if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-          console.warn('⚠️ [Telegram] Polling conflict (409). Another instance of this bot is already running. Stopping polling on this instance to prevent crashes.');
-          bot.stopPolling();
-        } else {
-          console.error('[Telegram] Polling error:', error);
+        const errorMsg = error?.message || (typeof error === 'string' ? error : JSON.stringify(error || ''));
+        const errorCode = error?.code || '';
+
+        // Conflict 409 (another instance polling with same bot token)
+        if ((errorCode === 'ETELEGRAM' || error?.response?.statusCode === 409) && errorMsg.includes('409 Conflict')) {
+          console.warn('⚠️ [Telegram] Polling conflict (409). Another instance of this bot is already running. Stopping polling on this instance.');
+          try {
+            bot?.stopPolling();
+          } catch (e) {}
+          return;
         }
+
+        // Handle transient network resets and socket timeouts gracefully (common in cloud proxy environments)
+        const isTransientNetwork =
+          errorCode === 'EFATAL' ||
+          errorCode === 'ECONNRESET' ||
+          errorCode === 'ETIMEDOUT' ||
+          errorCode === 'ESOCKETTIMEDOUT' ||
+          errorCode === 'ECONNABORTED' ||
+          errorCode === 'EAI_AGAIN' ||
+          errorCode === 'ENOTFOUND' ||
+          /ECONNRESET|socket hang up|ETIMEDOUT|ESOCKETTIMEDOUT|ECONNABORTED|EAI_AGAIN|EFATAL/i.test(errorMsg);
+
+        if (isTransientNetwork) {
+          // node-telegram-bot-api automatically recovers and retries on the next poll interval
+          console.warn(`⚠️ [Telegram] Polling network reset (${errorCode || 'transient'}): ${errorMsg.slice(0, 120)}. Auto-retrying.`);
+          return;
+        }
+
+        console.warn('⚠️ [Telegram] Polling warning:', errorMsg);
       });
 
       // Try to fetch bot username if not set

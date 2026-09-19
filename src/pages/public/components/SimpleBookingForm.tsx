@@ -5,9 +5,13 @@ import { toast } from 'react-hot-toast';
 import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { 
-  Stethoscope, Calendar as CalendarIcon, Clock, User, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck
+  Stethoscope, Calendar as CalendarIcon, Clock, User, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
+  ChevronLeft, ChevronRight, CalendarDays
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+
+const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
 interface Service {
   id: string;
@@ -62,7 +66,18 @@ export default function SimpleBookingForm() {
   const setStepStore = useBookingStore(s => s.setStep);
   const setAppointmentSuccess = useBookingStore(s => s.setAppointmentSuccess);
   
-  const nextDays = Array.from({ length: 7 }).map((_, i) => addDays(startOfToday(), i));
+  const nextDays = Array.from({ length: 14 }).map((_, i) => addDays(startOfToday(), i));
+  const dateScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScrollDates = (direction: 'left' | 'right') => {
+    if (dateScrollRef.current) {
+      const scrollAmount = 260;
+      dateScrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   useEffect(() => {
     // 1. Fetch Services
@@ -280,7 +295,7 @@ export default function SimpleBookingForm() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur-xl p-6 sm:p-10 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 ring-1 ring-slate-900/5 relative overflow-hidden">
+      <form onSubmit={handleSubmit} className="bg-white/90 backdrop-blur-xl p-4 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 ring-1 ring-slate-900/5 relative">
         
         {/* Step 1: Chọn dịch vụ */}
         <div className="space-y-6">
@@ -342,33 +357,81 @@ export default function SimpleBookingForm() {
             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Chọn thời gian</h3>
           </div>
           
-          <div className="space-y-6">
+          <div className="space-y-5">
+            {/* Timeline Ribbon Header with Month & Scroll Navigation */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-teal-600" />
+                <span className="text-xs sm:text-sm font-bold text-slate-800">
+                  Tháng {format(selectedDate, 'MM/yyyy')}
+                </span>
+                {format(selectedDate, 'yyyy-MM-dd') === format(startOfToday(), 'yyyy-MM-dd') && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                    Hôm nay
+                  </span>
+                )}
+              </div>
+
+              {/* Scroll controls */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleScrollDates('left')}
+                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer"
+                  title="Xem ngày trước"
+                  aria-label="Xem ngày trước"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScrollDates('right')}
+                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer"
+                  title="Xem ngày tiếp theo"
+                  aria-label="Xem ngày tiếp theo"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
             {/* Horizontal Scroll for Dates */}
-            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6 sm:mx-0 sm:px-0">
+            <div 
+              ref={dateScrollRef}
+              className="flex gap-2.5 sm:gap-3 overflow-x-auto py-2.5 px-2 -mx-2 sm:mx-0 sm:px-1 scrollbar-hide snap-x snap-mandatory scroll-smooth touch-pan-x"
+            >
               {nextDays.map(date => {
                 const isSelected = format(date, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd');
-                const dayOfWeek = format(date, 'EEEE', { locale: vi });
-                let shortDay = dayOfWeek.replace('thứ ', 'T').toUpperCase();
-                if (dayOfWeek === 'chủ nhật') shortDay = 'CN';
+                const isToday = format(date, 'yyyy-MM-dd') === format(startOfToday(), 'yyyy-MM-dd');
+                const isTomorrow = format(date, 'yyyy-MM-dd') === format(addDays(startOfToday(), 1), 'yyyy-MM-dd');
+                const dayLabel = isToday ? 'Hôm nay' : isTomorrow ? 'Ngày mai' : VIETNAMESE_DAYS[date.getDay()];
 
                 return (
                   <button
                     key={date.toISOString()}
                     type="button"
                     onClick={() => { setSelectedDate(date); setSelectedSlot(null); }}
-                    className={`flex-shrink-0 flex flex-col items-center justify-center w-[76px] h-[92px] sm:w-[84px] sm:h-[100px] rounded-[1.25rem] outline-none transition-all duration-300 relative overflow-hidden ${
+                    className={`snap-start flex-shrink-0 flex flex-col items-center justify-between w-[76px] sm:w-[84px] h-[98px] sm:h-[104px] p-2 sm:p-2.5 rounded-2xl outline-none transition-all duration-200 cursor-pointer select-none ${
                       isSelected 
-                        ? 'bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg shadow-teal-500/30 ring-2 ring-offset-2 ring-teal-500 scale-105' 
-                        : 'bg-slate-50 border border-slate-200 text-slate-500 hover:border-teal-300 hover:bg-white hover:shadow-sm hover:-translate-y-0.5'
+                        ? 'bg-teal-600 text-white shadow-md shadow-teal-600/25 ring-2 ring-teal-500 ring-offset-2 ring-offset-white' 
+                        : 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400 hover:bg-teal-50/30 hover:shadow-2xs active:bg-slate-100'
                     }`}
                   >
-                    <span className={`text-[11px] sm:text-xs font-bold mb-1.5 uppercase tracking-wider ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
-                      {shortDay}
+                    <span className={`text-[10px] sm:text-[11px] font-bold px-1.5 py-0.5 rounded-md leading-tight text-center truncate w-full ${
+                      isSelected 
+                        ? 'bg-white/20 text-white' 
+                        : isToday 
+                          ? 'bg-teal-50 text-teal-700 font-extrabold' 
+                          : 'text-slate-500'
+                    }`}>
+                      {dayLabel}
                     </span>
-                    <span className={`text-2xl sm:text-3xl font-black ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+
+                    <span className={`text-2xl sm:text-3xl font-black leading-none my-0.5 ${isSelected ? 'text-white' : 'text-slate-800'}`}>
                       {format(date, 'dd')}
                     </span>
-                    <span className={`text-[10px] mt-1 font-medium ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
+
+                    <span className={`text-[10px] sm:text-[11px] font-medium ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
                       Tháng {format(date, 'MM')}
                     </span>
                   </button>
@@ -376,42 +439,92 @@ export default function SimpleBookingForm() {
               })}
             </div>
 
+            {/* Selected Date Summary Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-600">
+              <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                <CalendarIcon className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                <span>{VIETNAMESE_FULL_DAYS[selectedDate.getDay()]}, ngày {format(selectedDate, 'dd/MM/yyyy')}</span>
+              </div>
+              <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+                slots.filter(s => s.isAvailable).length > 0
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+              }`}>
+                {loadingSlots ? 'Đang kiểm tra lịch...' : slots.filter(s => s.isAvailable).length > 0 ? `Còn ${slots.filter(s => s.isAvailable).length} giờ trống` : 'Hết ca khám'}
+              </span>
+            </div>
+
             {/* Time Slots Grid */}
-            <div className="bg-slate-50/50 p-4 sm:p-6 rounded-2xl sm:rounded-[1.5rem] border border-slate-100">
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                {loadingSlots ? (
-                  <div className="col-span-full py-8 text-center text-sm text-slate-400 flex flex-col items-center gap-3">
-                    <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
-                    Đang tải lịch trống...
-                  </div>
-                ) : slots.length > 0 ? (
-                  slots.filter(s => s.isAvailable).map(slot => {
-                    const isSelected = selectedSlot?.startAt === slot.startAt;
-                    return (
-                      <button
-                        key={slot.startAt}
-                        type="button"
-                        onClick={() => setSelectedSlot(slot)}
-                        className={`py-3 px-2 text-sm sm:text-base font-bold rounded-xl border outline-none transition-all duration-300 flex items-center justify-center gap-2 ${
-                          isSelected
-                            ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-500/20 scale-[1.02]'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:text-teal-700 hover:shadow-sm'
-                        }`}
-                      >
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {format(parseISO(slot.startAt), 'HH:mm')}
-                      </button>
-                    )
-                  })
-                ) : (
-                  <div className="col-span-full py-10 text-center flex flex-col items-center justify-center gap-2">
-                    <CalendarCheck className="w-10 h-10 text-slate-300" />
-                    <span className="text-sm font-medium text-slate-500">
-                      Rất tiếc, không còn lịch trống trong ngày này
+            <div className="bg-slate-50/70 p-4 sm:p-6 rounded-2xl sm:rounded-[1.5rem] border border-slate-200/80">
+              {loadingSlots ? (
+                <div className="py-10 text-center text-sm text-slate-400 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-7 h-7 animate-spin text-teal-600" />
+                  <span className="font-medium text-slate-600">Đang tìm các khung giờ tiếp nhận còn trống...</span>
+                </div>
+              ) : slots.filter(s => s.isAvailable).length > 0 ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-500 font-semibold uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5 text-slate-700">
+                      <Clock className="w-3.5 h-3.5 text-teal-600" /> Khung giờ khám còn nhận
+                    </span>
+                    <span className="text-[11px] font-normal lowercase text-slate-400">
+                      {slots.filter(s => s.isAvailable).length} khung giờ khả dụng
                     </span>
                   </div>
-                )}
-              </div>
+
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-3">
+                    {slots.filter(s => s.isAvailable).map(slot => {
+                      const isSelected = selectedSlot?.startAt === slot.startAt;
+                      return (
+                        <button
+                          key={slot.startAt}
+                          type="button"
+                          onClick={() => setSelectedSlot(slot)}
+                          className={`min-h-[46px] py-2.5 px-2 text-sm sm:text-base font-bold rounded-xl border outline-none transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20 ring-2 ring-teal-500 ring-offset-1'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50/40 shadow-2xs'
+                          }`}
+                        >
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />}
+                          <span>{format(parseISO(slot.startAt), 'HH:mm')}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-8 px-4 text-center flex flex-col items-center justify-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <CalendarCheck className="w-6 h-6" />
+                  </div>
+                  <div className="max-w-md space-y-1">
+                    <p className="text-sm font-bold text-slate-800">
+                      Không còn khung giờ trống vào ngày {format(selectedDate, 'dd/MM/yyyy')}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Các bác sĩ đã kín lịch hoặc ngày này đã qua giờ tiếp nhận trực tuyến.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIndex = nextDays.findIndex(d => format(d, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd'));
+                      if (nextIndex >= 0 && nextIndex < nextDays.length - 1) {
+                        setSelectedDate(nextDays[nextIndex + 1]);
+                        setSelectedSlot(null);
+                      } else {
+                        setSelectedDate(addDays(selectedDate, 1));
+                        setSelectedSlot(null);
+                      }
+                    }}
+                    className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs sm:text-sm font-semibold rounded-xl border border-teal-200 transition-colors cursor-pointer"
+                  >
+                    <span>Xem ngày tiếp theo ({format(addDays(selectedDate, 1), 'dd/MM')})</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

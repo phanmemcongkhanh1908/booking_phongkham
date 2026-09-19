@@ -22,6 +22,8 @@ import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../../../services/api';
+import { auth } from '../../../lib/firebase';
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 
 const DEFAULT_QUICK_TAGS = [
   'Đang đau nhức / Ê buốt',

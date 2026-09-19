@@ -29,6 +29,7 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
   const [permissionState, setPermissionState] = useState<NotificationPermission | 'unknown'>('unknown');
   const [isInIframe, setIsInIframe] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
 
   useEffect(() => {
     // Check if running inside iframe
@@ -126,6 +127,24 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
     }
   };
 
+  const handleSendTestPush = async () => {
+    if (!phone) {
+      toast.error('Vui lòng cung cấp số điện thoại');
+      return;
+    }
+    setTestLoading(true);
+    try {
+      const res = await api.post('/push/test', { phone });
+      if (res.data.success) {
+        toast.success('Đã gửi thông báo thử nghiệm! Vui lòng kiểm tra thanh thông báo.', { icon: '🔔' });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Không thể gửi thông báo thử nghiệm');
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   if (!isSupported) return null;
 
   return (
@@ -146,7 +165,7 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
             </div>
             <p className="text-xs text-blue-700 mt-0.5">
               {isSubscribed 
-                ? 'Thiết bị này sẽ nhận thông báo đẩy trước giờ khám.' 
+                ? 'Thiết bị này sẽ nhận thông báo đẩy trước giờ khám & khi đổi trạng thái.' 
                 : 'Bật thông báo để không quên lịch hẹn của bạn.'}
             </p>
           </div>
@@ -175,8 +194,20 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
               )}
             </button>
           ) : (
-            <div className="shrink-0 px-3 py-1.5 bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-lg flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5" /> Đã bật
+            <div className="flex items-center gap-2">
+              <div className="shrink-0 px-3 py-1.5 bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-lg flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" /> Đã bật
+              </div>
+              <button
+                type="button"
+                onClick={handleSendTestPush}
+                disabled={testLoading}
+                className="shrink-0 px-2.5 py-1.5 bg-white border border-blue-200 hover:bg-blue-50 text-blue-700 text-[11px] font-semibold rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                title="Gửi thử một thông báo đẩy đến thiết bị này"
+              >
+                <RefreshCw className={`w-3 h-3 ${testLoading ? 'animate-spin text-blue-600' : ''}`} />
+                Thử thông báo
+              </button>
             </div>
           )}
         </div>

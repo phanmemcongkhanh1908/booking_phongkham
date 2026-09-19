@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
-import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
 import { toast } from 'react-hot-toast';
 import RescheduleModal from './components/RescheduleModal';
+import { PushNotificationPrompt } from './components/PushNotificationPrompt';
+import AppointmentReviewModal from '../../components/AppointmentReviewModal';
+import ClinicReputationWidget from '../../components/ClinicReputationWidget';
 
 interface AppointmentData {
   id: string;
@@ -18,6 +21,10 @@ interface AppointmentData {
   providerName: string | null;
   patientName: string;
   cancelReason?: string | null;
+  rating?: number | null;
+  reviewComment?: string | null;
+  reviewTags?: string[] | null;
+  reviewedAt?: string | null;
 }
 
 export default function MyBooking() {
@@ -35,6 +42,23 @@ export default function MyBooking() {
   const [rescheduleData, setRescheduleData] = useState<{isOpen: boolean, appointmentId: string | null, serviceId: string | null}>({isOpen: false, appointmentId: null, serviceId: null});
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [reviewModalApt, setReviewModalApt] = useState<AppointmentData | null>(null);
+  
+  const handleReviewSuccess = (updatedData?: any) => {
+    if (!reviewModalApt) return;
+    setAppointments(prev => prev.map(a => {
+      if (a.id === reviewModalApt.id) {
+        return {
+          ...a,
+          rating: updatedData?.rating || reviewModalApt.rating || 5,
+          reviewComment: updatedData?.reviewComment !== undefined ? updatedData.reviewComment : reviewModalApt.reviewComment,
+          reviewTags: updatedData?.reviewTags || reviewModalApt.reviewTags,
+          reviewedAt: updatedData?.reviewedAt || new Date().toISOString()
+        };
+      }
+      return a;
+    }));
+  };
   
   const handleCancel = async (id: string) => {
     let phoneToUse = verifiedPhone;
@@ -223,6 +247,11 @@ export default function MyBooking() {
                 </button>
               </div>
             )}
+            
+            <PushNotificationPrompt phone={searchPhone || verifiedPhone} />
+
+            <ClinicReputationWidget variant="compact" />
+
             {appointments.map(apt => {
               const mappedStatus = STATUS_ALIASES[apt.status] || apt.status;
               const statusConfig = APPOINTMENT_STATUSES[mappedStatus as keyof typeof APPOINTMENT_STATUSES] || APPOINTMENT_STATUSES.PENDING;
@@ -283,6 +312,84 @@ export default function MyBooking() {
                             Đổi sang lịch khác ngay
                           </button>
                         </div>
+                      </div>
+                    )}
+                    {/* Đánh giá bằng sao khi hoàn tất ca khám */}
+                    {apt.status === 'COMPLETED' && (
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        {apt.rating ? (
+                          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/70 via-emerald-50/40 to-teal-50/40 border border-amber-200/80">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex text-amber-400">
+                                  {[1, 2, 3, 4, 5].map((s) => (
+                                    <Star
+                                      key={s}
+                                      className={`w-4 h-4 ${s <= apt.rating! ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`}
+                                    />
+                                  ))}
+                                </div>
+                                <span className="text-xs font-extrabold text-slate-800">
+                                  {apt.rating}/5 Sao
+                                </span>
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                                  ✓ Đã đánh giá
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setReviewModalApt(apt)}
+                                className="text-xs font-semibold text-teal-700 hover:text-teal-800 hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                Chỉnh sửa
+                              </button>
+                            </div>
+
+                            {apt.reviewTags && apt.reviewTags.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {apt.reviewTags.map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="text-[11px] bg-white border border-amber-200/60 text-slate-700 px-2 py-0.5 rounded-lg font-medium shadow-2xs"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {apt.reviewComment && (
+                              <p className="text-xs text-slate-600 mt-2 bg-white/80 p-2.5 rounded-xl border border-slate-200/60 italic leading-relaxed">
+                                "{apt.reviewComment}"
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50/80 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-600 flex items-center justify-center shrink-0 border border-amber-300/40">
+                                <Sparkles className="w-5 h-5 text-amber-500" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                  Bạn thấy ca khám thế nào?
+                                </h4>
+                                <p className="text-[11px] sm:text-xs text-slate-600 mt-0.5">
+                                  Đánh giá 1 phút để giúp nâng cao độ uy tín của nha khoa và giúp bệnh nhân khác tham khảo.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setReviewModalApt(apt)}
+                              className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 cursor-pointer"
+                            >
+                              <Star className="w-4 h-4 fill-white" />
+                              Đánh giá sao ngay
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
@@ -389,6 +496,14 @@ export default function MyBooking() {
         verifiedPhone={verifiedPhone}
         onClose={() => setRescheduleData({ isOpen: false, appointmentId: null, serviceId: null })}
         onSuccess={handleRescheduleSuccess}
+      />
+
+      <AppointmentReviewModal
+        isOpen={!!reviewModalApt}
+        onClose={() => setReviewModalApt(null)}
+        appointment={reviewModalApt}
+        phone={searchPhone || verifiedPhone}
+        onSuccess={handleReviewSuccess}
       />
     </div>
   );

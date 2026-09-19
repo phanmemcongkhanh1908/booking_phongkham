@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { safeFormatDate } from "../utils/dateFormat.js";
 import { sendPatientAppointmentEmail, AppointmentNotificationData } from "./email.js";
 import { getPatientContact } from "./patientContact.js";
-import { sendWebPush } from "./notification.js";
+import { sendWebPush, sendAppointmentStatusPush } from "./notification.js";
 import { getTelegramBotInstance } from "../core/telegram.js";
 
 export interface NotificationResult {
@@ -18,7 +18,7 @@ export interface NotificationResult {
 
 export async function notifyPatientAppointment(
   appointmentId: string,
-  event: "CREATED" | "CONFIRMED" | "CANCELLED",
+  event: "CREATED" | "CONFIRMED" | "CANCELLED" | "RESCHEDULED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "NO_SHOW" | string,
   cancelReason?: string
 ): Promise<NotificationResult> {
   const result: NotificationResult = {
@@ -100,7 +100,14 @@ export async function notifyPatientAppointment(
     // 1. Send EMAIL if email is available
     if (email) {
       try {
-        const emailSuccess = await sendPatientAppointmentEmail(event, notificationPayload);
+        const emailEvent = (event === "CANCELLED" || event === "CANCEL_CLINIC" || event === "CANCEL_PATIENT")
+          ? "CANCELLED"
+          : event === "CONFIRMED"
+          ? "CONFIRMED"
+          : event === "REMINDER"
+          ? "REMINDER"
+          : "CREATED";
+        const emailSuccess = await sendPatientAppointmentEmail(emailEvent as any, notificationPayload);
         result.emailSent = emailSuccess;
       } catch (err: any) {
         console.error("Error sending patient email:", err);
@@ -149,27 +156,12 @@ export async function notifyPatientAppointment(
       }
     }
 
-    // 3. Send WEB PUSH
-    if (apt.patientId) {
-      try {
-        const pushTitle = event === "CONFIRMED" 
-          ? "Lịch hẹn đã được xác nhận"
-          : event === "CREATED" 
-          ? "Đã tiếp nhận yêu cầu đặt lịch"
-          : "Lịch hẹn đã bị hủy";
-        
-        const timeStr = safeFormatDate(apt.startAt, "HH:mm dd/MM/yyyy");
-        const pushBody = event === "CANCELLED" && cancelReason ? `Khám ${apt.serviceName} vào lúc ${timeStr}. Lý do: ${cancelReason}` : `Khám ${apt.serviceName} vào lúc ${timeStr}`;
-
-        await sendWebPush(apt.patientId, {
-          title: pushTitle,
-          body: pushBody,
-          url: `/book`
-        });
-        result.webPushSent = true;
-      } catch (err: any) {
-        console.warn("Web Push error:", err);
-      }
+    // 3. Send WEB PUSH (VAPID)
+    try {
+      await sendAppointmentStatusPush(appointmentId, event, { cancelReason });
+      result.webPushSent = true;
+    } catch (err: any) {
+      console.warn("[WebPush] Lỗi gửi thông báo cho bệnh nhân:", err);
     }
 
   } catch (err: any) {
