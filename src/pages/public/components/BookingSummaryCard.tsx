@@ -34,7 +34,7 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
 
   const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;
 
-  const clinicName = clinicProfile?.clinicName || 'Dental Smart Clinic';
+  const clinicName = clinicProfile?.clinicName || clinicProfile?.name || 'Phòng khám Nha khoa';
   const doctorName = providerName || clinicProfile?.doctorName || 'Bác sĩ chuyên khoa';
   const phone = clinicProfile?.phone;
   const address = clinicProfile?.address;
@@ -81,6 +81,12 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
                 <p className="text-xs text-slate-300/80 italic mt-0.5 line-clamp-1">
                   “{slogan}”
                 </p>
+              )}
+              {clinicProfile?.doctorName && (
+                <div className="flex items-center gap-1.5 text-[11px] text-teal-200/90 pt-1 font-medium">
+                  <UserCheck className="w-3.5 h-3.5 text-teal-300 shrink-0" />
+                  <span>BS. Phụ trách: <strong className="text-white font-bold">{clinicProfile.doctorName}</strong></span>
+                </div>
               )}
             </div>
             

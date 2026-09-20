@@ -14,11 +14,11 @@ import {
   Phone, 
   User, 
   Clock, 
-  Sparkles,
-  ShieldCheck,
-  Stethoscope,
-  Share2,
-  CalendarPlus
+  Sparkles, 
+  ShieldCheck, 
+  Stethoscope, 
+  Share2, 
+  CalendarPlus 
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toPng } from "html-to-image";
@@ -27,6 +27,8 @@ import { format, addMinutes } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import api from '../../../services/api';
 import { useNavigate, useParams } from 'react-router-dom';
+import GoogleCalendarSyncCard from './GoogleCalendarSyncCard';
+import { buildGoogleCalendarUrl, CalendarAppointmentDetails } from '../../../utils/calendarSync';
 
 export default function SuccessView() {
   const store = useBookingStore();
@@ -57,10 +59,52 @@ export default function SuccessView() {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [botUsername, setBotUsername] = useState(telegramBotUsername || '');
 
-  const clinicName = clinicProfile?.clinicName || 'Dental Smart Clinic';
-  const doctorName = providerName || clinicProfile?.doctorName || 'Bác sĩ chuyên khoa';
+  // Resilient state if refreshed or navigated directly
+  const [resolvedStartAt, setResolvedStartAt] = useState<string | null>(slotStartTime);
+  const [resolvedEndAt, setResolvedEndAt] = useState<string | null>(store.slotEndTime);
+  const [resolvedServiceName, setResolvedServiceName] = useState<string>(serviceName || '');
+  const [resolvedDoctorName, setResolvedDoctorName] = useState<string>(providerName || '');
+
+  useEffect(() => {
+    if (appointmentId && (!slotStartTime || !serviceName)) {
+      api.get(`/public/appointments/${appointmentId}`).then(res => {
+        if (res.data?.success && res.data?.data) {
+          const apt = res.data.data;
+          if (apt.startAt) setResolvedStartAt(apt.startAt);
+          if (apt.endAt) setResolvedEndAt(apt.endAt);
+          if (apt.serviceName) setResolvedServiceName(apt.serviceName);
+          if (apt.providerName) setResolvedDoctorName(apt.providerName);
+        }
+      }).catch(console.error);
+    }
+  }, [appointmentId, slotStartTime, serviceName]);
+
+  const clinicName = clinicProfile?.clinicName || clinicProfile?.name || 'Phòng khám Nha khoa';
+  const rawDoctorName = resolvedDoctorName || providerName || clinicProfile?.doctorName || 'Bác sĩ chuyên khoa';
+  const doctorName = rawDoctorName.startsWith('Bs') || rawDoctorName.startsWith('BS')
+    ? rawDoctorName
+    : `BS. ${rawDoctorName}`;
   const phone = clinicProfile?.phone;
   const address = clinicProfile?.address;
+
+  const displayStartTime = resolvedStartAt || slotStartTime;
+  const displayEndTime = resolvedEndAt || store.slotEndTime;
+  const displayServiceName = resolvedServiceName || serviceName || 'Khám răng nha khoa';
+
+  // Structured appointment payload for Google Calendar sync
+  const calendarAppointmentDetails: CalendarAppointmentDetails = {
+    appointmentId: appointmentId || undefined,
+    serviceName: displayServiceName,
+    clinicName,
+    doctorName,
+    patientName: patientName || 'Quý khách',
+    patientPhone: patientPhone || '',
+    startAt: displayStartTime || '',
+    endAt: displayEndTime,
+    durationMinutes: serviceDuration || 45,
+    address: address || '',
+    phone: phone || '',
+  };
 
   useEffect(() => {
     if (!botUsername) {
@@ -112,23 +156,6 @@ export default function SuccessView() {
     }
   };
 
-  // Google Calendar Link generator
-  const getGoogleCalendarUrl = () => {
-    if (!slotStartTime) return '#';
-    const startDate = new Date(slotStartTime);
-    const endDate = addMinutes(startDate, serviceDuration || 45);
-
-    const formatCalDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
-    const dates = `${formatCalDate(startDate)}/${formatCalDate(endDate)}`;
-    const title = encodeURIComponent(`Khám răng: ${serviceName || 'Nha khoa'} - ${clinicName}`);
-    const details = encodeURIComponent(
-      `Lịch hẹn khám nha khoa tại ${clinicName}\nBác sĩ phụ trách: ${doctorName}\nBệnh nhân: ${patientName} (${patientPhone})\nMã hẹn: #${appointmentId?.slice(0, 8).toUpperCase()}`
-    );
-    const location = encodeURIComponent(address || clinicName);
-
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
-  };
-
   const telegramLink = botUsername && appointmentId 
     ? `https://t.me/${botUsername}?start=apt_${appointmentId}`
     : 'https://t.me';
@@ -165,14 +192,14 @@ export default function SuccessView() {
         {/* Quick Calendar Button */}
         <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
           <a
-            href={getGoogleCalendarUrl()}
+            href={buildGoogleCalendarUrl(calendarAppointmentDetails)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-800 font-bold text-xs transition-colors shadow-2xs"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs transition-colors border border-blue-200 shadow-2xs"
           >
-            <CalendarPlus className="w-4 h-4 text-teal-700" />
-            <span>Thêm vào Google Calendar</span>
-            <ExternalLink className="w-3 h-3 text-slate-400" />
+            <CalendarPlus className="w-4 h-4 text-blue-600" />
+            <span>Đồng bộ Google Calendar (1 chạm)</span>
+            <ExternalLink className="w-3 h-3 text-blue-400" />
           </a>
 
           {appointmentId && (
@@ -233,7 +260,7 @@ export default function SuccessView() {
                   <Stethoscope className="w-3 h-3 text-teal-600" />
                   Bác sĩ phụ trách
                 </span>
-                <p className="font-extrabold text-slate-900 text-base">BS. {doctorName}</p>
+                <p className="font-extrabold text-slate-900 text-base">{doctorName}</p>
                 <p className="text-xs text-teal-700 font-semibold">Khám & Điều trị trực tiếp</p>
               </div>
             </div>
@@ -245,7 +272,7 @@ export default function SuccessView() {
                   <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700">
                     Dịch vụ đã chọn
                   </span>
-                  <p className="font-bold text-slate-900 text-sm sm:text-base">{serviceName}</p>
+                  <p className="font-bold text-slate-900 text-sm sm:text-base">{displayServiceName}</p>
                   {serviceDuration && (
                     <p className="text-xs text-slate-500 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-slate-400" />
@@ -265,8 +292,8 @@ export default function SuccessView() {
                     Thời gian hẹn chính thức
                   </span>
                   <p className="font-extrabold text-white text-base sm:text-lg">
-                    {slotStartTime 
-                      ? format(new Date(slotStartTime), 'HH:mm - EEEE, dd/MM/yyyy', { locale: vi }) 
+                    {displayStartTime 
+                      ? format(new Date(displayStartTime), 'HH:mm - EEEE, dd/MM/yyyy', { locale: vi }) 
                       : 'Đang xác nhận'}
                   </p>
                 </div>
@@ -298,6 +325,9 @@ export default function SuccessView() {
           </div>
         </div>
       )}
+
+      {/* Google Calendar Personal Sync Card */}
+      <GoogleCalendarSyncCard appointment={calendarAppointmentDetails} />
 
       {/* Automated Notification Channels */}
       <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-md shadow-slate-200/30 space-y-4">

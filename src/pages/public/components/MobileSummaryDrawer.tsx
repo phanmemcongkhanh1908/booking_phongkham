@@ -35,7 +35,7 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
 
   const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;
 
-  const clinicName = clinicProfile?.clinicName || 'Dental Smart Clinic';
+  const clinicName = clinicProfile?.clinicName || clinicProfile?.name || 'Phòng khám Nha khoa';
   const doctorName = providerName || clinicProfile?.doctorName || 'Bác sĩ chuyên khoa';
   const phone = clinicProfile?.phone;
   const address = clinicProfile?.address;

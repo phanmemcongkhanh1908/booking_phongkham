@@ -63,8 +63,16 @@ export default function SimpleBookingForm() {
   const [activeSession, setActiveSession] = useState<{ token: string, startAt: string, endAt: string, expiresAt: number } | null>(null);
   
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
+  const clinicProfile = useBookingStore(s => s.clinicProfile);
   const setStepStore = useBookingStore(s => s.setStep);
   const setAppointmentSuccess = useBookingStore(s => s.setAppointmentSuccess);
+
+  const clinicDisplayName = clinicProfile?.clinicName || clinicProfile?.name || 'Đặt Lịch Khám Nha Khoa';
+  const doctorDisplayName = clinicProfile?.doctorName ? (
+    clinicProfile.doctorName.startsWith('Bs') || clinicProfile.doctorName.startsWith('BS')
+      ? clinicProfile.doctorName
+      : `BS. ${clinicProfile.doctorName}`
+  ) : null;
   
   const nextDays = Array.from({ length: 14 }).map((_, i) => addDays(startOfToday(), i));
   const dateScrollRef = useRef<HTMLDivElement>(null);
@@ -249,13 +257,21 @@ export default function SimpleBookingForm() {
           localStorage.setItem('verifiedPatient', JSON.stringify({ phone: formData.phone, fullName: formData.fullName }));
         }
 
+        const selectedServiceObj = services.find(s => s.id === selectedService);
         setAppointmentSuccess(
-          res.data.data.appointmentId,
+          appointmentData.appointmentId,
           formData.fullName,
           formData.phone,
-          res.data.data.patientEmail,
-          res.data.data.patientTelegramId,
-          res.data.data.telegramBotUsername
+          appointmentData.patientEmail,
+          appointmentData.patientTelegramId,
+          appointmentData.telegramBotUsername,
+          {
+            serviceName: appointmentData.serviceName || selectedServiceObj?.name || 'Khám răng nha khoa',
+            serviceDuration: selectedServiceObj?.durationMins || 45,
+            slotStartTime: appointmentData.startAt || selectedSlot?.startAt,
+            slotEndTime: appointmentData.endAt || selectedSlot?.endAt,
+            providerName: appointmentData.providerName || null,
+          }
         );
         setStepStore(5);
         navigate(`${basePath}/hoan-tat`);
@@ -289,9 +305,14 @@ export default function SimpleBookingForm() {
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-50 border border-teal-100 text-teal-700 font-semibold text-sm mb-2 shadow-sm">
           <Sparkles className="w-4 h-4" /> Dịch vụ Đặt hẹn Nhanh
         </div>
-        <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-800 tracking-tight">Đặt Lịch Khám Nha Khoa</h2>
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-800 tracking-tight">{clinicDisplayName}</h2>
+        {doctorDisplayName && (
+          <p className="text-sm font-bold text-teal-800">
+            Bác sĩ phụ trách: <span className="font-extrabold text-teal-950">{doctorDisplayName}</span>
+          </p>
+        )}
         <p className="text-base sm:text-lg text-slate-500 font-medium max-w-xl mx-auto">
-          Hoàn tất thủ tục đặt lịch nhanh chóng, tiện lợi chỉ với vài thao tác cơ bản.
+          {clinicProfile?.slogan || 'Hoàn tất thủ tục đặt lịch nhanh chóng, tiện lợi chỉ với vài thao tác cơ bản.'}
         </p>
       </div>
 

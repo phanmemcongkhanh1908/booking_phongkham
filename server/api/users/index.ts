@@ -199,6 +199,16 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
         key: 'clinic_profile',
         value: basicSettings
       });
+
+      // Synchronize clinic document to Firestore based on slug
+      if (slug) {
+        const { syncClinicToFirestore } = await import('../../services/clinicFirestoreService.js');
+        syncClinicToFirestore(slug, {
+          ...basicSettings,
+          tenantId: newTenantId,
+          slug,
+        }).catch((err) => console.warn("[Firestore] syncClinicToFirestore failed:", err));
+      }
     } catch(e) {
       console.log("Error creating default settings:", e);
     }
@@ -321,6 +331,16 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
           key: 'clinic_profile',
           value: clinicProfileData
         });
+
+        const effectiveSlug = slug || updatedUser.slug;
+        if (effectiveSlug) {
+          const { syncClinicToFirestore } = await import('../../services/clinicFirestoreService.js');
+          syncClinicToFirestore(effectiveSlug, {
+            ...clinicProfileData,
+            tenantId: effectiveTenantId,
+            slug: effectiveSlug,
+          }).catch((err) => console.warn("[Firestore] syncClinicToFirestore on user update failed:", err));
+        }
       } catch (err) {
         console.warn("[Users API] Could not update clinicProfile in settings:", err);
       }

@@ -10,6 +10,7 @@ import RescheduleModal from './components/RescheduleModal';
 import { PushNotificationPrompt } from './components/PushNotificationPrompt';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import ClinicReputationWidget from '../../components/ClinicReputationWidget';
+import GoogleCalendarSyncCard from './components/GoogleCalendarSyncCard';
 
 interface AppointmentData {
   id: string;
@@ -395,23 +396,36 @@ export default function MyBooking() {
                   </CardContent>
 
                   {(apt.status === 'REQUESTED' || apt.status === 'PENDING' || apt.status === 'CONFIRMED') && (
-                    <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-xl">
-                      <button 
-                        disabled={actionLoading === apt.id}
-                        onClick={() => setConfirmCancelId(apt.id)}
-                        className="min-h-[40px] px-4 py-2 text-xs font-semibold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        {actionLoading === apt.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                        Hủy lịch
-                      </button>
-                      <button 
-                        disabled={actionLoading === apt.id}
-                        onClick={() => setRescheduleData({ isOpen: true, appointmentId: apt.id, serviceId: apt.serviceId })}
-                        className="min-h-[40px] px-4 py-2 text-xs font-semibold text-teal-600 bg-white border border-teal-200 hover:bg-teal-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        Dời lịch
-                      </button>
+                    <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-xl">
+                      <GoogleCalendarSyncCard
+                        variant="compact"
+                        appointment={{
+                          appointmentId: apt.id,
+                          serviceName: apt.serviceName,
+                          doctorName: apt.providerName || undefined,
+                          patientName: apt.patientName,
+                          startAt: apt.startAt,
+                          endAt: apt.endAt,
+                        }}
+                      />
+                      <div className="flex items-center justify-end gap-2.5 shrink-0">
+                        <button 
+                          disabled={actionLoading === apt.id}
+                          onClick={() => setConfirmCancelId(apt.id)}
+                          className="min-h-[38px] px-3.5 py-2 text-xs font-semibold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {actionLoading === apt.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                          Hủy lịch
+                        </button>
+                        <button 
+                          disabled={actionLoading === apt.id}
+                          onClick={() => setRescheduleData({ isOpen: true, appointmentId: apt.id, serviceId: apt.serviceId })}
+                          className="min-h-[38px] px-3.5 py-2 text-xs font-semibold text-teal-600 bg-white border border-teal-200 hover:bg-teal-50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                          Dời lịch
+                        </button>
+                      </div>
                     </div>
                   )}
                 </Card>

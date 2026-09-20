@@ -44,11 +44,15 @@ interface BookingState {
   } | null;
   clinicProfile: {
     clinicName?: string;
+    name?: string;
     doctorName?: string;
     address?: string;
     phone?: string;
+    hotline?: string;
     workingHours?: string;
+    workingHoursStr?: string;
     slogan?: string;
+    slug?: string;
   } | null;
   bookingFormConfig: {
     uiVersion?: 'full' | 'simple';
@@ -61,6 +65,7 @@ interface BookingState {
   setStep: (step: number) => void;
   setService: (id: string, name: string, price?: number | null, duration?: number | null, isFree?: boolean | null, showPrice?: boolean | null) => void;
   clearHold: () => void;
+  setSelectedSlot: (start: string, end: string) => void;
   setDateTimeSlot: (date: string, providerId: string | null, token: string, start: string, end: string, expiresAt: number, providerName?: string | null) => void;
   setPatientDraft: (draft: Partial<PatientDraft>) => void;
   setClinicProfile: (profile: any) => void;
@@ -72,7 +77,14 @@ interface BookingState {
     phone: string, 
     email?: string | null, 
     telegramId?: string | null,
-    botUsername?: string | null
+    botUsername?: string | null,
+    extra?: {
+      serviceName?: string;
+      serviceDuration?: number;
+      slotStartTime?: string;
+      slotEndTime?: string;
+      providerName?: string;
+    }
   ) => void;
   reset: () => void;
 }
@@ -128,6 +140,11 @@ export const useBookingStore = create<BookingState>()(
         holdExpiresAt: null,
       }),
 
+      setSelectedSlot: (start, end) => set({
+        slotStartTime: start,
+        slotEndTime: end,
+      }),
+
       setService: (id, name, price = null, duration = null, isFree = null, showPrice = null) => {
         const currentServiceId = get().serviceId;
         const isDifferent = currentServiceId !== id;
@@ -167,15 +184,22 @@ export const useBookingStore = create<BookingState>()(
         }
       })),
 
-      setAppointmentSuccess: (id, name, phone, email = null, telegramId = null, botUsername = null) => set({
+      setAppointmentSuccess: (id, name, phone, email = null, telegramId = null, botUsername = null, extra) => set((state) => ({
         appointmentId: id,
         patientName: name,
         patientPhone: phone,
         patientEmail: email,
         patientTelegramId: telegramId,
         telegramBotUsername: botUsername,
-        step: 5
-      }),
+        step: 5,
+        sessionToken: null,
+        holdExpiresAt: null,
+        ...(extra?.serviceName ? { serviceName: extra.serviceName } : {}),
+        ...(extra?.serviceDuration ? { serviceDuration: extra.serviceDuration } : {}),
+        ...(extra?.slotStartTime ? { slotStartTime: extra.slotStartTime } : {}),
+        ...(extra?.slotEndTime ? { slotEndTime: extra.slotEndTime } : {}),
+        ...(extra?.providerName ? { providerName: extra.providerName } : {}),
+      })),
 
       reset: () => set({
         tenantId: null,

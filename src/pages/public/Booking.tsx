@@ -8,7 +8,8 @@ import {
   Phone, 
   ShieldCheck, 
   ChevronRight, 
-  Sparkles 
+  Sparkles,
+  UserCheck
 } from 'lucide-react';
 import api from '../../services/api';
 import ServiceSelection from './components/ServiceSelection';
@@ -24,12 +25,13 @@ const SuccessView = React.lazy(() => import('./components/SuccessView'));
 
 export default function Booking() {
   const navigate = useNavigate();
-  const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const { slug: routeSlug } = useParams();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
+  const querySlug = searchParams.get('slug') || searchParams.get('clinic') || searchParams.get('s');
+  const slug = (routeSlug || querySlug || '').trim();
+  const basePath = slug ? `/booking/${slug}` : '/book';
   const isCompact = searchParams.get('compact') === 'true' || window.self !== window.top;
-
 
   const clinicProfile = useBookingStore(s => s.clinicProfile);
   const setClinicProfile = useBookingStore(s => s.setClinicProfile);
@@ -58,10 +60,13 @@ export default function Booking() {
   const setTenantId = useBookingStore(s => s.setTenantId);
 
   useEffect(() => {
-    // Tải cấu hình thông tin phòng khám & hồ sơ tiếp đón
-    const endpoint = slug ? `/public/clinic-info/${slug}` : '/public/clinic-info';
+    let isCancelled = false;
+
+    // 1. Tải cấu hình qua API backend (tìm kiếm document Firestore và CSDL dựa trên slug)
+    const endpoint = slug ? `/public/clinic-info/${encodeURIComponent(slug)}` : '/public/clinic-info';
     api.get(endpoint)
       .then(res => {
+        if (isCancelled) return;
         if (res.data?.data?.clinicProfile) {
           setClinicProfile(res.data.data.clinicProfile);
         }
@@ -76,6 +81,10 @@ export default function Booking() {
         }
       })
       .catch(console.error);
+
+    return () => {
+      isCancelled = true;
+    };
   }, [slug, setClinicProfile, setBookingFormConfig, setAnnouncementBanner, setTenantId]);
 
   useEffect(() => {
@@ -90,21 +99,22 @@ export default function Booking() {
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone) && currentPath !== 'thong-tin') {
       navigate(`${basePath}/thong-tin`, { replace: true });
     }
-  }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion]);
+  }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion, basePath]);
 
-  const hasCustomClinic = Boolean(
-    clinicProfile?.clinicName && 
-    clinicProfile.clinicName.trim() &&
-    clinicProfile.clinicName.trim().toLowerCase() !== 'dental smart'
-  );
-
-  const clinicDisplayName = hasCustomClinic && clinicProfile?.clinicName 
-    ? clinicProfile.clinicName 
-    : 'Dental Smart Clinic';
+  const clinicDisplayName = clinicProfile?.clinicName || clinicProfile?.name || 'Dental Smart Clinic';
+  const doctorDisplayName = clinicProfile?.doctorName ? (
+    clinicProfile.doctorName.startsWith('Bs') || clinicProfile.doctorName.startsWith('BS')
+      ? clinicProfile.doctorName
+      : `BS. ${clinicProfile.doctorName}`
+  ) : null;
 
   useEffect(() => {
-    document.title = `${clinicDisplayName} - Đặt lịch khám trực tuyến`;
-  }, [clinicDisplayName]);
+    if (doctorDisplayName) {
+      document.title = `${clinicDisplayName} - ${doctorDisplayName} | Đặt lịch khám trực tuyến`;
+    } else {
+      document.title = `${clinicDisplayName} - Đặt lịch khám trực tuyến`;
+    }
+  }, [clinicDisplayName, doctorDisplayName]);
 
   // Navigate to step if valid
   const handleStepClick = (targetStep: number) => {
@@ -135,7 +145,7 @@ export default function Booking() {
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-sm sm:text-xl font-black text-slate-900 tracking-tight truncate">
                   {clinicDisplayName}
                 </h1>
@@ -143,6 +153,12 @@ export default function Booking() {
                   <ShieldCheck className="w-3 h-3 text-teal-600" />
                   Y Tế Chuẩn Hóa
                 </span>
+                {doctorDisplayName && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Bác sĩ phụ trách: <strong className="font-extrabold text-emerald-950">{doctorDisplayName}</strong></span>
+                  </span>
+                )}
               </div>
               
               {clinicProfile?.slogan ? (

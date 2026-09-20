@@ -363,6 +363,7 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
     notifyPatientAppointment(bookingResult.id, notificationEvent).catch(console.error);
 
     // Emit real-time BOOKING_CREATED event for the Admin Dashboard
+    let aptDetailPayload: any = null;
     try {
       const { realtimeNotification } = await import("../../services/realtimeNotification.js");
       const { generateVietnameseAnnouncement } = await import("../../services/tts/announcement.js");
@@ -388,6 +389,7 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
 
       if (fullApt.length > 0) {
         const payload = fullApt[0] as any;
+        aptDetailPayload = payload;
         try {
           const text = generateVietnameseAnnouncement(payload);
           const audioUrl = await generateAudio(text);
@@ -411,6 +413,10 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       data: {
         appointmentId: bookingResult.id,
         status: bookingResult.status,
+        startAt: bookingResult.startAt,
+        endAt: bookingResult.endAt,
+        serviceName: aptDetailPayload?.serviceName || null,
+        providerName: aptDetailPayload?.providerName || null,
         patientEmail: data.email || null,
         patientTelegramId: data.telegramId || null,
         telegramBotUsername: botUsername,
@@ -633,132 +639,142 @@ publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
   }
 });
 
-// Public endpoint lấy thông tin cơ bản phòng khám & bot username
+// Public endpoint lấy thông tin cơ bản phòng khám & bot username theo slug hoặc mặc định
 publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) => {
   try {
-    const slug = req.params.slug;
+    const rawSlug = req.params.slug || (req.query.slug as string) || (req.query.clinic as string) || (req.query.s as string) || "";
+    const slug = rawSlug.trim();
     let targetTenantId: string | undefined = undefined;
 
     const { settings, users } = await import("../../db/schema.js");
-    
-    let matchedUser: any = null;
+    const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+
+    let clinicProfile: any = null;
+    let bookingFormConfig: any = null;
+    let announcementBanner: any = null;
 
     if (slug) {
-      await appContext.run({ isFullAdmin: true }, async () => {
-        const allUsers = await db.select().from(users);
-        matchedUser = allUsers.find(
-          (u: any) => (u.slug || "").trim().toLowerCase() === slug.trim().toLowerCase()
-        );
-        if (matchedUser) {
-          targetTenantId = matchedUser.tenantId || `tenant_${matchedUser.id}`;
-          if (!matchedUser.tenantId) {
-            await db.update(users).set({ tenantId: targetTenantId }).where(eq(users.id, matchedUser.id));
+      console.log(`[GET /clinic-info/:slug] Fetching clinic document for slug: "${slug}"`);
+      const matchedClinic = await findClinicBySlug(slug);
+
+      if (matchedClinic) {
+        targetTenantId = matchedClinic.tenantId;
+        clinicProfile = {
+          clinicName: matchedClinic.clinicName,
+          name: matchedClinic.clinicName,
+          doctorName: matchedClinic.doctorName || "",
+          slogan: matchedClinic.slogan || "",
+          address: matchedClinic.address || "",
+          phone: matchedClinic.phone || matchedClinic.hotline || "",
+          hotline: matchedClinic.hotline || matchedClinic.phone || "",
+          workingHours: matchedClinic.workingHours || matchedClinic.workingHoursStr || "",
+          workingHoursStr: matchedClinic.workingHoursStr || matchedClinic.workingHours || "",
+          slug: matchedClinic.slug || slug,
+          source: matchedClinic.source,
+        };
+
+        if (matchedClinic.bookingFormConfig) {
+          bookingFormConfig = matchedClinic.bookingFormConfig;
+        }
+        if (matchedClinic.announcementBanner) {
+          announcementBanner = matchedClinic.announcementBanner;
+        }
+      }
+    }
+
+    // If no slug or clinicProfile still not determined, query settings in current/target tenant context
+    if (!clinicProfile) {
+      await appContext.run({ tenantId: targetTenantId }, async () => {
+        let settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
+        if (settingRes.length === 0) {
+          settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
+        }
+        if (settingRes.length === 0) {
+          settingRes = await db.select().from(settings).where(eq(settings.key, "clinicProfile")).limit(1);
+        }
+        if (settingRes.length === 0) {
+          settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
+        }
+        if (settingRes.length > 0) {
+          clinicProfile = settingRes[0].value;
+          if (typeof clinicProfile === "string") {
+            try {
+              clinicProfile = JSON.parse(clinicProfile);
+            } catch (e) {}
           }
         }
       });
     }
 
-    let clinicProfile: any = null;
+    // Fill missing form config and banner if not already set
+    if (!bookingFormConfig || !announcementBanner) {
+      await appContext.run({ tenantId: targetTenantId }, async () => {
+        if (!bookingFormConfig) {
+          let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);
+          if (formConfigRes.length === 0) {
+            formConfigRes = await db.select().from(settings).where(eq(settings.key, "bookingFormConfig")).limit(1);
+          }
+          if (formConfigRes.length > 0) {
+            bookingFormConfig = formConfigRes[0].value;
+            if (typeof bookingFormConfig === "string") {
+              try {
+                bookingFormConfig = JSON.parse(bookingFormConfig);
+              } catch (e) {}
+            }
+          }
+        }
 
-    await appContext.run({ tenantId: targetTenantId }, async () => {
-      let settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-      if (settingRes.length === 0) {
-        settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
-      }
-      if (settingRes.length === 0) {
-        settingRes = await db.select().from(settings).where(eq(settings.key, "clinicProfile")).limit(1);
-      }
-      if (settingRes.length === 0) {
-        settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
-      }
-      if (settingRes.length > 0) {
-        clinicProfile = settingRes[0].value;
-        if (typeof clinicProfile === "string") {
-          try {
-            clinicProfile = JSON.parse(clinicProfile);
-          } catch (e) {}
-        }
-      }
-
-      // If clinicProfile is missing or has default name but matchedUser has custom clinic fields, merge them
-      if (matchedUser && (matchedUser.clinicName || matchedUser.doctorName || matchedUser.address || matchedUser.phone || matchedUser.hotline || matchedUser.workingHoursStr || matchedUser.slogan)) {
-        if (!clinicProfile || typeof clinicProfile !== "object") {
-          clinicProfile = {};
-        }
-        if (matchedUser.clinicName) clinicProfile.clinicName = matchedUser.clinicName;
-        if (matchedUser.doctorName) clinicProfile.doctorName = matchedUser.doctorName;
-        if (matchedUser.address) clinicProfile.address = matchedUser.address;
-        if (matchedUser.phone || matchedUser.hotline) {
-          clinicProfile.phone = matchedUser.phone || matchedUser.hotline;
-          clinicProfile.hotline = matchedUser.hotline || matchedUser.phone;
-        }
-        if (matchedUser.workingHoursStr || matchedUser.workingHours) {
-          clinicProfile.workingHours = matchedUser.workingHoursStr || matchedUser.workingHours;
-          clinicProfile.workingHoursStr = matchedUser.workingHoursStr || matchedUser.workingHours;
-        }
-        if (matchedUser.slogan) clinicProfile.slogan = matchedUser.slogan;
-      }
-
-      if (clinicProfile) {
-        if (!clinicProfile.clinicName && clinicProfile.name) {
-          clinicProfile.clinicName = clinicProfile.name;
-        }
-        if (!clinicProfile.name && clinicProfile.clinicName) {
-          clinicProfile.name = clinicProfile.clinicName;
-        }
-        if (!clinicProfile.phone && clinicProfile.hotline) {
-          clinicProfile.phone = clinicProfile.hotline;
-        }
-        if (!clinicProfile.hotline && clinicProfile.phone) {
-          clinicProfile.hotline = clinicProfile.phone;
-        }
-        if (!clinicProfile.workingHours && clinicProfile.workingHoursStr) {
-          clinicProfile.workingHours = clinicProfile.workingHoursStr;
-        }
-        if (!clinicProfile.workingHoursStr && clinicProfile.workingHours) {
-          clinicProfile.workingHoursStr = clinicProfile.workingHours;
-        }
-      }
-
-      let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);
-      if (formConfigRes.length === 0) {
-        formConfigRes = await db.select().from(settings).where(eq(settings.key, "bookingFormConfig")).limit(1);
-      }
-      let bookingFormConfig = formConfigRes.length > 0 ? formConfigRes[0].value : null;
-      if (typeof bookingFormConfig === "string") {
-        try {
-          bookingFormConfig = JSON.parse(bookingFormConfig);
-        } catch (e) {}
-      }
-
-      const botUsername = await getTelegramBotUsername();
-
-      let bannerRes = await db.select().from(settings).where(eq(settings.id, "announcementBanner")).limit(1);
-      if (bannerRes.length === 0) {
-        bannerRes = await db.select().from(settings).where(eq(settings.key, "announcementBanner")).limit(1);
-      }
-      let announcementBanner = null;
-      if (bannerRes.length > 0) {
-        announcementBanner = typeof bannerRes[0].value === 'string' ? JSON.parse(bannerRes[0].value) : bannerRes[0].value;
-      }
-
-      // We also inject tenantId so the frontend knows who it is interacting with
-      res.json({
-        success: true,
-        data: {
-          clinicProfile,
-          bookingFormConfig,
-          telegramBotUsername: botUsername,
-          announcementBanner,
-          tenantId: targetTenantId || null
+        if (!announcementBanner) {
+          let bannerRes = await db.select().from(settings).where(eq(settings.id, "announcementBanner")).limit(1);
+          if (bannerRes.length === 0) {
+            bannerRes = await db.select().from(settings).where(eq(settings.key, "announcementBanner")).limit(1);
+          }
+          if (bannerRes.length > 0) {
+            announcementBanner = typeof bannerRes[0].value === "string" ? JSON.parse(bannerRes[0].value) : bannerRes[0].value;
+          }
         }
       });
+    }
+
+    if (clinicProfile) {
+      if (!clinicProfile.clinicName && clinicProfile.name) {
+        clinicProfile.clinicName = clinicProfile.name;
+      }
+      if (!clinicProfile.name && clinicProfile.clinicName) {
+        clinicProfile.name = clinicProfile.clinicName;
+      }
+      if (!clinicProfile.phone && clinicProfile.hotline) {
+        clinicProfile.phone = clinicProfile.hotline;
+      }
+      if (!clinicProfile.hotline && clinicProfile.phone) {
+        clinicProfile.hotline = clinicProfile.phone;
+      }
+      if (!clinicProfile.workingHours && clinicProfile.workingHoursStr) {
+        clinicProfile.workingHours = clinicProfile.workingHoursStr;
+      }
+      if (!clinicProfile.workingHoursStr && clinicProfile.workingHours) {
+        clinicProfile.workingHoursStr = clinicProfile.workingHours;
+      }
+    }
+
+    const botUsername = await getTelegramBotUsername();
+
+    // Send response with full clinicProfile and tenantId
+    res.json({
+      success: true,
+      data: {
+        clinicProfile,
+        bookingFormConfig,
+        telegramBotUsername: botUsername,
+        announcementBanner,
+        tenantId: targetTenantId || null,
+        slug: slug || null,
+      }
     });
   } catch (error) {
     next(error);
   }
 });
-
 
 publicRouter.get("/appointments/:id", async (req, res, next) => {
   try {

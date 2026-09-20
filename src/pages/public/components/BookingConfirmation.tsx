@@ -123,7 +123,14 @@ export default function BookingConfirmation() {
             patientDraft.phone,
             patientDraft.email || null,
             patientDraft.telegramId || null,
-            appointmentData.telegramBotUsername || null
+            appointmentData.telegramBotUsername || null,
+            {
+              serviceName: appointmentData.serviceName || serviceName || undefined,
+              serviceDuration: serviceDuration || 45,
+              slotStartTime: appointmentData.startAt || slotStartTime || undefined,
+              slotEndTime: appointmentData.endAt || undefined,
+              providerName: appointmentData.providerName || undefined,
+            }
           );
           navigate(`${basePath}/hoan-tat`);
         } else {
