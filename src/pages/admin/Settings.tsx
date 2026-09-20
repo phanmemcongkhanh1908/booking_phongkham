@@ -384,14 +384,21 @@ export default function Settings() {
       if (err?.code === 'auth/popup-blocked') {
         setGoogleStatusMsg({
           type: 'error',
-          text: 'Trình duyệt đang chặn cửa sổ popup. Vui lòng cho phép popup trên thanh địa chỉ và thử lại.'
+          text: 'Trình duyệt đang chặn cửa sổ popup đăng nhập Google. Vui lòng cho phép popup trên thanh địa chỉ hoặc mở ứng dụng trong Tab Mới.'
+        });
+        return;
+      }
+      if (err?.code === 'auth/unauthorized-domain') {
+        setGoogleStatusMsg({
+          type: 'error',
+          text: 'Tên miền hiện tại cần xác thực trong Firebase Auth hoặc bạn có thể mở ứng dụng trong Tab Mới để kết nối Google trực tiếp.'
         });
         return;
       }
       console.error('Google connect error:', err);
       setGoogleStatusMsg({
         type: 'error',
-        text: err.message || 'Lỗi khi kết nối Google. Vui lòng thử lại.'
+        text: err.message || 'Lỗi khi kết nối Google. Vui lòng thử lại hoặc mở trong tab mới.'
       });
     } finally {
       setIsConnectingGoogle(false);
@@ -1636,7 +1643,7 @@ export default function Settings() {
                 </p>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3">
                 <Button 
                   onClick={handleConnectGoogle} 
                   disabled={isConnectingGoogle}
@@ -1646,6 +1653,19 @@ export default function Settings() {
                   <span className="text-center">{isConnectingGoogle ? 'Đang mở đăng nhập...' : 'Kết nối Google Drive & Sheets ngay'}</span>
                   <ArrowRight className="w-4 h-4 shrink-0 hidden sm:block" />
                 </Button>
+
+                {typeof window !== 'undefined' && window.self !== window.top && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => window.open(window.location.href, '_blank')}
+                    className="w-full sm:w-auto text-xs text-slate-700 hover:text-slate-900 border-slate-300 bg-white hover:bg-slate-50 gap-1.5 py-2.5 rounded-xl h-auto font-medium"
+                    title="Mở ứng dụng ở tab riêng để tránh bị trình duyệt chặn popup bảo mật"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Mở tab mới để đăng nhập</span>
+                  </Button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto pt-4 text-left">

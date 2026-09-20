@@ -641,15 +641,24 @@ publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) 
 
     const { settings, users } = await import("../../db/schema.js");
     
+    let matchedUser: any = null;
 
     if (slug) {
       await appContext.run({ isFullAdmin: true }, async () => {
-        const matchedUsers = await db.select().from(users).where(eq(users.slug, slug)).limit(1);
-        if (matchedUsers.length > 0) {
-          targetTenantId = matchedUsers[0].tenantId;
+        const allUsers = await db.select().from(users);
+        matchedUser = allUsers.find(
+          (u: any) => (u.slug || "").trim().toLowerCase() === slug.trim().toLowerCase()
+        );
+        if (matchedUser) {
+          targetTenantId = matchedUser.tenantId || `tenant_${matchedUser.id}`;
+          if (!matchedUser.tenantId) {
+            await db.update(users).set({ tenantId: targetTenantId }).where(eq(users.id, matchedUser.id));
+          }
         }
       });
     }
+
+    let clinicProfile: any = null;
 
     await appContext.run({ tenantId: targetTenantId }, async () => {
       let settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
@@ -657,19 +666,58 @@ publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) 
         settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
       }
       if (settingRes.length === 0) {
-        settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
-      }
-      if (settingRes.length === 0) {
         settingRes = await db.select().from(settings).where(eq(settings.key, "clinicProfile")).limit(1);
       }
-      let clinicProfile = settingRes.length > 0 ? settingRes[0].value : null;
-      if (typeof clinicProfile === "string") {
-        try {
-          clinicProfile = JSON.parse(clinicProfile);
-        } catch (e) {}
+      if (settingRes.length === 0) {
+        settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
       }
-      if (clinicProfile && !clinicProfile.clinicName && clinicProfile.name) {
-        clinicProfile.clinicName = clinicProfile.name;
+      if (settingRes.length > 0) {
+        clinicProfile = settingRes[0].value;
+        if (typeof clinicProfile === "string") {
+          try {
+            clinicProfile = JSON.parse(clinicProfile);
+          } catch (e) {}
+        }
+      }
+
+      // If clinicProfile is missing or has default name but matchedUser has custom clinic fields, merge them
+      if (matchedUser && (matchedUser.clinicName || matchedUser.doctorName || matchedUser.address || matchedUser.phone || matchedUser.hotline || matchedUser.workingHoursStr || matchedUser.slogan)) {
+        if (!clinicProfile || typeof clinicProfile !== "object") {
+          clinicProfile = {};
+        }
+        if (matchedUser.clinicName) clinicProfile.clinicName = matchedUser.clinicName;
+        if (matchedUser.doctorName) clinicProfile.doctorName = matchedUser.doctorName;
+        if (matchedUser.address) clinicProfile.address = matchedUser.address;
+        if (matchedUser.phone || matchedUser.hotline) {
+          clinicProfile.phone = matchedUser.phone || matchedUser.hotline;
+          clinicProfile.hotline = matchedUser.hotline || matchedUser.phone;
+        }
+        if (matchedUser.workingHoursStr || matchedUser.workingHours) {
+          clinicProfile.workingHours = matchedUser.workingHoursStr || matchedUser.workingHours;
+          clinicProfile.workingHoursStr = matchedUser.workingHoursStr || matchedUser.workingHours;
+        }
+        if (matchedUser.slogan) clinicProfile.slogan = matchedUser.slogan;
+      }
+
+      if (clinicProfile) {
+        if (!clinicProfile.clinicName && clinicProfile.name) {
+          clinicProfile.clinicName = clinicProfile.name;
+        }
+        if (!clinicProfile.name && clinicProfile.clinicName) {
+          clinicProfile.name = clinicProfile.clinicName;
+        }
+        if (!clinicProfile.phone && clinicProfile.hotline) {
+          clinicProfile.phone = clinicProfile.hotline;
+        }
+        if (!clinicProfile.hotline && clinicProfile.phone) {
+          clinicProfile.hotline = clinicProfile.phone;
+        }
+        if (!clinicProfile.workingHours && clinicProfile.workingHoursStr) {
+          clinicProfile.workingHours = clinicProfile.workingHoursStr;
+        }
+        if (!clinicProfile.workingHoursStr && clinicProfile.workingHours) {
+          clinicProfile.workingHoursStr = clinicProfile.workingHours;
+        }
       }
 
       let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);

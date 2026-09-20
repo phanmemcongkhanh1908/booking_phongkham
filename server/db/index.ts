@@ -351,7 +351,12 @@ class QueryBuilder {
     if (this.action === "select") {
       loadStore();
       const tableData = memoryStore[tableName] || {};
-      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
+      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
+        ...convertTimestamps(d), 
+        id: d.id, 
+        _storeKey: key, 
+        _tableName: tableName 
+      }));
 
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
@@ -374,7 +379,12 @@ class QueryBuilder {
 
         for (const join of this.joins) {
           const joinData = memoryStore[join.table] || {};
-          const joinDocs = Object.values(joinData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: join.table }));
+          const joinDocs = Object.entries(joinData).map(([k, jd]: [string, any]) => ({ 
+            ...convertTimestamps(jd), 
+            id: jd.id, 
+            _storeKey: k, 
+            _tableName: join.table 
+          }));
 
           const matched = joinDocs.find((jd) =>
             evaluateSingleCondition(docData, join.condition, { [join.table]: jd })
@@ -403,8 +413,20 @@ class QueryBuilder {
           }
           results.push(mapped);
         } else {
-          results.push(docData);
+          const cleanDoc = { ...docData };
+          delete cleanDoc._storeKey;
+          delete cleanDoc._tableName;
+          results.push(cleanDoc);
         }
+      }
+
+      // Prioritize tenant-specific records over global fallback records if tenantId is active
+      if (tenantId && results.length > 1) {
+        results.sort((a, b) => {
+          const aMatch = a.tenantId === tenantId ? 1 : 0;
+          const bMatch = b.tenantId === tenantId ? 1 : 0;
+          return bMatch - aMatch;
+        });
       }
 
       if (this._orderBy) {
@@ -458,8 +480,9 @@ class QueryBuilder {
         const id = item.id || crypto.randomUUID();
         let docData = { ...item, id };
         
-        if (tenantId && !docData.tenantId && tableName !== "roles") {
-          docData.tenantId = tenantId;
+        const effectiveTenantId = docData.tenantId || tenantId;
+        if (effectiveTenantId && !docData.tenantId && tableName !== "roles") {
+          docData.tenantId = effectiveTenantId;
         }
 
         if (!docData.createdAt && tableName !== "settings") {
@@ -472,7 +495,10 @@ class QueryBuilder {
           docData = { ...docData, ...this._onConflictUpdate.set };
         }
         const cleaned = removeUndefined(docData);
-        memoryStore[tableName][id] = cleaned;
+        const storeKey = (tableName === "settings" && effectiveTenantId)
+          ? `${effectiveTenantId}__${id}`
+          : id;
+        memoryStore[tableName][storeKey] = cleaned;
         results.push(cleaned);
       }
       scheduleSave();
@@ -483,7 +509,12 @@ class QueryBuilder {
       loadStore();
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
-      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
+      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
+        ...convertTimestamps(d), 
+        id: d.id, 
+        _storeKey: key, 
+        _tableName: tableName 
+      }));
       
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
@@ -501,7 +532,9 @@ class QueryBuilder {
         if (matchFilter) {
           const newDoc = { ...docData, ...cleanedUpdate };
           delete newDoc._tableName;
-          memoryStore[tableName][docData.id] = newDoc;
+          const storeKey = newDoc._storeKey || docData.id;
+          delete newDoc._storeKey;
+          memoryStore[tableName][storeKey] = newDoc;
           updated.push(newDoc);
         }
       }
@@ -513,7 +546,12 @@ class QueryBuilder {
       loadStore();
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
-      const docsData = Object.values(tableData).map((d: any) => ({ ...convertTimestamps(d), id: d.id, _tableName: tableName }));
+      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
+        ...convertTimestamps(d), 
+        id: d.id, 
+        _storeKey: key, 
+        _tableName: tableName 
+      }));
       
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
@@ -528,8 +566,12 @@ class QueryBuilder {
         }
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
-          delete memoryStore[tableName][docData.id];
-          deleted.push(docData);
+          const storeKey = docData._storeKey || docData.id;
+          delete memoryStore[tableName][storeKey];
+          const cleanDoc = { ...docData };
+          delete cleanDoc._storeKey;
+          delete cleanDoc._tableName;
+          deleted.push(cleanDoc);
         }
       }
       scheduleSave();

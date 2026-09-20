@@ -111,24 +111,9 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
 
     connect: async () => {
       set({ isConnecting: true, error: null });
-      try {
-        const result = await signInWithPopup(auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const token = credential?.accessToken;
 
-        if (!token) {
-          throw new Error('Không nhận được Google Access Token để cấp quyền truy cập Drive/Sheets.');
-        }
-
+      const handleSuccess = (token: string, userProfile: GoogleUserProfile) => {
         inMemoryAccessToken = token;
-        const userProfile: GoogleUserProfile = {
-          email: result.user.email,
-          displayName: result.user.displayName,
-          photoURL: result.user.photoURL,
-          uid: result.user.uid,
-        };
-
-        // Save non-sensitive metadata to remember clinic's connected identity
         try {
           const prev = JSON.parse(localStorage.getItem(STORAGE_KEY_CONFIG) || '{}');
           localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
@@ -144,10 +129,98 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           isConnected: true,
           isConnecting: false,
           error: null,
-          warningDismissed: false, // Reset warning once connected
+          warningDismissed: false,
         });
 
         return { accessToken: token, user: userProfile };
+      };
+
+      // 1. Primary: Google Identity Services (GSI token client)
+      // Directly handles popup and tokens with Drive & Sheets scopes without relying on iframe cookies
+      const winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
+      if (winGoogle?.accounts?.oauth2 && firebaseConfig.oAuthClientId) {
+        try {
+          console.log('[Google Auth] Connecting via Google Identity Services (GSI)...');
+          const gsiResult = await new Promise<{ accessToken: string; user: GoogleUserProfile }>((resolve, reject) => {
+            const tokenClient = winGoogle.accounts.oauth2.initTokenClient({
+              client_id: firebaseConfig.oAuthClientId,
+              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+              callback: async (resp: any) => {
+                if (resp.error) {
+                  if (resp.error === 'access_denied' || resp.error === 'user_closed_popup') {
+                    const err = new Error('Cửa sổ đăng nhập Google đã được đóng.');
+                    (err as any).code = 'auth/popup-closed-by-user';
+                    (err as any).isCancelled = true;
+                    return reject(err);
+                  }
+                  return reject(new Error(resp.error_description || resp.error));
+                }
+                const token = resp.access_token;
+                if (!token) {
+                  return reject(new Error('Không nhận được Google Access Token.'));
+                }
+                try {
+                  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${token}` }
+                  });
+                  const info = await res.json();
+                  resolve({
+                    accessToken: token,
+                    user: {
+                      email: info.email || null,
+                      displayName: info.name || null,
+                      photoURL: info.picture || null,
+                      uid: info.sub || 'google-user'
+                    }
+                  });
+                } catch {
+                  resolve({
+                    accessToken: token,
+                    user: {
+                      email: null,
+                      displayName: 'Tài khoản Google',
+                      photoURL: null,
+                      uid: 'google-user'
+                    }
+                  });
+                }
+              },
+              error_callback: (err: any) => {
+                reject(err);
+              }
+            });
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+          });
+
+          return handleSuccess(gsiResult.accessToken, gsiResult.user);
+        } catch (gsiErr: any) {
+          if (gsiErr?.isCancelled || gsiErr?.code === 'auth/popup-closed-by-user') {
+            set({ isConnecting: false, error: null });
+            throw gsiErr;
+          }
+          console.warn('[Google Auth] GSI connection error, falling back to Firebase Auth Popup:', gsiErr);
+        }
+      }
+
+      // 2. Secondary: Firebase Auth Popup
+      try {
+        console.log('[Google Auth] Connecting via Firebase Auth popup...');
+        const result = await signInWithPopup(auth, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const token = credential?.accessToken;
+
+        if (!token) {
+          throw new Error('Không nhận được Google Access Token để cấp quyền truy cập Drive/Sheets.');
+        }
+
+        const userProfile: GoogleUserProfile = {
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL,
+          uid: result.user.uid,
+        };
+
+        return handleSuccess(token, userProfile);
       } catch (err: any) {
         const isClosedByUser = 
           err?.code === 'auth/popup-closed-by-user' || 
@@ -157,6 +230,10 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
         const isPopupBlocked = 
           err?.code === 'auth/popup-blocked' || 
           (typeof err?.message === 'string' && err.message.includes('popup-blocked'));
+
+        const isUnauthorizedDomain =
+          err?.code === 'auth/unauthorized-domain' ||
+          (typeof err?.message === 'string' && err.message.includes('unauthorized-domain'));
 
         if (isClosedByUser) {
           console.info('[Google Auth] Đã đóng cửa sổ đăng nhập Google.');
@@ -172,7 +249,7 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
 
         if (isPopupBlocked) {
           console.warn('[Google Auth] Trình duyệt đã chặn popup đăng nhập Google.');
-          const blockedMsg = 'Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup trên thanh địa chỉ và thử lại.';
+          const blockedMsg = 'Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup trên thanh địa chỉ hoặc mở trang trong Tab Mới.';
           set({
             isConnecting: false,
             error: blockedMsg,
@@ -180,6 +257,17 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           const blockedError = new Error(blockedMsg);
           (blockedError as any).code = 'auth/popup-blocked';
           throw blockedError;
+        }
+
+        if (isUnauthorizedDomain) {
+          const domainMsg = 'Tên miền hiện tại cần được xác thực hoặc mở trong tab mới để kết nối Google.';
+          set({
+            isConnecting: false,
+            error: domainMsg,
+          });
+          const domainErr = new Error(domainMsg);
+          (domainErr as any).code = 'auth/unauthorized-domain';
+          throw domainErr;
         }
 
         console.error('Google Sign-In Error:', err);

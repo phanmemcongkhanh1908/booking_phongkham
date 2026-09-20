@@ -220,6 +220,12 @@ export default function UsersManagement() {
     setUiMode(u.uiMode || 'full');
     const userSlug = u.slug || '';
     setSlug(userSlug);
+    setClinicName(u.clinicName || '');
+    setSlogan(u.slogan || '');
+    setDoctorName(u.doctorName || '');
+    setWorkingHoursStr(u.workingHoursStr || '');
+    setAddress(u.address || '');
+    setHotline(u.hotline || u.phone || '');
     setSelectedOptionId('internal');
     setCopied(false);
     
@@ -350,7 +356,17 @@ export default function UsersManagement() {
         });
         setMsg(`Tạo tài khoản '${trimmedIdentifier}' thành công!`);
       } else {
-        const updateData: any = { permissions: selectedPermissions, uiMode, slug };
+        const updateData: any = { 
+          permissions: selectedPermissions, 
+          uiMode, 
+          slug,
+          clinicName,
+          slogan,
+          doctorName,
+          workingHoursStr,
+          address,
+          hotline
+        };
         if (password) {
           updateData.password = password.trim();
         }
@@ -437,10 +453,20 @@ export default function UsersManagement() {
                   <tr key={u.id || idx} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3.5 border-b border-slate-100">
                       <div className="flex flex-col">
+                        {u.clinicName && (
+                          <span className="font-semibold text-slate-900 text-sm">
+                            {u.clinicName}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
-                          <span className={`font-medium ${u.isActive === false ? 'text-slate-400 line-through' : 'text-slate-800'} ${isSuperAdmin ? 'text-teal-700' : ''}`}>
+                          <span className={`text-xs ${u.clinicName ? 'text-slate-500' : 'font-medium text-slate-800'} ${u.isActive === false ? 'text-slate-400 line-through' : ''} ${isSuperAdmin ? 'text-teal-700 font-semibold' : ''}`}>
                             {u.email}
                           </span>
+                          {u.doctorName && (
+                            <span className="text-[11px] text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-medium border border-teal-100">
+                              Bs: {u.doctorName}
+                            </span>
+                          )}
                           {isSuperAdmin && (
                             <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold border border-amber-200">
                               Admin Tối Cao
@@ -660,37 +686,37 @@ export default function UsersManagement() {
                           <option value="simple">Đơn giản (Dành cho Lễ tân & Trợ thủ)</option>
                         </select>
                       </div>
-                      {modalMode === 'create' && (
-                        <>
-                          <div className="col-span-full mt-4 pt-4 border-t border-slate-100">
-                            <h5 className="text-xs font-bold uppercase tracking-wide text-teal-700 mb-3 flex items-center gap-1.5">
-                              Thông tin phòng khám (Hiển thị cho khách hàng)
-                            </h5>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Tên phòng khám</label>
-                                <input type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="VD: Nha Khoa Dental Smart" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
-                              </div>
-                              <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Hotline</label>
-                                <input type="text" value={hotline} onChange={e => setHotline(e.target.value)} placeholder="VD: 0901234567" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Địa chỉ</label>
-                                <input type="text" value={address} onChange={e => setAddress(e.target.value)} placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
-                              </div>
-                              <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Bác sĩ phụ trách</label>
-                                <input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="VD: Bs. Lê Phương" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
-                              </div>
-                              <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Thời gian làm việc</label>
-                                <input type="text" value={workingHoursStr} onChange={e => setWorkingHoursStr(e.target.value)} placeholder="VD: T2-CN: 08:00 - 20:00" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
-                              </div>
-                            </div>
+                      <div className="col-span-full mt-4 pt-4 border-t border-slate-100">
+                        <h5 className="text-xs font-bold uppercase tracking-wide text-teal-700 mb-3 flex items-center gap-1.5">
+                          Thông tin phòng khám (Hiển thị cho khách hàng trên link đặt lịch)
+                        </h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Tên phòng khám</label>
+                            <input type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="VD: Nha Khoa Dental Smart" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
                           </div>
-                        </>
-                      )}
+                          <div>
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Hotline</label>
+                            <input type="text" value={hotline} onChange={e => setHotline(e.target.value)} placeholder="VD: 0901234567" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Địa chỉ phòng khám</label>
+                            <input type="text" value={address} onChange={e => setAddress(e.target.value)} placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Bác sĩ phụ trách</label>
+                            <input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="VD: Bs. Lê Phương" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Thời gian làm việc</label>
+                            <input type="text" value={workingHoursStr} onChange={e => setWorkingHoursStr(e.target.value)} placeholder="VD: T2-CN: 08:00 - 20:00" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 block mb-1">Khẩu hiệu / Slogan</label>
+                            <input type="text" value={slogan} onChange={e => setSlogan(e.target.value)} placeholder="VD: Nụ cười rạng rỡ, tự tin đón tương lai" className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs" />
+                          </div>
+                        </div>
+                      </div>
 
                     </div>
                   </div>
