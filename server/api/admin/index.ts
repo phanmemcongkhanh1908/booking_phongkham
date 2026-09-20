@@ -661,4 +661,156 @@ adminRouter.post("/storage-alert", requireAuth, async (req, res, next) => {
   }
 });
 
+// ==========================================
+// GOOGLE SYNC ACCOUNTS (Danh sách Gmail phòng khám được uỷ quyền)
+// ==========================================
+adminRouter.get("/google-sync-accounts", requireAuth, async (req, res, next) => {
+  try {
+    const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
+    const accounts = Array.isArray(record[0]?.value) ? record[0].value : [];
+    res.json({ success: true, data: accounts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/google-sync-accounts", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
+  try {
+    const { clinicName, doctorName, email, phone, notes } = req.body;
+    if (!email || !email.includes("@")) {
+      throw new BadRequestError("Địa chỉ Gmail không hợp lệ");
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
+    let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
+
+    const existingIndex = accounts.findIndex((a: any) => a.email.toLowerCase() === cleanEmail);
+    const newAccount = {
+      id: existingIndex >= 0 ? accounts[existingIndex].id : 'ga_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      clinicName: (clinicName || 'Phòng khám Nha Khoa').trim(),
+      doctorName: (doctorName || '').trim(),
+      email: cleanEmail,
+      phone: (phone || '').trim(),
+      notes: (notes || '').trim(),
+      status: 'active',
+      createdAt: existingIndex >= 0 ? accounts[existingIndex].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      accounts[existingIndex] = { ...accounts[existingIndex], ...newAccount };
+    } else {
+      accounts.unshift(newAccount);
+    }
+
+    await db.insert(settings)
+      .values({ id: "google_sync_accounts", value: accounts })
+      .onConflictDoUpdate({ target: settings.id, set: { value: accounts } });
+
+    res.json({ success: true, data: newAccount, all: accounts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post("/google-sync-accounts/batch", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
+  try {
+    const { emailsText, defaultClinicName } = req.body;
+    if (!emailsText) {
+      throw new BadRequestError("Vui lòng cung cấp danh sách email");
+    }
+    const rawTokens = emailsText.split(/[\s,;\n\r]+/);
+    const validEmails = Array.from(new Set(
+      rawTokens
+        .map((t: string) => t.trim().toLowerCase())
+        .filter((t: string) => t.includes('@') && t.includes('.'))
+    ));
+
+    if (validEmails.length === 0) {
+      throw new BadRequestError("Không tìm thấy email hợp lệ nào trong danh sách dán");
+    }
+
+    const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
+    let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
+
+    let addedCount = 0;
+    for (const em of validEmails) {
+      const existing = accounts.find((a: any) => a.email.toLowerCase() === em);
+      if (!existing) {
+        accounts.unshift({
+          id: 'ga_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+          clinicName: defaultClinicName?.trim() || 'Phòng khám Nha khoa',
+          doctorName: '',
+          email: em,
+          phone: '',
+          notes: 'Thêm hàng loạt từ Admin',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        addedCount++;
+      }
+    }
+
+    await db.insert(settings)
+      .values({ id: "google_sync_accounts", value: accounts })
+      .onConflictDoUpdate({ target: settings.id, set: { value: accounts } });
+
+    res.json({ success: true, addedCount, total: accounts.length, data: accounts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.put("/google-sync-accounts/:id", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { clinicName, doctorName, email, phone, notes, status } = req.body;
+    const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
+    let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
+
+    const index = accounts.findIndex((a: any) => a.id === id);
+    if (index === -1) {
+      throw new BadRequestError("Không tìm thấy tài khoản Gmail cần cập nhật");
+    }
+
+    accounts[index] = {
+      ...accounts[index],
+      clinicName: clinicName !== undefined ? clinicName.trim() : accounts[index].clinicName,
+      doctorName: doctorName !== undefined ? doctorName.trim() : accounts[index].doctorName,
+      email: email !== undefined ? email.trim().toLowerCase() : accounts[index].email,
+      phone: phone !== undefined ? phone.trim() : accounts[index].phone,
+      notes: notes !== undefined ? notes.trim() : accounts[index].notes,
+      status: status || accounts[index].status,
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.insert(settings)
+      .values({ id: "google_sync_accounts", value: accounts })
+      .onConflictDoUpdate({ target: settings.id, set: { value: accounts } });
+
+    res.json({ success: true, data: accounts[index] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.delete("/google-sync-accounts/:id", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
+    let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
+
+    accounts = accounts.filter((a: any) => a.id !== id);
+
+    await db.insert(settings)
+      .values({ id: "google_sync_accounts", value: accounts })
+      .onConflictDoUpdate({ target: settings.id, set: { value: accounts } });
+
+    res.json({ success: true, message: "Đã xóa tài khoản Gmail phòng khám thành công" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default adminRouter;

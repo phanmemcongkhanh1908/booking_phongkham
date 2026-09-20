@@ -10,12 +10,14 @@ import {
   HardDrive,
   Database,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { useAuthStore } from '../../store/auth';
 import { findOrCreateClinicSpreadsheet, syncAppointmentsToSheet } from '../../lib/googleWorkspace';
 import api from '../../services/api';
+import { GoogleOriginHelpModal } from '../../pages/admin/components/GoogleOriginHelpModal';
 
 interface GoogleBackupWarningBannerProps {
   onNavigateToSettings?: () => void;
@@ -47,6 +49,7 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isOriginHelpOpen, setIsOriginHelpOpen] = useState(false);
 
   const handleQuickConnect = async () => {
     try {
@@ -78,6 +81,30 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
       if (err?.isCancelled || err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
         return;
       }
+
+      const isAccessDenied = 
+        err?.isAccessDenied || 
+        err?.code === 'auth/access-denied' ||
+        (typeof err?.message === 'string' && (
+          err.message.toLowerCase().includes('access_denied') ||
+          err.message.toLowerCase().includes('bị từ chối')
+        ));
+
+      if (isAccessDenied) {
+        console.error('[Google Banner][ACCESS_DENIED] Google OAuth rejected authorization:', {
+          code: err?.code,
+          message: err?.message,
+          rawDetails: err?.rawDetails,
+          timestamp: new Date().toISOString(),
+          solution: 'Email cần được thêm vào danh sách Admin Whitelist (Gmail phòng khám) hoặc Google Cloud Test Users.'
+        });
+        setSyncMsg({ 
+          type: 'error', 
+          text: 'Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email này vào danh sách Admin Whitelist (Gmail phòng khám).' 
+        });
+        return;
+      }
+
       setSyncMsg({ 
         type: 'error', 
         text: err.message || 'Không thể kết nối tài khoản Google. Vui lòng thử lại.' 
@@ -314,7 +341,17 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
             <ArrowRight className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2">
+          <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsOriginHelpOpen(true)}
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-300 bg-amber-50 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
+              title="Xem hướng dẫn khắc phục nếu gặp lỗi origin_mismatch từ Google"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Sửa lỗi Google 400</span>
+            </button>
+
             {onNavigateToSettings && (
               <button
                 type="button"
@@ -339,12 +376,27 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
       </div>
 
       {syncMsg && (
-        <div className={`mt-3 pt-2.5 border-t border-slate-200/80 text-xs font-medium flex items-center gap-2 ${
+        <div className={`mt-3 pt-2.5 border-t border-slate-200/80 text-xs font-medium flex items-center justify-between gap-2 flex-wrap ${
           syncMsg.type === 'success' ? 'text-emerald-800' : 'text-rose-700'
         }`}>
           <span>{syncMsg.text}</span>
+          {syncMsg.type === 'error' && (
+            <button
+              type="button"
+              onClick={() => setIsOriginHelpOpen(true)}
+              className="underline text-amber-800 hover:text-amber-950 font-bold ml-auto"
+            >
+              Bấm xem hướng dẫn khắc phục Lỗi 400 Google
+            </button>
+          )}
         </div>
       )}
+
+      {/* Modal Guide */}
+      <GoogleOriginHelpModal
+        isOpen={isOriginHelpOpen}
+        onClose={() => setIsOriginHelpOpen(false)}
+      />
     </div>
   );
 };

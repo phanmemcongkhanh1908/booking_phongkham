@@ -6,9 +6,10 @@ import {
   Users, ShieldCheck, Key, Lock, Unlock, X, Edit, 
   Plus, CheckCircle2, AlertTriangle, RefreshCw, Loader2,
   Eye, EyeOff, Download, Link as LinkIcon, Copy, Check, ExternalLink, Sparkles,
-  Building2, Globe, Zap, Shield
+  Building2, Globe, Zap, Shield, Mail
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import ClinicGoogleAccountsManager from './components/ClinicGoogleAccountsManager';
 
 export interface ShortLinkOption {
   id: 'internal' | 'dagd' | 'tinyurl' | 'full' | 'render';
@@ -67,6 +68,7 @@ export default function UsersManagement() {
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [managementTab, setManagementTab] = useState<'users' | 'google-sync'>('users');
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -420,7 +422,46 @@ export default function UsersManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Tab Switcher for Admin Tổng */}
+      <div className="flex items-center gap-2 p-1 bg-slate-100/90 rounded-2xl w-fit border border-slate-200/80 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setManagementTab('users')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            managementTab === 'users'
+              ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4 text-primary" />
+          <span>Tài khoản nhân sự & Phân quyền</span>
+          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+            {users.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setManagementTab('google-sync')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            managementTab === 'google-sync'
+              ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Mail className="w-4 h-4 text-teal-600" />
+          <span>Gmail phòng khám (Google Sync Accounts)</span>
+          <span className="bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold border border-teal-200">
+            CSDL
+          </span>
+        </button>
+      </div>
+
+      {managementTab === 'google-sync' ? (
+        <ClinicGoogleAccountsManager />
+      ) : (
+        <>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Danh sách tài khoản</h2>
           <p className="text-slate-500 text-sm mt-1">Quản lý nhân sự và phân quyền truy cập hệ thống.</p>
@@ -1052,6 +1093,8 @@ export default function UsersManagement() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

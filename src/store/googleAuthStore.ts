@@ -46,16 +46,42 @@ interface GoogleAuthState {
 
   // Actions
   init: () => () => void;
-  connect: () => Promise<{ accessToken: string; user: GoogleUserProfile }>;
+  connect: (options?: { prompt?: string }) => Promise<{ accessToken: string; user: GoogleUserProfile }>;
   disconnect: () => Promise<void>;
   setAccessToken: (token: string | null) => void;
   setSpreadsheetInfo: (id: string, url: string) => void;
   setDriveFolderId: (id: string) => void;
   setLastSyncAt: (timestamp: string) => void;
   setWarningDismissed: (dismissed: boolean) => void;
+  
+  // Custom Google Client ID (for custom domains like Render, Vercel, etc.)
+  customClientId: string | null;
+  activeClientId: string;
+  setCustomClientId: (clientId: string) => void;
 }
 
 const STORAGE_KEY_CONFIG = 'dental_google_backup_meta';
+const CUSTOM_CLIENT_ID_KEY = 'dental_google_custom_client_id';
+
+const getEnv = (key: string): string => {
+  try {
+    return (import.meta as any)?.env?.[key] || '';
+  } catch (e) {
+    return '';
+  }
+};
+
+const getInitialClientId = (): string => {
+  try {
+    const saved = localStorage.getItem(CUSTOM_CLIENT_ID_KEY);
+    if (saved && saved.trim()) return saved.trim();
+  } catch (e) {}
+  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID');
+  if (envClientId) {
+    return envClientId.trim();
+  }
+  return firebaseConfig.oAuthClientId || '';
+};
 
 // In-memory token cache per security instructions
 let inMemoryAccessToken: string | null = null;
@@ -63,12 +89,20 @@ let inMemoryAccessToken: string | null = null;
 export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
   // Read saved non-sensitive metadata from localStorage (never secrets/tokens)
   let savedMeta: any = {};
+  let savedCustomClientId: string | null = null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (raw) savedMeta = JSON.parse(raw);
+    savedCustomClientId = localStorage.getItem(CUSTOM_CLIENT_ID_KEY);
   } catch (e) {
     console.error('Failed to read saved google meta:', e);
   }
+
+  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID');
+  const initialActiveClientId = (savedCustomClientId && savedCustomClientId.trim()) 
+    || envClientId 
+    || firebaseConfig.oAuthClientId 
+    || '';
 
   return {
     accessToken: inMemoryAccessToken,
@@ -81,6 +115,24 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     driveFolderId: savedMeta.driveFolderId || null,
     lastSyncAt: savedMeta.lastSyncAt || null,
     warningDismissed: false,
+    customClientId: savedCustomClientId ? savedCustomClientId.trim() : null,
+    activeClientId: initialActiveClientId,
+
+    setCustomClientId: (clientId: string) => {
+      const trimmed = clientId.trim();
+      try {
+        if (trimmed) {
+          localStorage.setItem(CUSTOM_CLIENT_ID_KEY, trimmed);
+        } else {
+          localStorage.removeItem(CUSTOM_CLIENT_ID_KEY);
+        }
+      } catch (e) {}
+      const active = trimmed || getEnv('VITE_GOOGLE_CLIENT_ID') || firebaseConfig.oAuthClientId || '';
+      set({ 
+        customClientId: trimmed || null, 
+        activeClientId: active 
+      });
+    },
 
     init: () => {
       // Listen to Firebase Auth state
@@ -109,7 +161,7 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
       return unsubscribe;
     },
 
-    connect: async () => {
+    connect: async (options?: { prompt?: string }) => {
       set({ isConnecting: true, error: null });
 
       const handleSuccess = (token: string, userProfile: GoogleUserProfile) => {
@@ -138,23 +190,56 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
       // 1. Primary: Google Identity Services (GSI token client)
       // Directly handles popup and tokens with Drive & Sheets scopes without relying on iframe cookies
       const winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
-      if (winGoogle?.accounts?.oauth2 && firebaseConfig.oAuthClientId) {
+      const clientIdToUse = get().activeClientId || getInitialClientId();
+      if (winGoogle?.accounts?.oauth2 && clientIdToUse) {
         try {
-          console.log('[Google Auth] Connecting via Google Identity Services (GSI)...');
+          console.log('[Google Auth] Connecting via Google Identity Services (GSI) with clientId:', clientIdToUse);
           const gsiResult = await new Promise<{ accessToken: string; user: GoogleUserProfile }>((resolve, reject) => {
             const tokenClient = winGoogle.accounts.oauth2.initTokenClient({
-              client_id: firebaseConfig.oAuthClientId,
+              client_id: clientIdToUse,
               scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
               callback: async (resp: any) => {
                 if (resp.error) {
-                  if (resp.error === 'access_denied' || resp.error === 'user_closed_popup') {
+                  const isDenied = 
+                    resp.error === 'access_denied' || 
+                    resp.error_subtype === 'access_denied' ||
+                    (typeof resp.error_description === 'string' && resp.error_description.toLowerCase().includes('access_denied'));
+
+                  if (isDenied) {
+                    // Chi tiết logging cho trường hợp access_denied
+                    console.error('[Google Auth][ACCESS_DENIED] Google OAuth trả về lỗi access_denied:', {
+                      error: resp.error,
+                      error_subtype: resp.error_subtype,
+                      error_description: resp.error_description,
+                      clientId: clientIdToUse,
+                      timestamp: new Date().toISOString(),
+                      origin: typeof window !== 'undefined' ? window.location.origin : '',
+                      reason: 'Tài khoản Google này bị từ chối truy cập. Nguyên nhân thường gặp: Email chưa được thêm vào Admin Whitelist hoặc Test Users trên Google Cloud Console (khi OAuth ở chế độ thử nghiệm).'
+                    });
+
+                    const accessErr = new Error(
+                      resp.error_description 
+                        ? `Truy cập bị từ chối (access_denied): ${resp.error_description}` 
+                        : 'Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email này vào Admin Whitelist.'
+                    );
+                    (accessErr as any).code = 'auth/access-denied';
+                    (accessErr as any).isAccessDenied = true;
+                    (accessErr as any).rawDetails = resp;
+                    return reject(accessErr);
+                  }
+
+                  if (resp.error === 'user_closed_popup') {
+                    console.info('[Google Auth] Cửa sổ popup Google đã được đóng bởi người dùng.');
                     const err = new Error('Cửa sổ đăng nhập Google đã được đóng.');
                     (err as any).code = 'auth/popup-closed-by-user';
                     (err as any).isCancelled = true;
                     return reject(err);
                   }
+
+                  console.error('[Google Auth] Lỗi phản hồi OAuth từ Google GSI:', resp);
                   return reject(new Error(resp.error_description || resp.error));
                 }
+
                 const token = resp.access_token;
                 if (!token) {
                   return reject(new Error('Không nhận được Google Access Token.'));
@@ -186,10 +271,30 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
                 }
               },
               error_callback: (err: any) => {
+                const isDenied = 
+                  err?.type === 'access_denied' ||
+                  err?.error === 'access_denied' ||
+                  (typeof err?.message === 'string' && err.message.toLowerCase().includes('access_denied'));
+
+                if (isDenied) {
+                  console.error('[Google Auth][ACCESS_DENIED] Google GSI error_callback báo lỗi access_denied:', {
+                    rawError: err,
+                    clientId: clientIdToUse,
+                    timestamp: new Date().toISOString(),
+                    reason: 'Email Google chưa được thêm vào Admin Whitelist hoặc Test Users.'
+                  });
+                  const accessErr = new Error('Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email vào Admin Whitelist.');
+                  (accessErr as any).code = 'auth/access-denied';
+                  (accessErr as any).isAccessDenied = true;
+                  (accessErr as any).rawDetails = err;
+                  return reject(accessErr);
+                }
+
+                console.error('[Google Auth] GSI error_callback:', err);
                 reject(err);
               }
             });
-            tokenClient.requestAccessToken({ prompt: 'consent' });
+            tokenClient.requestAccessToken({ prompt: options?.prompt || 'consent' });
           });
 
           return handleSuccess(gsiResult.accessToken, gsiResult.user);
@@ -198,6 +303,16 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
             set({ isConnecting: false, error: null });
             throw gsiErr;
           }
+
+          if (gsiErr?.isAccessDenied || gsiErr?.code === 'auth/access-denied') {
+            console.error('[Google Auth][ACCESS_DENIED] Dừng luồng xác thực vì bị Google từ chối quyền (access_denied):', gsiErr);
+            set({ 
+              isConnecting: false, 
+              error: 'Tài khoản Google bị từ chối truy cập (access_denied). Email cần được thêm vào danh sách Admin Whitelist.' 
+            });
+            throw gsiErr;
+          }
+
           console.warn('[Google Auth] GSI connection error, falling back to Firebase Auth Popup:', gsiErr);
         }
       }
@@ -227,6 +342,16 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           err?.code === 'auth/cancelled-popup-request' ||
           (typeof err?.message === 'string' && err.message.includes('popup-closed-by-user'));
 
+        const isAccessDenied = 
+          err?.code === 'auth/access-denied' || 
+          err?.code === 'auth/user-disabled' ||
+          err?.isAccessDenied ||
+          (typeof err?.message === 'string' && (
+            err.message.toLowerCase().includes('access_denied') ||
+            err.message.toLowerCase().includes('access-denied') ||
+            err.message.toLowerCase().includes('access denied')
+          ));
+
         const isPopupBlocked = 
           err?.code === 'auth/popup-blocked' || 
           (typeof err?.message === 'string' && err.message.includes('popup-blocked'));
@@ -245,6 +370,28 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           (cancelError as any).code = 'auth/popup-closed-by-user';
           (cancelError as any).isCancelled = true;
           throw cancelError;
+        }
+
+        if (isAccessDenied) {
+          console.error('[Google Auth][ACCESS_DENIED] Firebase OAuth Popup gặp lỗi access_denied:', {
+            code: err?.code,
+            message: err?.message,
+            customData: err?.customData,
+            email: err?.customData?.email || err?.email,
+            timestamp: new Date().toISOString(),
+            reason: 'Tài khoản chưa được thêm vào Admin Whitelist hoặc Test Users trên Google Cloud Console.'
+          });
+
+          const accessDeniedMsg = 'Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email vào danh sách Admin Whitelist.';
+          set({
+            isConnecting: false,
+            error: accessDeniedMsg,
+          });
+          const accessErr = new Error(accessDeniedMsg);
+          (accessErr as any).code = 'auth/access-denied';
+          (accessErr as any).isAccessDenied = true;
+          (accessErr as any).email = err?.customData?.email || err?.email;
+          throw accessErr;
         }
 
         if (isPopupBlocked) {

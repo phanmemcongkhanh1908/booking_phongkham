@@ -43,6 +43,7 @@ import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import SyncDiagnosticModal from './components/SyncDiagnosticModal';
+import GoogleOriginHelpModal from './components/GoogleOriginHelpModal';
 import { forceSyncAppointmentsToSheet } from '../../lib/googleWorkspace';
 import { 
   findOrCreateClinicSpreadsheet, 
@@ -71,13 +72,16 @@ export default function Settings() {
     spreadsheetUrl,
     setSpreadsheetInfo,
     lastSyncAt,
-    setLastSyncAt
+    setLastSyncAt,
+    customClientId,
+    activeClientId
   } = useGoogleAuthStore();
 
   const [email, setEmail] = useState('');
   const [driveInfo, setDriveInfo] = useState<any>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
+  const [isOriginHelpOpen, setIsOriginHelpOpen] = useState(false);
   const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
   const [googleStatusMsg, setGoogleStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualSheetInput, setManualSheetInput] = useState('');
@@ -1668,6 +1672,23 @@ export default function Settings() {
                 )}
               </div>
 
+              {/* Origin Mismatch & Custom Client ID Helper */}
+              <div className="pt-2 flex flex-col items-center justify-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsOriginHelpOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 px-3 py-1.5 rounded-xl font-medium transition-colors cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Gặp "Lỗi 400: origin_mismatch"? Bấm vào đây để xem cách khắc phục</span>
+                </button>
+                {customClientId && (
+                  <span className="text-[11px] text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-200">
+                    Đang áp dụng Client ID riêng của phòng khám
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto pt-4 text-left">
                 <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-start gap-2.5">
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -1862,6 +1883,11 @@ export default function Settings() {
           onForceSyncAll={handleForceSyncAllAppointments}
         />
       )}
+
+      <GoogleOriginHelpModal 
+        isOpen={isOriginHelpOpen}
+        onClose={() => setIsOriginHelpOpen(false)}
+      />
     </div>
   );
 }
