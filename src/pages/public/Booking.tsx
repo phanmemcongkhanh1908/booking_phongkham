@@ -139,61 +139,85 @@ export default function Booking() {
       {!isCompact && (<header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-20 flex items-center justify-between gap-3">
           {/* Brand & Clinic Info */}
-          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
             <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-teal-900/15 shrink-0 ring-1 ring-white/20">
               <Stethoscope className="w-4 h-4 sm:w-6 sm:h-6" />
             </div>
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-sm sm:text-xl font-black text-slate-900 tracking-tight truncate">
+            <div className="min-w-0 flex-1">
+              {/* Mobile View: Clean 2-line non-wrapping layout */}
+              <div className="sm:hidden min-w-0">
+                <h1 className="text-sm font-black text-slate-900 tracking-tight truncate leading-tight">
                   {clinicDisplayName}
                 </h1>
-                <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/70">
-                  <ShieldCheck className="w-3 h-3 text-teal-600" />
-                  Y Tế Chuẩn Hóa
-                </span>
-                {doctorDisplayName && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Bác sĩ phụ trách: <strong className="font-extrabold text-emerald-950">{doctorDisplayName}</strong></span>
-                  </span>
+                {doctorDisplayName ? (
+                  <p className="text-[11px] text-emerald-700 font-semibold truncate flex items-center gap-1 leading-none mt-0.5">
+                    <UserCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <span className="truncate">{doctorDisplayName}</span>
+                  </p>
+                ) : clinicProfile?.slogan ? (
+                  <p className="text-[10px] text-teal-800 font-medium italic truncate mt-0.5">
+                    “{clinicProfile.slogan}”
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                    Đặt lịch khám trực tuyến
+                  </p>
                 )}
               </div>
-              
-              {clinicProfile?.slogan ? (
-                <p className="text-xs text-teal-800 font-medium italic truncate hidden sm:block">
-                  “{clinicProfile.slogan}”
-                </p>
-              ) : (
-                <p className="text-xs text-slate-500 truncate hidden sm:block">
-                  Hệ thống đặt lịch khám trực tuyến & bảo mật thông tin
-                </p>
-              )}
+
+              {/* Tablet & Desktop View */}
+              <div className="hidden sm:block min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight truncate">
+                    {clinicDisplayName}
+                  </h1>
+                  <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/70">
+                    <ShieldCheck className="w-3 h-3 text-teal-600" />
+                    Y Tế Chuẩn Hóa
+                  </span>
+                  {doctorDisplayName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Bác sĩ phụ trách: <strong className="font-extrabold text-emerald-950">{doctorDisplayName}</strong></span>
+                    </span>
+                  )}
+                </div>
+                
+                {clinicProfile?.slogan ? (
+                  <p className="text-xs text-teal-800 font-medium italic truncate mt-0.5">
+                    “{clinicProfile.slogan}”
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    Hệ thống đặt lịch khám trực tuyến & bảo mật thông tin
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Quick Contact & Admin Access */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {clinicProfile?.phone && (
               <a 
                 href={`tel:${clinicProfile.phone}`}
-                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-2.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-50 text-teal-900 border border-teal-200/80 hover:bg-teal-100/70 transition-colors shadow-2xs"
-                title="Gọi hotline tư vấn y khoa"
+                className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-teal-50 text-teal-900 border border-teal-200/80 hover:bg-teal-100/70 transition-colors shadow-2xs"
+                title={`Gọi hotline: ${clinicProfile.phone}`}
               >
-                <Phone className="w-4 h-4 text-teal-700" />
+                <Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-700" />
                 <span className="hidden md:inline font-medium">Hotline:</span>
-                <span className="font-extrabold">{clinicProfile.phone}</span>
+                <span className="font-extrabold hidden sm:inline">{clinicProfile.phone}</span>
               </a>
             )}
 
             <PWAInstallButton />
             <Link
               to="/admin/login"
-              className="w-11 h-11 sm:w-11 sm:h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
               title="Cổng Đăng nhập Quản trị viên"
             >
-              <ShieldAlert className="w-5 h-5" />
+              <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
             </Link>
           </div>
         </div>

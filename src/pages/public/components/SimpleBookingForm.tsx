@@ -40,6 +40,7 @@ export default function SimpleBookingForm() {
   const [loadingServices, setLoadingServices] = useState(true);
   
   const [selectedService, setSelectedService] = useState<string | null>(null);
+  const selectedServiceObj = services.find(s => s.id === selectedService);
   
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -298,40 +299,49 @@ export default function SimpleBookingForm() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
+    <div className="max-w-3xl mx-auto space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20 sm:pb-12">
       
-      {/* Premium Header */}
-      <div className="text-center space-y-3 mb-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-50 border border-teal-100 text-teal-700 font-semibold text-sm mb-2 shadow-sm">
-          <Sparkles className="w-4 h-4" /> Dịch vụ Đặt hẹn Nhanh
+      {/* Premium Header - Optimized for mobile view */}
+      <div className="text-center space-y-2 sm:space-y-3 mb-4 sm:mb-8 px-1">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-100/90 text-teal-700 font-semibold text-xs sm:text-sm shadow-2xs">
+          <Sparkles className="w-3.5 h-3.5" /> Dịch vụ Đặt hẹn Nhanh
         </div>
-        <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-800 tracking-tight">{clinicDisplayName}</h2>
+        <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          {clinicDisplayName}
+        </h2>
         {doctorDisplayName && (
-          <p className="text-sm font-bold text-teal-800">
+          <p className="text-xs sm:text-sm font-semibold text-teal-800">
             Bác sĩ phụ trách: <span className="font-extrabold text-teal-950">{doctorDisplayName}</span>
           </p>
         )}
-        <p className="text-base sm:text-lg text-slate-500 font-medium max-w-xl mx-auto">
+        <p className="text-xs sm:text-base text-slate-500 font-medium max-w-xl mx-auto line-clamp-2 sm:line-clamp-none">
           {clinicProfile?.slogan || 'Hoàn tất thủ tục đặt lịch nhanh chóng, tiện lợi chỉ với vài thao tác cơ bản.'}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white/90 backdrop-blur-xl p-4 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 ring-1 ring-slate-900/5 relative">
+      <form onSubmit={handleSubmit} className="bg-white/95 backdrop-blur-xl p-3 sm:p-7 md:p-10 rounded-2xl sm:rounded-[2.5rem] shadow-sm sm:shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200/80 sm:border-slate-100 ring-1 ring-slate-900/5 relative">
         
         {/* Step 1: Chọn dịch vụ */}
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-teal-500/20">
-              1
+        <div className="space-y-4 sm:space-y-5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 sm:pb-4">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-md shadow-teal-600/20">
+                1
+              </div>
+              <h3 className="text-base sm:text-xl font-bold text-slate-900">Chọn dịch vụ khám</h3>
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Chọn dịch vụ khám</h3>
+            {selectedService && (
+              <span className="text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70">
+                Đã chọn 1
+              </span>
+            )}
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
             {loadingServices ? (
-              <div className="col-span-full py-12 text-center text-sm text-slate-400 flex flex-col items-center gap-3">
-                <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
-                Đang tải danh sách dịch vụ...
+              <div className="col-span-full py-10 text-center text-sm text-slate-400 flex flex-col items-center gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                Đang tải danh sách dịch vụ y tế...
               </div>
             ) : (
               services.map(svc => {
@@ -341,44 +351,84 @@ export default function SimpleBookingForm() {
                     key={svc.id}
                     type="button"
                     onClick={() => { setSelectedService(svc.id); setSelectedSlot(null); }}
-                    className={`group relative flex flex-col justify-center items-start p-5 rounded-2xl transition-all duration-300 outline-none overflow-hidden ${
+                    className={`group relative flex items-center justify-between w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-200 outline-none text-left cursor-pointer active:scale-[0.99] select-none ${
                       isSelected 
-                        ? 'bg-teal-50 ring-2 ring-teal-500 shadow-sm' 
-                        : 'bg-slate-50/50 border border-slate-200 hover:border-teal-300 hover:bg-slate-50 hover:shadow-sm'
+                        ? 'bg-teal-50/90 border-2 border-teal-600 shadow-sm shadow-teal-600/10' 
+                        : 'bg-white hover:bg-slate-50/80 border border-slate-200 hover:border-teal-300 shadow-2xs'
                     }`}
                   >
-                    <div className="flex items-start justify-between w-full mb-2">
-                      <div className={`p-2 rounded-lg ${isSelected ? 'bg-teal-500 text-white shadow-sm' : 'bg-white text-slate-400 group-hover:text-teal-500 border border-slate-100'} transition-colors`}>
-                        <Stethoscope className="w-5 h-5" />
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Icon */}
+                      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected 
+                          ? 'bg-teal-600 text-white shadow-xs' 
+                          : 'bg-teal-50/80 text-teal-700 group-hover:bg-teal-100 border border-teal-100'
+                      }`}>
+                        <Stethoscope className="w-4 h-4 sm:w-5 sm:h-5" />
                       </div>
-                      {isSelected && (
-                        <CheckCircle2 className="w-5 h-5 text-teal-500 animate-in zoom-in duration-200" />
-                      )}
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <span className={`font-bold text-sm sm:text-base leading-snug block line-clamp-2 ${
+                          isSelected ? 'text-teal-950 font-black' : 'text-slate-800'
+                        }`}>
+                          {svc.name}
+                        </span>
+
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {svc.durationMins && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {svc.durationMins} phút
+                            </span>
+                          )}
+                          {svc.showPrice && svc.price !== undefined && (
+                            <span className={`text-[11px] sm:text-xs font-bold ${
+                              isSelected ? 'text-teal-700' : 'text-slate-600'
+                            }`}>
+                              {svc.price > 0 ? `${svc.price.toLocaleString('vi-VN')} đ` : 'Miễn phí'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    
-                    <span className={`font-bold text-base sm:text-lg text-left leading-tight mt-1 ${isSelected ? 'text-teal-900' : 'text-slate-700'}`}>
-                      {svc.name}
-                    </span>
-                    {svc.showPrice && <span className={`text-sm font-semibold mt-2 ${isSelected ? 'text-teal-600' : 'text-slate-500'}`}>{svc.price.toLocaleString('vi-VN')} đ</span>}
+
+                    {/* Radio / Selection indicator on right */}
+                    <div className="shrink-0 pl-2">
+                      <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-all ${
+                        isSelected 
+                          ? 'bg-teal-600 text-white shadow-xs ring-2 ring-teal-600/30' 
+                          : 'border-2 border-slate-300 group-hover:border-teal-400 bg-white'
+                      }`}>
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />}
+                      </div>
+                    </div>
                   </button>
-                )
+                );
               })
             )}
           </div>
         </div>
 
-        <div className="h-8 sm:h-12" />
+        <div className="h-6 sm:h-10" />
 
         {/* Step 2: Chọn thời gian */}
-        <div className={`space-y-6 transition-all duration-500 ${!selectedService ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
-          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-teal-500/20">
-              2
+        <div className={`space-y-4 sm:space-y-5 transition-all duration-500 ${!selectedService ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 sm:pb-4">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-md shadow-teal-600/20">
+                2
+              </div>
+              <h3 className="text-base sm:text-xl font-bold text-slate-900">Chọn thời gian</h3>
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Chọn thời gian</h3>
+            {selectedSlot && (
+              <span className="text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {format(parseISO(selectedSlot.startAt), 'HH:mm')}
+              </span>
+            )}
           </div>
           
-          <div className="space-y-5">
+          <div className="space-y-4">
             {/* Timeline Ribbon Header with Month & Scroll Navigation */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -398,7 +448,7 @@ export default function SimpleBookingForm() {
                 <button
                   type="button"
                   onClick={() => handleScrollDates('left')}
-                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer"
+                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer active:scale-90"
                   title="Xem ngày trước"
                   aria-label="Xem ngày trước"
                 >
@@ -407,7 +457,7 @@ export default function SimpleBookingForm() {
                 <button
                   type="button"
                   onClick={() => handleScrollDates('right')}
-                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer"
+                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-teal-700 transition-colors shadow-2xs cursor-pointer active:scale-90"
                   title="Xem ngày tiếp theo"
                   aria-label="Xem ngày tiếp theo"
                 >
@@ -419,7 +469,7 @@ export default function SimpleBookingForm() {
             {/* Horizontal Scroll for Dates */}
             <div 
               ref={dateScrollRef}
-              className="flex gap-2.5 sm:gap-3 overflow-x-auto py-2.5 px-2 -mx-2 sm:mx-0 sm:px-1 scrollbar-hide snap-x snap-mandatory scroll-smooth touch-pan-x"
+              className="flex gap-2 sm:gap-3 overflow-x-auto py-2 px-1 -mx-2 sm:mx-0 sm:px-1 scrollbar-hide snap-x snap-mandatory scroll-smooth touch-pan-x"
             >
               {nextDays.map(date => {
                 const isSelected = format(date, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd');
@@ -432,7 +482,7 @@ export default function SimpleBookingForm() {
                     key={date.toISOString()}
                     type="button"
                     onClick={() => { setSelectedDate(date); setSelectedSlot(null); }}
-                    className={`snap-start flex-shrink-0 flex flex-col items-center justify-between w-[76px] sm:w-[84px] h-[98px] sm:h-[104px] p-2 sm:p-2.5 rounded-2xl outline-none transition-all duration-200 cursor-pointer select-none ${
+                    className={`snap-start shrink-0 flex flex-col items-center justify-between w-[70px] sm:w-[84px] h-[90px] sm:h-[104px] p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl outline-none transition-all duration-200 cursor-pointer select-none active:scale-95 ${
                       isSelected 
                         ? 'bg-teal-600 text-white shadow-md shadow-teal-600/25 ring-2 ring-teal-500 ring-offset-2 ring-offset-white' 
                         : 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400 hover:bg-teal-50/30 hover:shadow-2xs active:bg-slate-100'
@@ -448,7 +498,7 @@ export default function SimpleBookingForm() {
                       {dayLabel}
                     </span>
 
-                    <span className={`text-2xl sm:text-3xl font-black leading-none my-0.5 ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                    <span className={`text-xl sm:text-3xl font-black leading-none my-0.5 ${isSelected ? 'text-white' : 'text-slate-800'}`}>
                       {format(date, 'dd')}
                     </span>
 
@@ -461,39 +511,39 @@ export default function SimpleBookingForm() {
             </div>
 
             {/* Selected Date Summary Banner */}
-            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-600">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-600">
               <div className="flex items-center gap-1.5 font-medium text-slate-800">
                 <CalendarIcon className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                <span>{VIETNAMESE_FULL_DAYS[selectedDate.getDay()]}, ngày {format(selectedDate, 'dd/MM/yyyy')}</span>
+                <span>{VIETNAMESE_FULL_DAYS[selectedDate.getDay()]}, {format(selectedDate, 'dd/MM/yyyy')}</span>
               </div>
-              <span className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+              <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
                 slots.filter(s => s.isAvailable).length > 0
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   : 'bg-rose-50 text-rose-700 border border-rose-200'
               }`}>
-                {loadingSlots ? 'Đang kiểm tra lịch...' : slots.filter(s => s.isAvailable).length > 0 ? `Còn ${slots.filter(s => s.isAvailable).length} giờ trống` : 'Hết ca khám'}
+                {loadingSlots ? 'Đang kiểm tra...' : slots.filter(s => s.isAvailable).length > 0 ? `Còn ${slots.filter(s => s.isAvailable).length} giờ` : 'Hết giờ khám'}
               </span>
             </div>
 
             {/* Time Slots Grid */}
-            <div className="bg-slate-50/70 p-4 sm:p-6 rounded-2xl sm:rounded-[1.5rem] border border-slate-200/80">
+            <div className="bg-slate-50/70 p-3 sm:p-6 rounded-xl sm:rounded-[1.5rem] border border-slate-200/80">
               {loadingSlots ? (
-                <div className="py-10 text-center text-sm text-slate-400 flex flex-col items-center justify-center gap-3">
-                  <Loader2 className="w-7 h-7 animate-spin text-teal-600" />
-                  <span className="font-medium text-slate-600">Đang tìm các khung giờ tiếp nhận còn trống...</span>
+                <div className="py-8 text-center text-sm text-slate-400 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                  <span className="font-medium text-slate-600 text-xs sm:text-sm">Đang tìm các khung giờ trống...</span>
                 </div>
               ) : slots.filter(s => s.isAvailable).length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-2.5 sm:space-y-3">
                   <div className="flex items-center justify-between text-xs text-slate-500 font-semibold uppercase tracking-wider">
                     <span className="flex items-center gap-1.5 text-slate-700">
-                      <Clock className="w-3.5 h-3.5 text-teal-600" /> Khung giờ khám còn nhận
+                      <Clock className="w-3.5 h-3.5 text-teal-600" /> Khung giờ nhận khám
                     </span>
                     <span className="text-[11px] font-normal lowercase text-slate-400">
-                      {slots.filter(s => s.isAvailable).length} khung giờ khả dụng
+                      {slots.filter(s => s.isAvailable).length} khung giờ
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-3">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-2.5">
                     {slots.filter(s => s.isAvailable).map(slot => {
                       const isSelected = selectedSlot?.startAt === slot.startAt;
                       return (
@@ -501,7 +551,7 @@ export default function SimpleBookingForm() {
                           key={slot.startAt}
                           type="button"
                           onClick={() => setSelectedSlot(slot)}
-                          className={`min-h-[46px] py-2.5 px-2 text-sm sm:text-base font-bold rounded-xl border outline-none transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                          className={`min-h-[44px] py-2 px-1 text-sm sm:text-base font-bold rounded-xl border outline-none transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 ${
                             isSelected
                               ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20 ring-2 ring-teal-500 ring-offset-1'
                               : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50/40 shadow-2xs'
@@ -515,16 +565,16 @@ export default function SimpleBookingForm() {
                   </div>
                 </div>
               ) : (
-                <div className="py-8 px-4 text-center flex flex-col items-center justify-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                    <CalendarCheck className="w-6 h-6" />
+                <div className="py-6 px-3 text-center flex flex-col items-center justify-center gap-2.5">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <CalendarCheck className="w-5 h-5" />
                   </div>
                   <div className="max-w-md space-y-1">
-                    <p className="text-sm font-bold text-slate-800">
+                    <p className="text-xs sm:text-sm font-bold text-slate-800">
                       Không còn khung giờ trống vào ngày {format(selectedDate, 'dd/MM/yyyy')}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      Các bác sĩ đã kín lịch hoặc ngày này đã qua giờ tiếp nhận trực tuyến.
+                    <p className="text-[11px] sm:text-xs text-slate-500">
+                      Phòng khám đã kín lịch hoặc đã qua giờ hẹn trực tuyến.
                     </p>
                   </div>
                   <button
@@ -539,10 +589,10 @@ export default function SimpleBookingForm() {
                         setSelectedSlot(null);
                       }
                     }}
-                    className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs sm:text-sm font-semibold rounded-xl border border-teal-200 transition-colors cursor-pointer"
+                    className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-semibold rounded-xl border border-teal-200 transition-colors cursor-pointer"
                   >
                     <span>Xem ngày tiếp theo ({format(addDays(selectedDate, 1), 'dd/MM')})</span>
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
@@ -550,24 +600,33 @@ export default function SimpleBookingForm() {
           </div>
         </div>
 
-        <div className="h-8 sm:h-12" />
+        <div className="h-6 sm:h-10" />
 
         {/* Step 3: Thông tin cá nhân */}
-        <div className={`space-y-6 transition-all duration-500 ${!selectedSlot ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
-          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-teal-500/20">
-              3
+        <div className={`space-y-4 sm:space-y-5 transition-all duration-500 ${!selectedSlot ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 sm:pb-4">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-md shadow-teal-600/20">
+                3
+              </div>
+              <h3 className="text-base sm:text-xl font-bold text-slate-900">Thông tin liên hệ</h3>
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-slate-800">Thông tin liên hệ</h3>
+            {formData.fullName && formData.phone && (
+              <span className="text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Đã điền
+              </span>
+            )}
           </div>
           
-          <div className="grid grid-cols-1 gap-5 sm:gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:gap-5">
             {/* SĐT */}
-            <div className="space-y-2 relative">
-              <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Số điện thoại <span className="text-red-500">*</span></label>
+            <div className="space-y-1.5 relative">
+              <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
+                Số điện thoại <span className="text-red-500">*</span>
+              </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Phone className="h-5 w-5 text-slate-400" />
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Phone className="h-4 sm:h-5 w-4 sm:w-5 text-slate-400" />
                 </div>
                 <input
                   type="tel"
@@ -578,17 +637,17 @@ export default function SimpleBookingForm() {
                     setFormData({...formData, phone: e.target.value});
                     if (phoneStatus === 'verified') setPhoneStatus('idle'); // reset if they type a new number
                   }}
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                  placeholder="Nhập số điện thoại của bạn..."
+                  className="w-full pl-10 sm:pl-11 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-2xs"
+                  placeholder="Nhập số điện thoại để nhận thông báo..."
                 />
                 {phoneStatus === 'checking' && (
-                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
                     <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
                   </div>
                 )}
                 {phoneStatus === 'verified' && (
-                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                    <CheckCircle2 className="w-5 h-5 text-teal-500" />
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                    <CheckCircle2 className="w-5 h-5 text-teal-600" />
                   </div>
                 )}
               </div>
@@ -596,19 +655,19 @@ export default function SimpleBookingForm() {
 
             {/* Khối xác thực nếu là khách cũ */}
             {phoneStatus === 'existing_unverified' && (
-              <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5 sm:p-6 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg shrink-0 mt-0.5">
-                    <Sparkles className="w-5 h-5" />
+              <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 sm:p-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-start gap-2.5">
+                  <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg shrink-0 mt-0.5">
+                    <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-base font-bold text-slate-800">Khách hàng quen thuộc?</h4>
-                    <p className="text-sm text-slate-600 mt-1">Số điện thoại này đã từng đặt khám. Vui lòng nhập <strong className="text-slate-800">Họ và Tên</strong> của bạn để hệ thống tự động điền hồ sơ.</p>
+                    <h4 className="text-sm font-bold text-slate-800">Khách hàng quen thuộc?</h4>
+                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">Số điện thoại này đã từng đặt khám. Vui lòng nhập <strong className="text-slate-800">Họ và Tên</strong> để hệ thống tự động điền hồ sơ.</p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col sm:flex-row gap-2.5">
                   <div className="relative flex-1">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                       <User className="h-4 w-4 text-slate-400" />
                     </div>
                     <input
@@ -617,23 +676,23 @@ export default function SimpleBookingForm() {
                       onChange={e => setVerifyName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleVerifyName())}
                       placeholder="Nhập họ và tên..."
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 bg-white"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base font-semibold text-slate-800 bg-white"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleVerifyName}
                     disabled={isVerifying}
-                    className="whitespace-nowrap px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+                    className="whitespace-nowrap px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                    {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                     Xác thực
                   </button>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPhoneStatus('new')}
-                  className="text-xs text-blue-600 hover:underline font-medium inline-block"
+                  className="text-[11px] text-blue-600 hover:underline font-medium inline-block cursor-pointer"
                 >
                   Bỏ qua, tôi muốn điền hồ sơ mới
                 </button>
@@ -642,104 +701,126 @@ export default function SimpleBookingForm() {
 
             {/* Các trường còn lại chỉ hiện khi là khách mới hoặc đã verify */}
             {(phoneStatus === 'new' || phoneStatus === 'verified') && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
-                <div className="space-y-2 relative">
-                  <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Họ và tên <span className="text-red-500">*</span></label>
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-3 duration-400">
+                <div className="space-y-1.5 relative">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
+                    Họ và tên <span className="text-red-500">*</span>
+                  </label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <User className="h-5 w-5 text-slate-400" />
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <User className="h-4 sm:h-5 w-4 sm:w-5 text-slate-400" />
                     </div>
                     <input
                       type="text"
                       required
+                      autoCapitalize="words"
                       value={formData.fullName || ''}
                       onChange={e => setFormData({...formData, fullName: e.target.value})}
-                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                      placeholder="Nhập đầy đủ họ tên"
+                      className="w-full pl-10 sm:pl-11 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-2xs"
+                      placeholder="Nhập đầy đủ họ và tên"
                     />
                   </div>
                 </div>
             
-            {bookingFormConfig?.showNotificationChannels && (
-              <div className="space-y-2 col-span-1 sm:col-span-2 relative">
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Email <span className="text-slate-400 font-normal">(Tùy chọn)</span></label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Mail className="h-5 w-5 text-slate-400" />
+                {bookingFormConfig?.showNotificationChannels && (
+                  <div className="space-y-1.5 relative">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
+                      Email <span className="text-slate-400 font-normal text-xs">(Tùy chọn)</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <Mail className="h-4 sm:h-5 w-4 sm:w-5 text-slate-400" />
+                      </div>
+                      <input
+                        type="email"
+                        value={formData.email || ''}
+                        onChange={e => setFormData({...formData, email: e.target.value})}
+                        className="w-full pl-10 sm:pl-11 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-2xs"
+                        placeholder="Nhận vé khám và lịch nhắc qua email"
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="email"
-                    value={formData.email || ''}
-                    onChange={e => setFormData({...formData, email: e.target.value})}
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                    placeholder="Nhận vé khám qua email"
-                  />
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
+                    Ghi chú / Triệu chứng <span className="text-slate-400 font-normal text-xs">(Tùy chọn)</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute top-3.5 left-0 pl-3.5 flex items-start pointer-events-none">
+                      <FileText className="h-4 sm:h-5 w-4 sm:w-5 text-slate-400" />
+                    </div>
+                    <textarea
+                      value={formData.notes || ''}
+                      onChange={e => setFormData({...formData, notes: e.target.value})}
+                      className="w-full pl-10 sm:pl-11 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal min-h-[90px] sm:min-h-[110px] resize-none bg-slate-50/50 hover:bg-white focus:bg-white shadow-2xs"
+                      placeholder="Mô tả triệu chứng hoặc yêu cầu đặc biệt..."
+                    />
+                  </div>
+                  {bookingFormConfig?.quickNotesTags && bookingFormConfig.quickNotesTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {bookingFormConfig.quickNotesTags.map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ 
+                            ...prev, 
+                            notes: prev.notes ? `${prev.notes}, ${tag}` : tag 
+                          }))}
+                          className="px-2.5 py-1 bg-white text-slate-600 hover:text-teal-700 text-[11px] sm:text-xs font-semibold rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                        >
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-
-            <div className="space-y-2 col-span-1 sm:col-span-2">
-              <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-1">Ghi chú <span className="text-slate-400 font-normal">(Tùy chọn)</span></label>
-              <div className="relative">
-                <div className="absolute top-4 left-0 pl-4 flex items-start pointer-events-none">
-                  <FileText className="h-5 w-5 text-slate-400" />
-                </div>
-                <textarea
-                  value={formData.notes || ''}
-                  onChange={e => setFormData({...formData, notes: e.target.value})}
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal min-h-[120px] resize-none bg-slate-50/50 hover:bg-white focus:bg-white shadow-sm"
-                  placeholder="Mô tả triệu chứng hoặc yêu cầu đặc biệt..."
-                />
-              </div>
-              {bookingFormConfig?.quickNotesTags && bookingFormConfig.quickNotesTags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3 ml-1">
-                  {bookingFormConfig.quickNotesTags.map(tag => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => setFormData(prev => ({ 
-                        ...prev, 
-                        notes: prev.notes ? `${prev.notes}, ${tag}` : tag 
-                      }))}
-                      className="px-3 py-1.5 bg-white text-slate-600 hover:text-teal-700 text-xs font-semibold rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50 transition-all shadow-sm active:scale-95"
-                    >
-                      + {tag}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
-          )}
-        </div>
         </div>
 
-        <div className="mt-10 sm:mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-            <ShieldCheck className="w-5 h-5 text-teal-600" />
-            Thông tin được bảo mật hoàn toàn
+        {/* Security & Agreement Note */}
+        <div className="mt-8 sm:mt-10 pt-4 sm:pt-6 border-t border-slate-100 space-y-3">
+          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 font-medium">
+            <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
+            <span>Thông tin cá nhân được mã hóa và bảo mật y tế</span>
           </div>
           
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
-          <p className="text-[12px] text-slate-500 leading-relaxed text-center">
-            Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám sắp xếp phục vụ bệnh nhân khác.
-          </p>
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 sm:p-4 text-center">
+            <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-xl mx-auto">
+              Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám phục vụ tốt nhất.
+            </p>
+          </div>
         </div>
 
         {/* Mobile Sticky / Desktop static Button */}
-        <div className="sticky bottom-0 left-0 right-0 sm:static bg-white/95 sm:bg-transparent p-4 sm:p-0 border-t sm:border-0 border-slate-200 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] sm:shadow-none z-40 -mx-4 -mb-4 sm:mx-0 sm:mb-0 mt-2 sm:mt-0">
-          <button
-            type="submit"
-            disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
-            className="w-full sm:w-auto min-w-[280px] py-4 px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20"
-          >
-            {isSubmitting ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Đang xử lý hồ sơ...</>
-            ) : (
-              <><Send className="w-5 h-5" /> XÁC NHẬN ĐẶT LỊCH HẸN</>
+        <div className="fixed sm:static bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md p-3 sm:p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-0 border-t sm:border-0 border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] sm:shadow-none mt-4 sm:mt-6">
+          <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            {/* Mobile Summary preview above button */}
+            {(selectedServiceObj || selectedSlot) && (
+              <div className="sm:hidden w-full flex items-center justify-between text-xs px-1">
+                <span className="font-bold text-slate-800 truncate max-w-[200px]">
+                  {selectedServiceObj?.name || 'Chưa chọn dịch vụ'}
+                </span>
+                <span className="text-teal-700 font-extrabold shrink-0 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
+                  {selectedSlot ? `${format(parseISO(selectedSlot.startAt), 'HH:mm • dd/MM')}` : 'Chưa chọn giờ'}
+                </span>
+              </div>
             )}
-          </button>
-        </div>
+
+            <button
+              type="submit"
+              disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
+              className="w-full sm:w-auto min-w-[280px] py-3.5 sm:py-4 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20 active:scale-[0.99] cursor-pointer"
+            >
+              {isSubmitting ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Đang xử lý hồ sơ...</>
+              ) : (
+                <><Send className="w-5 h-5" /> XÁC NHẬN ĐẶT LỊCH HẸN</>
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>
