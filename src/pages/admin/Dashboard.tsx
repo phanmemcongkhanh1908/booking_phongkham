@@ -89,7 +89,20 @@ export default function Dashboard() {
           ? 'analytics' 
           : 'settings';
 
-  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(defaultTab as any);
+  // Set default active tab based on saved preference or permissions
+  const validTabs = ['appointments', 'patients', 'settings', 'services', 'analytics', 'users'];
+  const savedTab = typeof window !== 'undefined' ? localStorage.getItem('admin_active_tab') : null;
+  const initialTab = (savedTab && validTabs.includes(savedTab))
+    ? savedTab
+    : (defaultTab as any);
+
+  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(initialTab as any);
+
+  useEffect(() => {
+    if (activeTab) {
+      localStorage.setItem('admin_active_tab', activeTab);
+    }
+  }, [activeTab]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);

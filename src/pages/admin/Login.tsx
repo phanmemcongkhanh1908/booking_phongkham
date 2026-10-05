@@ -62,7 +62,14 @@ export default function Login() {
         navigate('/admin/dashboard');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || err.response?.data?.message || 'Đăng nhập thất bại');
+      const status = err.response?.status;
+      if (status === 503) {
+        setError('Máy chủ đang khởi động lại (Render Cold Start). Vui lòng đợi 20-30 giây rồi bấm Đăng nhập lại.');
+      } else if (status === 429) {
+        setError('Hệ thống phát hiện nhiều yêu cầu liên tiếp. Vui lòng đợi khoảng 1 phút rồi thử lại.');
+      } else {
+        setError(err.response?.data?.error?.message || err.response?.data?.message || 'Tài khoản hoặc mật khẩu không chính xác');
+      }
     } finally {
       setLoading(false);
     }

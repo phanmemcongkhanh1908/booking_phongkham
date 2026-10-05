@@ -15,6 +15,7 @@ export function useRealtimeBooking() {
     // Check role and route to ensure administrative access and appropriate context
     if (!token || !user) return;
     if (!location.pathname.startsWith('/admin')) return;
+    if (location.pathname === '/admin/login') return; // Do not connect on login page
     
     const roleUpper = (user.role || '').toUpperCase();
     const isStaff = ['SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'DENTIST', 'DOCTOR', 'STAFF', 'MANAGER'].some(r => roleUpper.includes(r));
@@ -22,47 +23,62 @@ export function useRealtimeBooking() {
 
     let es: EventSource | null = null;
     let reconnectTimeout: any;
+    let retryCount = 0;
 
     const connect = () => {
-      es = new EventSource(`/api/notifications/stream?token=${token}`);
+      if (location.pathname === '/admin/login') return;
+      
+      try {
+        es = new EventSource(`/api/notifications/stream?token=${token}`);
 
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'HEARTBEAT') return;
-        } catch (err) {}
-      };
+        es.onopen = () => {
+          retryCount = 0; // Reset retry count on successful connection
+        };
 
-      es.addEventListener('BOOKING_CREATED', async (e: any) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (!payload || !payload.id) return;
+        es.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'HEARTBEAT') return;
+          } catch (err) {}
+        };
 
-          // Deduplication check
-          const eventId = `BOOKING_${payload.id}`;
-          if (processedEvents.current.has(eventId)) return;
-          processedEvents.current.add(eventId);
+        es.addEventListener('BOOKING_CREATED', async (e: any) => {
+          try {
+            const payload = JSON.parse(e.data);
+            if (!payload || !payload.id) return;
 
-          // 1. Toast UI notification
-          const time = formatVietnameseTime(payload.startAt);
-          const date = formatVietnameseDate(payload.startAt);
-          toast.success(`Khách hàng mới: ${payload.patientName || 'Khách hàng'}\n${payload.serviceName || 'Dịch vụ nha khoa'}\n${time} - ${date}`, {
-            duration: 8000,
-            icon: '🔔'
-          });
+            // Deduplication check
+            const eventId = `BOOKING_${payload.id}`;
+            if (processedEvents.current.has(eventId)) return;
+            processedEvents.current.add(eventId);
 
-          // 2. Dispatch to Broadcast Store (Handles Professional Chime + Vietnamese TTS + Reminder Loop)
-          await useBroadcastStore.getState().handleIncomingBooking(payload);
+            // 1. Toast UI notification
+            const time = formatVietnameseTime(payload.startAt);
+            const date = formatVietnameseDate(payload.startAt);
+            toast.success(`Khách hàng mới: ${payload.patientName || 'Khách hàng'}\n${payload.serviceName || 'Dịch vụ nha khoa'}\n${time} - ${date}`, {
+              duration: 8000,
+              icon: '🔔'
+            });
 
-        } catch (err) {
-          console.error("Failed to parse BOOKING_CREATED", err);
-        }
-      });
+            // 2. Dispatch to Broadcast Store (Handles Professional Chime + Vietnamese TTS + Reminder Loop)
+            await useBroadcastStore.getState().handleIncomingBooking(payload);
 
-      es.onerror = () => {
-        es?.close();
-        reconnectTimeout = setTimeout(connect, 5000);
-      };
+          } catch (err) {
+            console.error("Failed to parse BOOKING_CREATED", err);
+          }
+        });
+
+        es.onerror = () => {
+          es?.close();
+          // Exponential backoff to avoid hammering server (5s -> 10s -> 20s -> max 30s)
+          retryCount = Math.min(retryCount + 1, 5);
+          const delay = Math.min(30000, 5000 * Math.pow(1.5, retryCount - 1));
+          reconnectTimeout = setTimeout(connect, delay);
+        };
+      } catch (e) {
+        retryCount = Math.min(retryCount + 1, 5);
+        reconnectTimeout = setTimeout(connect, 10000);
+      }
     };
 
     connect();

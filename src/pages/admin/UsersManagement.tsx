@@ -342,13 +342,14 @@ export default function UsersManagement() {
     try {
       if (modalMode === 'create') {
         const trimmedIdentifier = email.trim();
+        const createdSlug = slug ? slug.trim().toLowerCase() : '';
         await api.post('/users', { 
           username: trimmedIdentifier,
           email: trimmedIdentifier,
           password,
           permissions: selectedPermissions,
           uiMode,
-          slug,
+          slug: createdSlug,
           clinicName,
           slogan,
           doctorName,
@@ -361,7 +362,7 @@ export default function UsersManagement() {
         const updateData: any = { 
           permissions: selectedPermissions, 
           uiMode, 
-          slug,
+          slug: slug ? slug.trim().toLowerCase() : '',
           clinicName,
           slogan,
           doctorName,
@@ -376,11 +377,12 @@ export default function UsersManagement() {
         setMsg('Cập nhật tài khoản thành công!');
       }
       setIsError(false);
-      fetchUsers();
+      await fetchUsers();
       
       if (modalMode === 'create') {
         setEmail('');
         setPassword('');
+        setConfirmPassword('');
         setSelectedPermissions(['*']);
       }
     } catch (err: any) {
@@ -1073,23 +1075,33 @@ export default function UsersManagement() {
               </form>
             </div>
             
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="px-5 py-2.5 font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors text-xs sm:text-sm"
-              >
-                Hủy
-              </button>
-              <button
-                form="user-form"
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-primary hover:bg-primary/90 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-colors disabled:opacity-70 shadow-sm text-xs sm:text-sm"
-              >
-                {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {modalMode === 'create' ? 'Tạo tài khoản' : 'Lưu thay đổi'}
-              </button>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 shrink-0">
+              <div>
+                {msg && !isError && (
+                  <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Đã lưu thành công vào CSDL hệ thống
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-5 py-2.5 font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors text-xs sm:text-sm cursor-pointer"
+                >
+                  {msg && !isError ? 'Đóng cửa sổ' : 'Hủy'}
+                </button>
+                <button
+                  form="user-form"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-primary hover:bg-primary/90 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition-colors disabled:opacity-70 shadow-sm text-xs sm:text-sm cursor-pointer"
+                >
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {modalMode === 'create' ? 'Tạo tài khoản' : 'Lưu thay đổi'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

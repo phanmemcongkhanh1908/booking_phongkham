@@ -16,6 +16,48 @@
       "isActive": true,
       "id": "fa2d5aa4-f9bd-422f-a826-1da931e299ae",
       "updatedAt": "2026-09-14T15:05:30.997Z"
+    },
+    "7764865f-fc2f-4a42-a0c1-32eb6fd20b3e": {
+      "email": "lephuong",
+      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$bNtiNWZ3PNhpjTJ8WS2aWQ$mogM4C6p3S0ZRCg1mjdtwmsrgqBmeZG6nG0KlgazSGk",
+      "roleId": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8",
+      "tenantId": "tenant_lephuong",
+      "isActive": true,
+      "permissions": [
+        "*"
+      ],
+      "slug": "lephuong",
+      "clinicName": "Nha Khoa Lê Phương",
+      "doctorName": "Bs. Lê Phương",
+      "address": "456 Lê Lợi, TP. HCM",
+      "phone": "0987654321",
+      "hotline": "0987654321",
+      "workingHoursStr": "",
+      "slogan": "",
+      "createdAt": "2026-10-05T11:41:41.875Z",
+      "updatedAt": "2026-10-05T11:41:41.875Z",
+      "id": "7764865f-fc2f-4a42-a0c1-32eb6fd20b3e"
+    },
+    "cc3df22d-6a80-4d82-828d-4db7d1f67a0b": {
+      "email": "nhakhoanucuoi",
+      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$mQh3Sra8lCBKZaXRQL2euQ$d1bcNM++WCoqVL68dRIMeWpT1RKTiPBnPng0DACbAQ8",
+      "roleId": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8",
+      "tenantId": "tenant_nhakhoanucuoi",
+      "isActive": true,
+      "permissions": [
+        "*"
+      ],
+      "slug": "nhakhoanucuoi",
+      "clinicName": "Nha Khoa Nụ Cười Xinh",
+      "doctorName": "Bs. Nguyễn Văn Nụ",
+      "address": "789 Đường 3/2, Quận 10, TP.HCM",
+      "phone": "0912345678",
+      "hotline": "0912345678",
+      "workingHoursStr": "",
+      "slogan": "",
+      "createdAt": "2026-10-05T11:48:20.801Z",
+      "updatedAt": "2026-10-05T11:48:20.801Z",
+      "id": "cc3df22d-6a80-4d82-828d-4db7d1f67a0b"
     }
   },
   "providers": {
@@ -176,6 +218,70 @@
           "Khám răng định kỳ",
           "Cần xuất hóa đơn"
         ]
+      }
+    },
+    "tenant_lephuong__clinicProfile": {
+      "id": "clinicProfile",
+      "tenantId": "tenant_lephuong",
+      "key": "clinicProfile",
+      "value": {
+        "clinicName": "Nha Khoa Lê Phương",
+        "name": "Nha Khoa Lê Phương",
+        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
+        "doctorName": "Bs. Lê Phương",
+        "workingHours": "T2 - CN: 08:00 - 20:00",
+        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
+        "address": "456 Lê Lợi, TP. HCM",
+        "phone": "0987654321",
+        "hotline": "0987654321"
+      }
+    },
+    "tenant_lephuong__clinic_profile": {
+      "id": "clinic_profile",
+      "tenantId": "tenant_lephuong",
+      "key": "clinic_profile",
+      "value": {
+        "clinicName": "Nha Khoa Lê Phương",
+        "name": "Nha Khoa Lê Phương",
+        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
+        "doctorName": "Bs. Lê Phương",
+        "workingHours": "T2 - CN: 08:00 - 20:00",
+        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
+        "address": "456 Lê Lợi, TP. HCM",
+        "phone": "0987654321",
+        "hotline": "0987654321"
+      }
+    },
+    "tenant_nhakhoanucuoi__clinicProfile": {
+      "id": "clinicProfile",
+      "tenantId": "tenant_nhakhoanucuoi",
+      "key": "clinicProfile",
+      "value": {
+        "clinicName": "Nha Khoa Nụ Cười Xinh",
+        "name": "Nha Khoa Nụ Cười Xinh",
+        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
+        "doctorName": "Bs. Nguyễn Văn Nụ",
+        "workingHours": "T2 - CN: 08:00 - 20:00",
+        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
+        "address": "789 Đường 3/2, Quận 10, TP.HCM",
+        "phone": "0912345678",
+        "hotline": "0912345678"
+      }
+    },
+    "tenant_nhakhoanucuoi__clinic_profile": {
+      "id": "clinic_profile",
+      "tenantId": "tenant_nhakhoanucuoi",
+      "key": "clinic_profile",
+      "value": {
+        "clinicName": "Nha Khoa Nụ Cười Xinh",
+        "name": "Nha Khoa Nụ Cười Xinh",
+        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
+        "doctorName": "Bs. Nguyễn Văn Nụ",
+        "workingHours": "T2 - CN: 08:00 - 20:00",
+        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
+        "address": "789 Đường 3/2, Quận 10, TP.HCM",
+        "phone": "0912345678",
+        "hotline": "0912345678"
       }
     }
   },

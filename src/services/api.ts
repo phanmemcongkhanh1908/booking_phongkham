@@ -12,10 +12,13 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   
-  // Attach tenantId for public booking APIs if available
-  const tenantId = useBookingStore.getState().tenantId;
-  if (tenantId) {
-    config.headers['x-tenant-id'] = tenantId;
+  // Attach tenantId ONLY for public booking APIs if available (never leak to admin/auth APIs)
+  const isPublicUrl = config.url?.startsWith('/public') || config.url?.startsWith('public');
+  if (isPublicUrl) {
+    const tenantId = useBookingStore.getState().tenantId;
+    if (tenantId) {
+      config.headers['x-tenant-id'] = tenantId;
+    }
   }
   
   return config;

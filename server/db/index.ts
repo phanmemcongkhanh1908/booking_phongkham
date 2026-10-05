@@ -48,8 +48,19 @@ export function persistStore() {
 
 function scheduleSave() {
   if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(persistStore, 50);
+  persistStore();
 }
+
+// Ensure store is always persisted on process shutdown
+process.on('beforeExit', () => {
+  persistStore();
+});
+process.on('SIGINT', () => {
+  persistStore();
+});
+process.on('SIGTERM', () => {
+  persistStore();
+});
 
 export const eq = (field: any, value: any) => ({ type: "eq", field, value });
 export const and = (...args: any[]) => ({ type: "and", args });

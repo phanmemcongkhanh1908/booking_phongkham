@@ -103,14 +103,33 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
       throw new BadRequestError("Vui lòng nhập mật khẩu");
     }
 
-    // Kiểm tra trùng lặp không phân biệt hoa thường
-    const existingUsers = await db.select().from(users);
-    const existing = existingUsers.find(
-      (u: any) => (u.email || "").trim().toLowerCase() === identifier
-    );
-    if (existing) {
+    // Kiểm tra trùng lặp tài khoản và slug không phân biệt hoa thường trên toàn hệ thống
+    const cleanSlug = slug ? slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "") : "";
+    
+    let existingUser: any = null;
+    let existingSlug: any = null;
+    
+    const { appContext } = await import("../../core/context.js");
+    await appContext.run({ isFullAdmin: true }, async () => {
+      const allUsers = await db.select().from(users);
+      existingUser = allUsers.find(
+        (u: any) => (u.email || "").trim().toLowerCase() === identifier
+      );
+      if (cleanSlug) {
+        existingSlug = allUsers.find(
+          (u: any) => (u.slug || "").trim().toLowerCase() === cleanSlug
+        );
+      }
+    });
+
+    if (existingUser) {
       console.warn("[Users API] Creation failed: identifier already exists.");
       throw new BadRequestError(`Tên tài khoản hoặc email '${rawIdentifier}' đã tồn tại trong hệ thống.`);
+    }
+
+    if (existingSlug) {
+      console.warn("[Users API] Creation failed: slug already exists.");
+      throw new BadRequestError(`Định danh phòng khám (Slug) '${cleanSlug}' đã được sử dụng. Vui lòng chọn slug khác.`);
     }
 
     let targetRoleId = roleId;

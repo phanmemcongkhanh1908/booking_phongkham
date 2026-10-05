@@ -134,28 +134,41 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
   const tinyData = tinyUrlRes.status === 'fulfilled' ? tinyUrlRes.value : { url: '', error: 'Lỗi kết nối máy chủ TinyURL' };
   const dagdData = dagdRes.status === 'fulfilled' ? dagdRes.value : { url: '', error: 'Lỗi kết nối máy chủ da.gd' };
   
-  const renderDomainUrl = `https://booking-phongkham.onrender.com/b/${cleanSlug}`;
+  const isDevAiStudio = detectedOrigin.includes('ais-dev-');
+  const sharedAiStudioOrigin = isDevAiStudio ? detectedOrigin.replace('ais-dev-', 'ais-pre-') : '';
 
   let options: ShortLinkOption[] = [
     {
       id: 'internal',
-      name: 'Link phòng khám (Hiện tại)',
-      tagline: 'Tên miền đang truy cập • 100% Không quảng cáo',
+      name: 'Link phòng khám (Khuyên dùng)',
+      tagline: 'Tên miền chính chủ • 100% Không quảng cáo • Nhận diện thương hiệu',
       url: internalShortUrl,
       isAdFree: true,
       isDirectRedirect: true,
       type: 'brand',
     },
     {
-      id: 'render',
-      name: 'Link máy chủ (Gốc)',
-      tagline: 'Tên miền chính thức booking-phongkham.onrender.com',
-      url: renderDomainUrl,
+      id: 'full',
+      name: 'Đường dẫn trực tiếp (Chuẩn SEO)',
+      tagline: 'Link đầy đủ trực tiếp • Phù hợp đăng Website / Fanpage',
+      url: fullBookingUrl,
       isAdFree: true,
       isDirectRedirect: true,
       type: 'brand',
     }
   ];
+
+  if (sharedAiStudioOrigin) {
+    options.push({
+      id: 'render',
+      name: 'Link công khai (Dành cho khách hàng ngoài)',
+      tagline: 'Đường dẫn chia sẻ công khai không cần tài khoản nhà phát triển',
+      url: `${sharedAiStudioOrigin}/b/${cleanSlug}`,
+      isAdFree: true,
+      isDirectRedirect: true,
+      type: 'brand',
+    });
+  }
 
   
   options.push({

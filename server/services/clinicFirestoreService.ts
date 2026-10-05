@@ -164,8 +164,9 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
       matchedUser = allUsers.find((u: any) => {
         const uSlug = (u.slug || "").trim().toLowerCase();
         const uUsername = (u.username || "").trim().toLowerCase();
+        const uEmail = (u.email || "").trim().toLowerCase();
         const uId = (u.id || "").trim();
-        return uSlug === cleanSlug || uUsername === cleanSlug || uId === cleanSlug;
+        return uSlug === cleanSlug || uUsername === cleanSlug || uEmail === cleanSlug || uId === cleanSlug;
       });
 
       if (matchedUser) {

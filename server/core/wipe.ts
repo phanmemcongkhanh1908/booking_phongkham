@@ -75,12 +75,13 @@ export async function wipeClinicData() {
 
     const userEntries = Object.entries(store["users"]);
     for (const [userId, userData] of userEntries) {
-      const email = ((userData as any).email || "").toLowerCase().trim();
+      const u = userData as any;
+      const email = (u.email || "").toLowerCase().trim();
 
       if (email === defaultAdminEmail || email === "admin") {
         foundAdmin = true;
         store["users"][userId] = {
-          ...(userData as any),
+          ...u,
           email: email,
           passwordHash: defaultPasswordHash,
           roleId: adminRoleId,
@@ -88,6 +89,9 @@ export async function wipeClinicData() {
           updatedAt: new Date().toISOString(),
         };
         console.log(`[Wipe] Preserved admin account: ${email}`);
+      } else if (u.slug || u.clinicName || u.tenantId) {
+        // Preserve all clinic-specific accounts so clinic setups and links are NEVER lost
+        console.log(`[Wipe] Preserved clinic account: ${email} (${u.clinicName || u.slug})`);
       } else {
         delete store["users"][userId];
         nonAdminRemoved++;
