@@ -410,7 +410,11 @@ export default function UsersManagement() {
       await api.delete(`/users/${userId}`);
       setUsers(prev => prev.filter(u => u.id !== userId));
     } catch (err: any) {
-      alert(err.response?.data?.error?.message || 'Có lỗi xảy ra khi xóa tài khoản');
+      if (err.response?.status === 429) {
+        alert('Máy chủ đang nhận quá nhiều yêu cầu liên tiếp (429 Rate Limit). Vui lòng đợi 30 giây rồi thử bấm xóa lại.');
+      } else {
+        alert(err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi xóa tài khoản');
+      }
     }
   };
 

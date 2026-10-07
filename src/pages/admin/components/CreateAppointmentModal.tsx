@@ -39,6 +39,7 @@ export default function CreateAppointmentModal({
   const [phone, setPhone] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [additionalServiceIds, setAdditionalServiceIds] = useState<string[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [date, setDate] = useState(initialDate || format(new Date(), 'yyyy-MM-dd'));
   const [time, setTime] = useState(initialTime || '09:00');
@@ -133,10 +134,30 @@ export default function CreateAppointmentModal({
     setShowPatientSuggestions(false);
   };
 
-  // Selected Service details
+  // All selected services (primary + additional)
+  const allSelectedServiceIds = useMemo(() => {
+    return [selectedServiceId, ...additionalServiceIds.filter(id => id !== selectedServiceId)].filter(Boolean);
+  }, [selectedServiceId, additionalServiceIds]);
+
+  const allSelectedServices = useMemo(() => {
+    return services.filter(s => allSelectedServiceIds.includes(s.id));
+  }, [services, allSelectedServiceIds]);
+
   const selectedService = useMemo(() => {
     return services.find(s => s.id === selectedServiceId);
   }, [services, selectedServiceId]);
+
+  const totalDurationMins = useMemo(() => {
+    if (allSelectedServices.length === 0) return selectedService?.durationMins || 30;
+    return allSelectedServices.reduce((sum, s) => sum + (s.durationMins || 30), 0);
+  }, [allSelectedServices, selectedService]);
+
+  const combinedServiceName = useMemo(() => {
+    if (allSelectedServices.length > 1) {
+      return allSelectedServices.map(s => s.name).join(' + ');
+    }
+    return undefined;
+  }, [allSelectedServices]);
 
   // Calculate estimated end time
   const calculatedEndTime = useMemo(() => {
@@ -145,13 +166,12 @@ export default function CreateAppointmentModal({
       const [hours, minutes] = time.split(':').map(Number);
       const startDate = new Date(date);
       startDate.setHours(hours, minutes, 0, 0);
-      const duration = selectedService?.durationMins || 30;
-      const endDate = addMinutes(startDate, duration);
+      const endDate = addMinutes(startDate, totalDurationMins);
       return format(endDate, 'HH:mm');
     } catch {
       return '';
     }
-  }, [date, time, selectedService]);
+  }, [date, time, totalDurationMins]);
 
   // Quick preset time slots
   const quickTimePresets = [
@@ -188,14 +208,15 @@ export default function CreateAppointmentModal({
       const startAtDate = new Date(date);
       startAtDate.setHours(hours, minutes, 0, 0);
 
-      const duration = selectedService?.durationMins || 30;
-      const endAtDate = addMinutes(startAtDate, duration);
+      const endAtDate = addMinutes(startAtDate, totalDurationMins);
 
       const payload = {
         patientName: patientName.trim(),
         phone: cleanPhone,
         patientId: selectedPatientId || undefined,
         serviceId: selectedServiceId,
+        serviceIds: allSelectedServiceIds,
+        customServiceName: combinedServiceName,
         providerId: selectedProviderId || undefined,
         startAt: startAtDate.toISOString(),
         endAt: endAtDate.toISOString(),
@@ -411,6 +432,58 @@ export default function CreateAppointmentModal({
                 ))}
               </select>
             </div>
+
+            {/* Dịch vụ kết hợp đi kèm (Chọn nhiều hơn 1 dịch vụ) */}
+            <div className="col-span-full pt-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-teal-600" />
+                  Dịch vụ kết hợp đi kèm (chọn nhiều hơn 1 dịch vụ):
+                </span>
+                {additionalServiceIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalServiceIds([])}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
+                  >
+                    Bỏ chọn thêm ({additionalServiceIds.length})
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50/80 rounded-xl border border-slate-200">
+                {services.filter(s => s.id !== selectedServiceId).map(s => {
+                  const isChecked = additionalServiceIds.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setAdditionalServiceIds(prev => 
+                          prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                        );
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        isChecked 
+                          ? 'bg-teal-600 text-white shadow-xs' 
+                          : 'bg-white text-slate-700 border border-slate-200 hover:border-teal-400 hover:bg-teal-50/40'
+                      }`}
+                    >
+                      <span>{isChecked ? '✓' : '+'}</span>
+                      <span>{s.name}</span>
+                      <span className="text-[10px] opacity-80">({s.durationMins || 30}p)</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {allSelectedServices.length > 1 && (
+                <p className="text-xs text-teal-800 font-medium mt-1.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span>
+                    Đã gộp {allSelectedServices.length} dịch vụ: <strong>{allSelectedServices.map(s => s.name).join(' + ')}</strong> (Tổng ~{totalDurationMins} phút)
+                  </span>
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Section 3: Ngày & Giờ khám */}
@@ -422,7 +495,7 @@ export default function CreateAppointmentModal({
               </label>
               {calculatedEndTime && (
                 <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200">
-                  Dự kiến: {time} - {calculatedEndTime} ({selectedService?.durationMins || 30} phút)
+                  Dự kiến: {time} - {calculatedEndTime} (Tổng: {totalDurationMins} phút)
                 </span>
               )}
             </div>

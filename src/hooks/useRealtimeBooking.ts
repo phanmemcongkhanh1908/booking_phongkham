@@ -70,14 +70,19 @@ export function useRealtimeBooking() {
 
         es.onerror = () => {
           es?.close();
-          // Exponential backoff to avoid hammering server (5s -> 10s -> 20s -> max 30s)
-          retryCount = Math.min(retryCount + 1, 5);
-          const delay = Math.min(30000, 5000 * Math.pow(1.5, retryCount - 1));
-          reconnectTimeout = setTimeout(connect, delay);
+          es = null;
+          // Conservative backoff to prevent triggering proxy/Cloudflare 429 rate limits (15s -> 30s -> 60s max)
+          retryCount++;
+          const delay = retryCount <= 1 ? 15000 : retryCount === 2 ? 30000 : 60000;
+          reconnectTimeout = setTimeout(() => {
+            if (document.visibilityState !== 'hidden') {
+              connect();
+            }
+          }, delay);
         };
       } catch (e) {
-        retryCount = Math.min(retryCount + 1, 5);
-        reconnectTimeout = setTimeout(connect, 10000);
+        retryCount++;
+        reconnectTimeout = setTimeout(connect, 30000);
       }
     };
 

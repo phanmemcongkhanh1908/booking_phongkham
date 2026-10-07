@@ -15,6 +15,8 @@ export interface Slot {
 export function useHoldSlot() {
   const {
     serviceId,
+    serviceName,
+    selectedServices,
     sessionToken,
     slotStartTime,
     slotEndTime,
@@ -64,8 +66,17 @@ export function useHoldSlot() {
     // 2. NẾU LÀ SLOT MỚI HOẶC PHIÊN CŨ ĐÃ HẾT HẠN -> GỌI API GIỮ CHỖ
     setHoldingSlotStart(slot.startAt);
     try {
+      const targetServiceIds = (selectedServices && selectedServices.length > 0)
+        ? selectedServices.map(s => s.id)
+        : (serviceId ? [serviceId] : []);
+      const customName = selectedServices && selectedServices.length > 1
+        ? (serviceName || selectedServices.map(s => s.name).join(' + '))
+        : undefined;
+
       const res = await api.post('/public/appointments/hold', {
-        serviceId,
+        serviceId: targetServiceIds[0] || serviceId,
+        serviceIds: targetServiceIds,
+        customServiceName: customName,
         providerId: slot.providerId,
         startAt: slot.startAt,
         endAt: slot.endAt

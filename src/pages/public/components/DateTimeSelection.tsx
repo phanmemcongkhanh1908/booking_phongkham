@@ -50,7 +50,15 @@ const VIETNAMESE_DAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
 export default function DateTimeSelection() {
-  const { serviceId, serviceName, serviceDuration, providerId: storeProviderId, setStep, slotStartTime: storeSlotStartTime } = useBookingStore();
+  const { 
+    serviceId, 
+    serviceName, 
+    serviceDuration, 
+    selectedServices,
+    providerId: storeProviderId, 
+    setStep, 
+    slotStartTime: storeSlotStartTime 
+  } = useBookingStore();
   const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -99,16 +107,28 @@ export default function DateTimeSelection() {
       .catch(err => console.error('Failed to load providers', err));
   }, []);
 
+  // Compute target service IDs for multi-service availability
+  const targetServiceIds = useMemo(() => {
+    if (selectedServices && selectedServices.length > 0) {
+      return selectedServices.map(s => s.id);
+    }
+    return serviceId ? [serviceId] : [];
+  }, [selectedServices, serviceId]);
+
+  const targetServiceIdsParam = targetServiceIds.join(',');
+
   // 2. Fetch 28-day Availability Summary
   useEffect(() => {
-    if (!serviceId) return;
+    if (!serviceId && targetServiceIds.length === 0) return;
 
     setLoadingSummary(true);
     const startDateStr = format(startOfToday(), 'yyyy-MM-dd');
     
     api.get('/public/availability/summary', {
       params: {
-        serviceId,
+        serviceId: targetServiceIds[0] || serviceId,
+        serviceIds: targetServiceIdsParam || undefined,
+        durationMins: serviceDuration || undefined,
         providerId: selectedProviderId || undefined,
         startDate: startDateStr,
         days: 28,
@@ -130,13 +150,13 @@ export default function DateTimeSelection() {
       })
       .catch(err => console.error('Failed to load availability summary', err))
       .finally(() => setLoadingSummary(false));
-  }, [serviceId, selectedProviderId]);
+  }, [serviceId, targetServiceIdsParam, serviceDuration, selectedProviderId]);
 
   // 3. Fetch specific day's slots (Chống Race Condition bằng fetchRequestIdRef)
   useEffect(() => {
-    if (!serviceId) return;
+    if (!serviceId && targetServiceIds.length === 0) return;
     fetchSlots(selectedDate);
-  }, [selectedDate, serviceId, selectedProviderId]);
+  }, [selectedDate, serviceId, targetServiceIdsParam, serviceDuration, selectedProviderId]);
 
   const fetchSlots = async (date: Date) => {
     const currentReqId = ++fetchRequestIdRef.current;
@@ -145,7 +165,9 @@ export default function DateTimeSelection() {
       const formattedDate = format(date, 'yyyy-MM-dd');
       const res = await api.get('/public/availability', {
         params: {
-          serviceId,
+          serviceId: targetServiceIds[0] || serviceId,
+          serviceIds: targetServiceIdsParam || undefined,
+          durationMins: serviceDuration || undefined,
           providerId: selectedProviderId || undefined,
           date: formattedDate,
           includeUnavailable: 'true',
@@ -414,12 +436,25 @@ export default function DateTimeSelection() {
                 Chọn Ngày & Giờ Khám
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-2">
-                <span className="text-xs font-bold px-2.5 py-1 bg-teal-50 text-teal-900 rounded-lg border border-teal-200/80">
-                  Dịch vụ: {serviceName || 'Nha khoa'}
-                </span>
+                {selectedServices && selectedServices.length > 1 ? (
+                  <>
+                    <span className="text-xs font-bold px-2.5 py-1 bg-teal-100 text-teal-900 rounded-lg border border-teal-300">
+                      Đã chọn ({selectedServices.length} dịch vụ)
+                    </span>
+                    {selectedServices.map(svc => (
+                      <span key={svc.id} className="text-xs font-semibold px-2 py-0.5 bg-teal-50 text-teal-800 rounded-md border border-teal-200/70">
+                        • {svc.name}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <span className="text-xs font-bold px-2.5 py-1 bg-teal-50 text-teal-900 rounded-lg border border-teal-200/80">
+                    Dịch vụ: {serviceName || 'Nha khoa'}
+                  </span>
+                )}
                 {serviceDuration && (
                   <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">
-                    Thời lượng: ~{serviceDuration} phút
+                    Tổng thời lượng: ~{serviceDuration} phút
                   </span>
                 )}
               </div>

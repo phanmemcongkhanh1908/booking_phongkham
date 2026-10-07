@@ -8,20 +8,22 @@ class RealtimeNotificationService extends EventEmitter {
     super();
     this.setMaxListeners(100);
     
-    // Heartbeat to keep SSE alive
+    // Heartbeat to keep SSE alive (15s to keep Render/Cloudflare proxy connection active)
     setInterval(() => {
       this.sendHeartbeat();
-    }, 30000);
+    }, 15000);
   }
 
   public addClient(req: Request, res: Response) {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*'
     });
-    res.write('retry: 10000\n\n');
+    res.write('retry: 15000\n\n');
+    res.write(': connected\n\n');
 
     this.clients.add(res);
     

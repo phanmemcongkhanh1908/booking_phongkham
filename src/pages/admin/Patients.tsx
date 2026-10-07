@@ -385,6 +385,26 @@ export default function Patients() {
     }
   };
 
+  const handleDeletePatient = async () => {
+    if (!selectedPatient) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn hồ sơ bệnh nhân "${selectedPatient.fullName}"?\n\nToàn bộ lịch hẹn, lịch tái khám và dữ liệu liên quan sẽ được dọn dẹp sạch theo đúng thứ tự an toàn mà không gây lỗi.`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await api.delete(`/patients/${selectedPatient.id}`);
+      toast.success(res.data?.message || "Đã xóa hồ sơ bệnh nhân an toàn!");
+      setSelectedPatient(null);
+      setMobileView('list');
+      fetchPatients(1);
+    } catch (err: any) {
+      const msg = err.response?.data?.error?.message || err.message || "Lỗi khi xóa hồ sơ bệnh nhân";
+      toast.error("Lỗi khi xóa: " + msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Upload files handler
   const processFilesUpload = async (files: File[], targetDate: string, groupTitle?: string, groupNote?: string) => {
     if (!selectedPatient || files.length === 0) return;
@@ -894,15 +914,12 @@ export default function Patients() {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => {
-                      // setTelegramIdInput(selectedPatient.telegramId || '');
-                      // setShowTelegramModal('record');
-                    }}
-                    className="text-xs h-9 text-blue-600 border-blue-200 hover:bg-blue-50 bg-white"
-                    title="Gửi bệnh án qua Telegram"
+                    onClick={handleDeletePatient}
+                    className="text-xs h-9 text-red-600 border-red-200 hover:bg-red-50 bg-white"
+                    title="Xóa hồ sơ bệnh nhân này an toàn (cascade toàn bộ lịch hẹn liên quan)"
                   >
-                    <Send className="w-3.5 h-3.5 mr-1.5" />
-                    Gửi Telegram
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Xóa hồ sơ
                   </Button>
                 </div>
 

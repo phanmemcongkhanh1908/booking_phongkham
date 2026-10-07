@@ -11,11 +11,11 @@
   "users": {
     "fa2d5aa4-f9bd-422f-a826-1da931e299ae": {
       "email": "admin@dentalsmartbooking.com",
-      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$MAf1jXaPn42QnT562GcZdA$NcoWboOQUG8BspTp8apNQYEqyX3iUQyF7PQyZ56FNKo",
+      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$+PGff87fhl13BKT0eUzplg$yhaVn0/2lUkIuw6us/mI8gZVdOkbIBypoCYOVGqu37g",
       "roleId": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8",
       "isActive": true,
       "id": "fa2d5aa4-f9bd-422f-a826-1da931e299ae",
-      "updatedAt": "2026-09-14T15:05:30.997Z"
+      "updatedAt": "2026-10-05T12:15:09.421Z"
     },
     "7764865f-fc2f-4a42-a0c1-32eb6fd20b3e": {
       "email": "lephuong",
@@ -37,31 +37,10 @@
       "createdAt": "2026-10-05T11:41:41.875Z",
       "updatedAt": "2026-10-05T11:41:41.875Z",
       "id": "7764865f-fc2f-4a42-a0c1-32eb6fd20b3e"
-    },
-    "cc3df22d-6a80-4d82-828d-4db7d1f67a0b": {
-      "email": "nhakhoanucuoi",
-      "passwordHash": "$argon2id$v=19$m=65536,p=4,t=3$mQh3Sra8lCBKZaXRQL2euQ$d1bcNM++WCoqVL68dRIMeWpT1RKTiPBnPng0DACbAQ8",
-      "roleId": "3d556bbd-6aa1-40e2-93d5-09512d0c1db8",
-      "tenantId": "tenant_nhakhoanucuoi",
-      "isActive": true,
-      "permissions": [
-        "*"
-      ],
-      "slug": "nhakhoanucuoi",
-      "clinicName": "Nha Khoa Nụ Cười Xinh",
-      "doctorName": "Bs. Nguyễn Văn Nụ",
-      "address": "789 Đường 3/2, Quận 10, TP.HCM",
-      "phone": "0912345678",
-      "hotline": "0912345678",
-      "workingHoursStr": "",
-      "slogan": "",
-      "createdAt": "2026-10-05T11:48:20.801Z",
-      "updatedAt": "2026-10-05T11:48:20.801Z",
-      "id": "cc3df22d-6a80-4d82-828d-4db7d1f67a0b"
     }
   },
   "providers": {
-    "d1ed6ced-f133-4ec4-a1af-746cf216514a": {
+    "31ff1884-8c48-4fb6-b506-afb81cdd2cee": {
       "name": "Bác sĩ Chuyên khoa Răng Hàm Mặt",
       "specialty": "Nha khoa tổng quát & Thẩm mỹ",
       "workingHours": {
@@ -98,66 +77,66 @@
       },
       "bookingEnabled": true,
       "isActive": true,
-      "id": "d1ed6ced-f133-4ec4-a1af-746cf216514a",
-      "createdAt": "2026-09-14T15:05:30.998Z",
-      "updatedAt": "2026-09-14T15:05:30.998Z"
+      "id": "31ff1884-8c48-4fb6-b506-afb81cdd2cee",
+      "createdAt": "2026-10-05T12:15:09.422Z",
+      "updatedAt": "2026-10-05T12:15:09.422Z"
     }
   },
   "services": {
-    "a88c8e58-7657-42ce-a6b6-f276357aadfb": {
+    "d8c911c3-2ea8-451a-81de-10bd1031625f": {
       "name": "Khám răng tổng quát & Tư vấn",
       "description": "Khám kiểm tra sức khỏe răng miệng toàn diện, chụp phim X-quang kiểm tra tổng quát.",
       "durationMins": 30,
       "price": 0,
       "bufferBefore": 0,
       "bufferAfter": 10,
-      "id": "a88c8e58-7657-42ce-a6b6-f276357aadfb",
-      "createdAt": "2026-09-14T15:05:30.999Z",
-      "updatedAt": "2026-09-14T15:05:30.999Z"
+      "id": "d8c911c3-2ea8-451a-81de-10bd1031625f",
+      "createdAt": "2026-10-05T12:15:09.423Z",
+      "updatedAt": "2026-10-05T12:15:09.423Z"
     },
-    "5e59c114-d6c8-4c62-8940-662d8ae1bb2d": {
+    "4ce8196f-4146-4ad1-9dfa-98c44350fd7d": {
       "name": "Cạo vôi răng & Đánh bóng",
       "description": "Làm sạch mảng bám, vôi răng bằng sóng siêu âm không đau, đánh bóng men răng.",
       "durationMins": 30,
       "price": 200000,
       "bufferBefore": 5,
       "bufferAfter": 10,
-      "id": "5e59c114-d6c8-4c62-8940-662d8ae1bb2d",
-      "createdAt": "2026-09-14T15:05:30.999Z",
-      "updatedAt": "2026-09-14T15:05:30.999Z"
+      "id": "4ce8196f-4146-4ad1-9dfa-98c44350fd7d",
+      "createdAt": "2026-10-05T12:15:09.423Z",
+      "updatedAt": "2026-10-05T12:15:09.423Z"
     },
-    "26ca1479-0983-48f0-bbaa-f9ed8a0f0fb9": {
+    "38e7ad47-7950-479b-8020-ce8ff95330eb": {
       "name": "Trám răng thẩm mỹ Composite",
       "description": "Phục hồi hình thể răng sâu, mẻ với vật liệu Composite trùng màu răng tự nhiên.",
       "durationMins": 45,
       "price": 350000,
       "bufferBefore": 5,
       "bufferAfter": 10,
-      "id": "26ca1479-0983-48f0-bbaa-f9ed8a0f0fb9",
-      "createdAt": "2026-09-14T15:05:30.999Z",
-      "updatedAt": "2026-09-14T15:05:30.999Z"
+      "id": "38e7ad47-7950-479b-8020-ce8ff95330eb",
+      "createdAt": "2026-10-05T12:15:09.423Z",
+      "updatedAt": "2026-10-05T12:15:09.423Z"
     },
-    "5275042c-9ebd-477e-8a99-35359a572202": {
+    "ba0d52a8-64cc-4db5-afa6-a7d2bffd3565": {
       "name": "Nhổ răng khôn / Tiểu phẫu",
       "description": "Tiểu phẫu nhổ răng khôn mọc lệch, ngầm an toàn bằng công nghệ Piezotome.",
       "durationMins": 60,
       "price": 1200000,
       "bufferBefore": 10,
       "bufferAfter": 15,
-      "id": "5275042c-9ebd-477e-8a99-35359a572202",
-      "createdAt": "2026-09-14T15:05:30.999Z",
-      "updatedAt": "2026-09-14T15:05:30.999Z"
+      "id": "ba0d52a8-64cc-4db5-afa6-a7d2bffd3565",
+      "createdAt": "2026-10-05T12:15:09.424Z",
+      "updatedAt": "2026-10-05T12:15:09.424Z"
     },
-    "69761398-8732-4428-822d-7ad3e623e94a": {
+    "5b8bed3e-981c-4e0d-bfe6-c0013b078a48": {
       "name": "Tẩy trắng răng công nghệ cao",
       "description": "Tẩy trắng răng bằng ánh sáng Laser/LED hiện đại, bật từ 2-4 tông màu an toàn.",
       "durationMins": 60,
       "price": 1500000,
       "bufferBefore": 10,
       "bufferAfter": 15,
-      "id": "69761398-8732-4428-822d-7ad3e623e94a",
-      "createdAt": "2026-09-14T15:05:30.999Z",
-      "updatedAt": "2026-09-14T15:05:30.999Z"
+      "id": "5b8bed3e-981c-4e0d-bfe6-c0013b078a48",
+      "createdAt": "2026-10-05T12:15:09.424Z",
+      "updatedAt": "2026-10-05T12:15:09.424Z"
     }
   },
   "settings": {
@@ -286,44 +265,8 @@
     }
   },
   "appointment_holds": {},
-  "patients": {
-    "03a17e22-77fc-4138-bc1c-69e5fdd6d431": {
-      "fullName": "Khanh",
-      "phone": "0912345678",
-      "notes": "",
-      "createdAt": "2026-09-15T00:12:20.403Z",
-      "updatedAt": "2026-09-15T00:13:12.805Z",
-      "id": "03a17e22-77fc-4138-bc1c-69e5fdd6d431"
-    }
-  },
-  "appointments": {
-    "5d972945-4b54-48fc-8fbd-6d99e5926d7f": {
-      "patientId": "03a17e22-77fc-4138-bc1c-69e5fdd6d431",
-      "providerId": "d1ed6ced-f133-4ec4-a1af-746cf216514a",
-      "serviceId": "5e59c114-d6c8-4c62-8940-662d8ae1bb2d",
-      "startAt": "2026-09-15T09:00:00.000Z",
-      "endAt": "2026-09-15T09:45:00.000Z",
-      "status": "REQUESTED",
-      "notes": "",
-      "source": "ONLINE",
-      "id": "5d972945-4b54-48fc-8fbd-6d99e5926d7f",
-      "createdAt": "2026-09-15T00:12:20.403Z",
-      "updatedAt": "2026-09-15T00:12:20.403Z"
-    },
-    "f1386ac7-38bd-4842-acd2-c2ccd26d646c": {
-      "patientId": "03a17e22-77fc-4138-bc1c-69e5fdd6d431",
-      "providerId": "d1ed6ced-f133-4ec4-a1af-746cf216514a",
-      "serviceId": "69761398-8732-4428-822d-7ad3e623e94a",
-      "startAt": "2026-09-15T11:00:00.000Z",
-      "endAt": "2026-09-15T12:25:00.000Z",
-      "status": "REQUESTED",
-      "notes": "",
-      "source": "ONLINE",
-      "id": "f1386ac7-38bd-4842-acd2-c2ccd26d646c",
-      "createdAt": "2026-09-15T00:13:12.805Z",
-      "updatedAt": "2026-09-15T00:13:12.805Z"
-    }
-  },
+  "patients": {},
+  "appointments": {},
   "waitlist": {},
   "patient_recalls": {},
   "push_subscriptions": {},

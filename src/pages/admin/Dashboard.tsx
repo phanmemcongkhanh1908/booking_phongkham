@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/auth';
 import { useVoiceStore } from '../../store/voiceStore';
 import { useBroadcastStore } from '../../store/broadcastStore';
@@ -18,10 +19,11 @@ import UsersManagement from './UsersManagement';
 import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import CreateAppointmentModal from './components/CreateAppointmentModal';
+import { DataCleanModal } from './components/DataCleanModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 
 export default function Dashboard() {
@@ -39,6 +41,7 @@ export default function Dashboard() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDataCleanModal, setShowDataCleanModal] = useState(false);
   const [showStorageReminder, setShowStorageReminder] = useState(false);
   
   // Reschedule Modal State
@@ -357,6 +360,19 @@ export default function Dashboard() {
     } catch (error) {
       alert("Không thể thay đổi lịch");
       console.error(error);
+    }
+  };
+
+  const handleDeleteAppointment = async (id: string) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa lịch hẹn này khỏi hệ thống? Dữ liệu liên quan sẽ được dọn dẹp an toàn.")) return;
+    try {
+      await api.delete(`/appointments/${id}`);
+      toast.success("Đã xóa lịch hẹn an toàn");
+      fetchAppointments();
+      fetchPatients();
+    } catch (err: any) {
+      const msg = err.response?.data?.error?.message || err.message || "Lỗi khi xóa lịch hẹn";
+      toast.error(`Lỗi khi xóa: ${msg}`);
     }
   };
 
@@ -846,6 +862,15 @@ export default function Dashboard() {
                     <span className="hidden sm:inline">Xuất file</span>
                   </button>
                   <button 
+                    onClick={() => setShowDataCleanModal(true)}
+                    title="Xóa dữ liệu demo thử nghiệm hoặc Reset hệ thống an toàn"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs sm:text-sm font-semibold rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span className="hidden sm:inline">Dọn dẹp demo</span>
+                    <span className="sm:hidden">Dọn demo</span>
+                  </button>
+                  <button 
                     onClick={() => setShowScanner(true)}
                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-2xs"
                   >
@@ -879,6 +904,17 @@ export default function Dashboard() {
 
               {showExportModal && (
                 <ExportAppointmentsModal onClose={() => setShowExportModal(false)} />
+              )}
+
+              {showDataCleanModal && (
+                <DataCleanModal
+                  isOpen={showDataCleanModal}
+                  onClose={() => setShowDataCleanModal(false)}
+                  onSuccess={() => {
+                    fetchAppointments();
+                    fetchPatients();
+                  }}
+                />
               )}
 
               {viewMode === 'calendar' ? (
@@ -1082,6 +1118,13 @@ export default function Dashboard() {
                                 )}
                               </>
                             )}
+                            <button
+                              onClick={() => handleDeleteAppointment(apt.id)}
+                              title="Xóa lịch hẹn"
+                              className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 border border-slate-200 transition-colors shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1236,6 +1279,13 @@ export default function Dashboard() {
                                     )}
                                   </>
                                 )}
+                                <button
+                                  onClick={() => handleDeleteAppointment(apt.id)}
+                                  title="Xóa lịch hẹn này an toàn"
+                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors cursor-pointer shrink-0 ml-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </td>
                           </tr>

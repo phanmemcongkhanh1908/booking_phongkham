@@ -26,6 +26,7 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
   const serviceIsFree = useBookingStore(s => s.serviceIsFree);
   const serviceShowPrice = useBookingStore(s => s.serviceShowPrice);
   const serviceDuration = useBookingStore(s => s.serviceDuration);
+  const selectedServices = useBookingStore(s => s.selectedServices);
   const slotStartTime = useBookingStore(s => s.slotStartTime);
   const providerName = useBookingStore(s => s.providerName);
   const clinicProfile = useBookingStore(s => s.clinicProfile);
@@ -120,23 +121,34 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
               <span className="text-teal-600 font-bold">Bước 1</span>
             </div>
             {serviceName ? (
-              <div className="flex items-start justify-between gap-2 pt-0.5">
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-base leading-snug">
-                    {serviceName}
-                  </h4>
-                  {serviceDuration && (
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      Thời lượng ước tính: ~{serviceDuration} phút
-                    </p>
+              <div className="space-y-2 pt-0.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-800 text-sm sm:text-base leading-snug">
+                      {serviceName}
+                    </h4>
+                    {selectedServices && selectedServices.length > 1 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {selectedServices.map(svc => (
+                          <span key={svc.id} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-teal-50 text-teal-800 px-2 py-0.5 rounded-md border border-teal-200/60">
+                            • {svc.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {serviceDuration && (
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        Tổng thời lượng: ~{serviceDuration} phút
+                      </p>
+                    )}
+                  </div>
+                  {formattedPrice && (
+                    <span className="text-xs sm:text-sm font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 shrink-0">
+                      {formattedPrice}
+                    </span>
                   )}
                 </div>
-                {formattedPrice && (
-                  <span className="text-xs sm:text-sm font-extrabold text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 shrink-0">
-                    {formattedPrice}
-                  </span>
-                )}
               </div>
             ) : (
               <p className="text-xs text-slate-400 italic pt-1">

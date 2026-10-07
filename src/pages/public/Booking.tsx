@@ -52,6 +52,7 @@ export default function Booking() {
   const currentStepObj = steps.find(s => s.path === currentPath);
   const step = currentStepObj ? currentStepObj.id : 1;
   const serviceId = useBookingStore(s => s.serviceId);
+  const selectedServices = useBookingStore(s => s.selectedServices);
   const selectedDate = useBookingStore(s => s.selectedDate);
   const sessionToken = useBookingStore(s => s.sessionToken);
   const patientDraft = useBookingStore(s => s.patientDraft);
@@ -90,16 +91,18 @@ export default function Booking() {
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
 
+    const hasService = !!serviceId || (selectedServices && selectedServices.length > 0);
+
     if (currentPath === 'book' || currentPath === '') {
       navigate(`${basePath}/dich-vu`, { replace: true });
-    } else if (step >= 2 && !serviceId && currentPath !== 'dich-vu') {
+    } else if (step >= 2 && !hasService && currentPath !== 'dich-vu') {
       navigate(`${basePath}/dich-vu`, { replace: true });
     } else if (step >= 3 && (!selectedDate || !sessionToken) && currentPath !== 'chon-gio') {
       navigate(`${basePath}/chon-gio`, { replace: true });
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone) && currentPath !== 'thong-tin') {
       navigate(`${basePath}/thong-tin`, { replace: true });
     }
-  }, [currentPath, step, serviceId, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion, basePath]);
+  }, [currentPath, step, serviceId, selectedServices, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion, basePath]);
 
   const clinicDisplayName = clinicProfile?.clinicName || clinicProfile?.name || 'Dental Smart Clinic';
   const doctorDisplayName = clinicProfile?.doctorName ? (

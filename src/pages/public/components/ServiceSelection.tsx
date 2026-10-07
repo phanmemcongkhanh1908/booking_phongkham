@@ -14,9 +14,14 @@ import {
   Tag,
   ArrowRight,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  X,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 interface Service {
   id: string;
@@ -37,9 +42,12 @@ export default function ServiceSelection() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
-  const currentServiceId = useBookingStore(state => state.serviceId);
+  const selectedServices = useBookingStore(state => state.selectedServices);
   const setService = useBookingStore(state => state.setService);
+  const setSelectedServices = useBookingStore(state => state.setSelectedServices);
+  const toggleServiceItem = useBookingStore(state => state.toggleServiceItem);
   const clearHold = useBookingStore(state => state.clearHold);
+
   const navigate = useNavigate();
   const { slug } = useParams();
   const basePath = slug ? `/booking/${slug}` : '/book';
@@ -90,7 +98,6 @@ export default function ServiceSelection() {
   ], []);
 
   const extendedServices = useMemo(() => {
-    // Idea 4: Enhance services with premium tags dynamically for demo
     return services.map(s => {
       let tags: string[] = [];
       if (s.name.toLowerCase().includes('khám') || s.name.toLowerCase().includes('tư vấn')) tags = ['Miễn phí', 'Nhanh chóng'];
@@ -112,13 +119,49 @@ export default function ServiceSelection() {
     });
   }, [extendedServices, searchQuery, selectedCategory]);
 
-  const handleSelectService = (svc: Service) => {
-    if (currentServiceId && currentServiceId !== svc.id) {
-      clearHold();
-    }
+  const handleToggleService = (svc: Service) => {
+    clearHold();
+    toggleServiceItem({
+      id: svc.id,
+      name: svc.name,
+      price: svc.price,
+      durationMins: svc.durationMins,
+      isFree: svc.isFree,
+      showPrice: svc.showPrice
+    });
+  };
+
+  const handleQuickBookSingle = (e: React.MouseEvent, svc: Service) => {
+    e.stopPropagation();
+    clearHold();
     setService(svc.id, svc.name, svc.price, svc.durationMins, svc.isFree, svc.showPrice);
     navigate(`${basePath}/chon-gio`);
   };
+
+  const handleContinue = () => {
+    if (selectedServices.length === 0) {
+      toast.error('Vui lòng chọn ít nhất 1 dịch vụ khám để tiếp tục');
+      return;
+    }
+    navigate(`${basePath}/chon-gio`);
+  };
+
+  // Calculated totals
+  const totalDuration = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + (s.durationMins || 30), 0);
+  }, [selectedServices]);
+
+  const totalPrice = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  }, [selectedServices]);
+
+  const hasPrice = useMemo(() => {
+    return selectedServices.some(s => s.showPrice && s.price && s.price > 0);
+  }, [selectedServices]);
+
+  const isAllFree = useMemo(() => {
+    return selectedServices.length > 0 && selectedServices.every(s => s.isFree || s.price === 0);
+  }, [selectedServices]);
 
   if (loading) {
     return (
@@ -152,7 +195,7 @@ export default function ServiceSelection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       {/* Step Header */}
       <div className="rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-7 shadow-sm sm:shadow-lg shadow-slate-200/40 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-teal-500/5 via-emerald-500/5 to-transparent rounded-bl-full pointer-events-none" />
@@ -160,15 +203,21 @@ export default function ServiceSelection() {
         <div className="relative z-10 space-y-3 sm:space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200/60 mb-1.5 sm:mb-2">
-                <Tag className="w-3.5 h-3.5 text-teal-600" />
-                Bước 1 / 3
+              <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200/60">
+                  <Tag className="w-3.5 h-3.5 text-teal-600" />
+                  Bước 1 / 4
+                </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200/70">
+                  <Layers className="w-3.5 h-3.5 text-amber-600" />
+                  Hỗ trợ chọn nhiều dịch vụ
+                </span>
               </div>
               <h2 className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                 Chọn Dịch Vụ Khám
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1 max-w-xl leading-relaxed">
-                Lựa chọn đúng nhu cầu chăm sóc răng miệng. Bác sĩ sẽ chuẩn bị phòng thủ thuật và trang thiết bị chuyên dụng đón bạn.
+                Bạn có thể chọn <strong>1 hoặc nhiều dịch vụ</strong> kết hợp cùng lúc trong một buổi khám. Bác sĩ sẽ chuẩn bị phòng thủ thuật và trang thiết bị chuyên dụng đón bạn.
               </p>
             </div>
 
@@ -237,7 +286,7 @@ export default function ServiceSelection() {
         <div className="grid gap-3.5 sm:gap-4 md:grid-cols-2">
           {filteredServices.map((svc) => {
             const cat = getCategory(svc.name);
-            const isSelected = currentServiceId === svc.id;
+            const isSelected = selectedServices.some(s => s.id === svc.id);
             let formattedPrice = '';
             if (svc.showPrice) {
                if (svc.isFree) {
@@ -248,17 +297,16 @@ export default function ServiceSelection() {
             }
 
             return (
-              <button
+              <div
                 key={svc.id}
-                type="button"
-                onClick={() => handleSelectService(svc)}
-                className={`group relative text-left rounded-xl sm:rounded-2xl border p-3.5 sm:p-5 transition-all duration-300 flex flex-col justify-between overflow-hidden cursor-pointer active:scale-[0.99] ${
+                onClick={() => handleToggleService(svc)}
+                className={`group relative text-left rounded-xl sm:rounded-2xl border p-3.5 sm:p-5 transition-all duration-300 flex flex-col justify-between overflow-hidden cursor-pointer select-none active:scale-[0.99] ${
                   isSelected 
-                    ? 'border-teal-600 bg-teal-50/50 ring-2 ring-teal-600/30 shadow-md' 
-                    : 'border-slate-200/90 bg-white hover:border-teal-500/80 hover:shadow-xl hover:shadow-teal-900/5 hover:-translate-y-0.5'
+                    ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-600/30 shadow-md shadow-teal-900/5' 
+                    : 'border-slate-200/90 bg-white hover:border-teal-400 hover:shadow-xl hover:shadow-teal-900/5 hover:-translate-y-0.5'
                 }`}
               >
-                {/* Top Row: Category tag + Checkmark */}
+                {/* Top Row: Category tag + Checkbox indicator */}
                 <div className="flex items-center justify-between gap-2 w-full mb-3">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold tracking-tight bg-slate-100 text-slate-700 group-hover:bg-teal-50 group-hover:text-teal-800 transition-colors">
@@ -273,18 +321,32 @@ export default function ServiceSelection() {
                     )}
                   </div>
 
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                  {/* Multi-selection Toggle Checkbox Badge */}
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
                     isSelected 
                       ? 'bg-teal-700 text-white shadow-sm' 
-                      : 'bg-slate-100 text-slate-400 group-hover:bg-teal-600 group-hover:text-white'
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-teal-100 group-hover:text-teal-800'
                   }`}>
-                    {isSelected ? <Check className="w-4 h-4" /> : <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />}
+                    {isSelected ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Đã chọn</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Chọn thêm</span>
+                        <span className="sm:hidden">Chọn</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 {/* Main Content: Title & Details */}
                 <div className="space-y-1 mb-4">
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-teal-800 transition-colors leading-snug">
+                  <h3 className={`text-base sm:text-lg font-bold transition-colors leading-snug ${
+                    isSelected ? 'text-teal-950 font-black' : 'text-slate-900 group-hover:text-teal-800'
+                  }`}>
                     {svc.name}
                   </h3>
                   {svc.tags && svc.tags.length > 0 && (
@@ -296,12 +358,12 @@ export default function ServiceSelection() {
                       ))}
                     </div>
                   )}
-                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mt-1">
                     {svc.description || 'Quy trình vô trùng y khoa khép kín, được thực hiện bởi bác sĩ giàu kinh nghiệm.'}
                   </p>
                 </div>
 
-                {/* Bottom Row: Duration + Price Badge */}
+                {/* Bottom Row: Duration + Price + Quick Actions */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 w-full text-xs">
                   <div className="flex items-center gap-1.5 text-slate-500 font-medium">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -309,17 +371,24 @@ export default function ServiceSelection() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {svc.showPrice && (
+                    {svc.showPrice && formattedPrice && (
                       <span className="font-black text-sm sm:text-base text-teal-700 group-hover:text-teal-800">
                         {formattedPrice}
                       </span>
                     )}
-                    <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 group-hover:text-teal-700 transition-colors">
-                      Chọn <ArrowRight className="w-3 h-3" />
-                    </span>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleQuickBookSingle(e, svc)}
+                      title="Đặt riêng dịch vụ này ngay"
+                      className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-lg border border-teal-200/60 transition-colors cursor-pointer"
+                    >
+                      <span>Đặt riêng</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -335,10 +404,92 @@ export default function ServiceSelection() {
             Bạn chưa chắc chắn tình trạng răng miệng hiện tại?
           </p>
           <p className="text-slate-600 leading-relaxed">
-            Hãy lựa chọn <strong>Khám răng tổng quát & Tư vấn</strong>. Bác sĩ sẽ kiểm tra trực tiếp, chụp phim x-quang (nếu cần) và trao đổi chi tiết phác đồ trước khi bạn quyết định điều trị.
+            Hãy lựa chọn <strong>Khám răng tổng quát & Tư vấn</strong> kèm thêm dịch vụ bạn đang quan tâm. Bác sĩ sẽ kiểm tra trực tiếp, chụp phim x-quang (nếu cần) và trao đổi chi tiết phác đồ trước khi tiến hành.
           </p>
         </div>
       </div>
+
+      {/* Sticky Bottom Bar for Multi-Service Confirmation */}
+      {selectedServices.length > 0 && (
+        <aside 
+          aria-label="Thanh xác nhận dịch vụ đã chọn"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-teal-200/80 shadow-[0_-8px_25px_rgba(13,148,136,0.12)] p-3 sm:p-4 animate-in slide-in-from-bottom duration-300"
+        >
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-teal-700 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md shadow-teal-900/20">
+                {selectedServices.length}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-teal-800">
+                    Đã chọn {selectedServices.length} dịch vụ
+                  </span>
+                  <span className="text-xs text-slate-300">•</span>
+                  <span className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    Tổng thời lượng: ~{totalDuration} phút
+                  </span>
+                  {hasPrice && (
+                    <>
+                      <span className="text-xs text-slate-300">•</span>
+                      <span className="text-xs font-black text-teal-700">
+                        {totalPrice.toLocaleString('vi-VN')} đ
+                      </span>
+                    </>
+                  )}
+                  {isAllFree && (
+                    <>
+                      <span className="text-xs text-slate-300">•</span>
+                      <span className="text-xs font-black text-teal-700">
+                        Miễn phí
+                      </span>
+                    </>
+                  )}
+                </div>
+                
+                {/* Horizontal scrollable pills of selected services */}
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-hide">
+                  {selectedServices.map(svc => (
+                    <span 
+                      key={svc.id}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-teal-50 text-teal-900 border border-teal-200/80 px-2 py-0.5 rounded-md shrink-0"
+                    >
+                      {svc.name}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleServiceItem(svc); }}
+                        className="text-teal-600 hover:text-teal-900 p-0.5 rounded-full hover:bg-teal-200/50"
+                        title="Bỏ dịch vụ này"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedServices([])}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Xóa tất cả
+              </button>
+              <button
+                type="button"
+                onClick={handleContinue}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 active:scale-[0.98] text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-teal-900/20 transition-all cursor-pointer"
+              >
+                <span>Tiếp tục chọn ngày giờ ({selectedServices.length})</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

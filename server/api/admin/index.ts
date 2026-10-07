@@ -281,7 +281,33 @@ adminRouter.post("/restore", requireAuth, async (req, res, next) => {
 adminRouter.post("/wipe", requireAuth, async (req, res, next) => {
   try {
     const { wipeClinicData } = await import("../../core/wipe.js");
-    const result = await wipeClinicData();
+    const mode = (req.body?.mode === "full_reset" ? "full_reset" : "clean_demo") as "clean_demo" | "full_reset";
+    const tenantId = req.user?.tenantId;
+    const isFullAdmin = !tenantId && (req.user?.role === "admin" || (req.user?.permissions || []).includes("*"));
+
+    const result = await wipeClinicData({
+      mode,
+      tenantId,
+      isFullAdmin,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Alias rõ nghĩa cho chức năng Xóa sạch dữ liệu demo
+adminRouter.post("/clean-demo-data", requireAuth, async (req, res, next) => {
+  try {
+    const { wipeClinicData } = await import("../../core/wipe.js");
+    const tenantId = req.user?.tenantId;
+    const isFullAdmin = !tenantId && (req.user?.role === "admin" || (req.user?.permissions || []).includes("*"));
+
+    const result = await wipeClinicData({
+      mode: "clean_demo",
+      tenantId,
+      isFullAdmin,
+    });
     res.json(result);
   } catch (error) {
     next(error);

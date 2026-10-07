@@ -78,19 +78,34 @@ export async function calculateAvailableSlots(
   providerId: string,
   serviceId: string,
   targetDate: Date,
-  options: { includeUnavailable?: boolean } = {}
+  options: { includeUnavailable?: boolean; customDurationMins?: number; serviceIds?: string[] } = {}
 ): Promise<AvailableSlot[]> {
-  const { includeUnavailable = false } = options;
+  const { includeUnavailable = false, customDurationMins, serviceIds } = options;
   
-  // 1. Lấy thông tin Bác sĩ & Dịch vụ
+  // 1. Lấy thông tin Bác sĩ & Dịch vụ (Hỗ trợ 1 hoặc nhiều dịch vụ gộp)
   const providerRecords = await db.select().from(providers).where(eq(providers.id, providerId)).limit(1);
-  const serviceRecords = await db.select().from(services).where(eq(services.id, serviceId)).limit(1);
-
   if (providerRecords.length === 0) throw new BadRequestError("Không tìm thấy Bác sĩ");
-  if (serviceRecords.length === 0) throw new BadRequestError("Không tìm thấy Dịch vụ");
-
   const provider = providerRecords[0];
-  const service = serviceRecords[0];
+
+  const targetServiceIds = serviceIds && serviceIds.length > 0 
+    ? serviceIds 
+    : (serviceId || "").includes(",") 
+      ? serviceId.split(",").map(s => s.trim()).filter(Boolean)
+      : [serviceId];
+
+  const allServices: any[] = [];
+  for (const sId of targetServiceIds) {
+    const sRec = await db.select().from(services).where(eq(services.id, sId)).limit(1);
+    if (sRec.length > 0) allServices.push(sRec[0]);
+  }
+
+  if (allServices.length === 0) {
+    const fallbackService = await db.select().from(services).where(eq(services.id, targetServiceIds[0])).limit(1);
+    if (fallbackService.length === 0) throw new BadRequestError("Không tìm thấy Dịch vụ");
+    allServices.push(fallbackService[0]);
+  }
+
+  const primaryService = allServices[0];
 
   if (!provider.isActive || !provider.bookingEnabled) {
     return []; // Bác sĩ đang nghỉ hoặc khóa book
@@ -111,8 +126,12 @@ export async function calculateAvailableSlots(
   // 3. Lấy khoảng thời gian bận
   const occupiedSlots = await getProviderOccupiedSlots(providerId, targetDate);
 
-  // Tổng thời gian cần thiết = buffer before + duration + buffer after
-  const totalRequiredMins = (service.bufferBefore || 0) + service.durationMins + (service.bufferAfter || 0);
+  // Tổng thời gian cần thiết = tổng duration của tất cả dịch vụ + buffer
+  const combinedDuration = allServices.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+  const maxBufferBefore = Math.max(...allServices.map(s => s.bufferBefore || 0), 0);
+  const maxBufferAfter = Math.max(...allServices.map(s => s.bufferAfter || 0), 0);
+
+  const totalRequiredMins = customDurationMins || (maxBufferBefore + combinedDuration + maxBufferAfter);
   const now = new Date();
   const resultSlots: AvailableSlot[] = [];
 

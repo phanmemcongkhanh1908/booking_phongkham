@@ -376,7 +376,10 @@ usersRouter.delete("/:id", requirePermission("user.create"), async (req, res, ne
     const userId = req.params.id;
     
     const targetUser = await db.select().from(users).where(eq(users.id, userId));
-    if (targetUser.length > 0 && targetUser[0].email === "admin@dentalsmartbooking.com") {
+    if (targetUser.length === 0) {
+      throw new NotFoundError("Không tìm thấy tài khoản cần xóa");
+    }
+    if (targetUser[0].email === "admin@dentalsmartbooking.com") {
       throw new BadRequestError("Không thể xóa tài khoản admin tối cao");
     }
 
@@ -385,8 +388,18 @@ usersRouter.delete("/:id", requirePermission("user.create"), async (req, res, ne
       throw new BadRequestError("Không thể xóa tài khoản đang đăng nhập");
     }
 
+    // Clean up settings for this clinic tenant
+    if (targetUser[0].tenantId) {
+      try {
+        const { settings } = await import("../../db/schema.js");
+        await db.delete(settings).where(eq(settings.tenantId, targetUser[0].tenantId));
+      } catch (e) {
+        console.warn("[Users API] Could not clean up tenant settings on delete:", e);
+      }
+    }
+
     await db.delete(users).where(eq(users.id, userId));
-    res.json({ success: true, message: "Đã xóa tài khoản" });
+    res.json({ success: true, message: "Đã xóa tài khoản thành công" });
   } catch (error) {
     next(error);
   }

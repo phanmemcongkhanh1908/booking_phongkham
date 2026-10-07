@@ -148,4 +148,47 @@ patientsRouter.post("/:id/send-document", requireAuth, async (req, res, next) =>
   }
 });
 
+// [M03] Xóa Hồ sơ Bệnh nhân (Cascade an toàn, không gây lỗi khóa ngoại)
+patientsRouter.delete("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const patientId = req.params.id;
+    const pt = await db.select().from(patients).where(eq(patients.id, patientId));
+    if (!pt || pt.length === 0) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy hồ sơ bệnh nhân" } });
+    }
+
+    const { appointments, appointmentHolds, patientRecalls, waitlist, auditLogs } = await import("../../db/schema.js");
+
+    // 1. Tìm tất cả lịch hẹn của bệnh nhân
+    const apts = await db.select().from(appointments).where(eq(appointments.patientId, patientId));
+    const aptIds = apts.map((a: any) => a.id);
+
+    // 2. Xóa các bảng con phụ thuộc lịch hẹn trước để tránh lỗi khóa ngoại
+    for (const aId of aptIds) {
+      await db.delete(appointmentHolds).where(eq(appointmentHolds.appointmentId, aId));
+      await db.delete(patientRecalls).where(eq(patientRecalls.appointmentId, aId));
+      await db.delete(auditLogs).where(eq(auditLogs.appointmentId, aId));
+    }
+
+    // 3. Xóa các bảng con gắn trực tiếp với bệnh nhân
+    await db.delete(patientRecalls).where(eq(patientRecalls.patientId, patientId));
+    await db.delete(waitlist).where(eq(waitlist.patientId, patientId));
+    await db.delete(appointmentHolds).where(eq(appointmentHolds.patientId, patientId));
+
+    // 4. Xóa các lịch hẹn của bệnh nhân
+    await db.delete(appointments).where(eq(appointments.patientId, patientId));
+
+    // 5. Cuối cùng xóa bản ghi bệnh nhân
+    await db.delete(patients).where(eq(patients.id, patientId));
+
+    res.json({
+      success: true,
+      message: `Đã xóa bệnh nhân "${pt[0].fullName}" cùng toàn bộ dữ liệu lịch hẹn liên quan an toàn`,
+      deletedAppointmentsCount: aptIds.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default patientsRouter;

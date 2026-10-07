@@ -39,8 +39,12 @@ export default function SimpleBookingForm() {
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   
-  const [selectedService, setSelectedService] = useState<string | null>(null);
-  const selectedServiceObj = services.find(s => s.id === selectedService);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const selectedServiceObjs = services.filter(s => selectedServiceIds.includes(s.id));
+  const primaryServiceId = selectedServiceIds[0] || null;
+  const combinedServiceName = selectedServiceObjs.map(s => s.name).join(' + ');
+  const totalDurationMins = selectedServiceObjs.reduce((sum, s) => sum + (s.durationMins || 30), 0);
+  const totalPrice = selectedServiceObjs.reduce((sum, s) => sum + (s.price || 0), 0);
   
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -88,6 +92,18 @@ export default function SimpleBookingForm() {
     }
   };
 
+  const handleToggleService = (svcId: string) => {
+    setSelectedServiceIds(prev => {
+      const exists = prev.includes(svcId);
+      if (exists) {
+        return prev.filter(id => id !== svcId);
+      } else {
+        return [...prev, svcId];
+      }
+    });
+    setSelectedSlot(null);
+  };
+
   useEffect(() => {
     // 1. Fetch Services
     api.get('/public/services')
@@ -100,8 +116,8 @@ export default function SimpleBookingForm() {
   }, []);
 
   useEffect(() => {
-    // 2. Fetch Slots when service or date changes
-    if (!selectedService) {
+    // 2. Fetch Slots when services or date changes
+    if (selectedServiceIds.length === 0) {
       setSlots([]);
       return;
     }
@@ -110,7 +126,9 @@ export default function SimpleBookingForm() {
     const formattedDate = format(selectedDate, 'yyyy-MM-dd');
     api.get('/public/availability', {
       params: {
-        serviceId: selectedService,
+        serviceId: selectedServiceIds[0],
+        serviceIds: selectedServiceIds.join(','),
+        durationMins: totalDurationMins,
         date: formattedDate,
       }
     }).then(res => {
@@ -120,7 +138,7 @@ export default function SimpleBookingForm() {
     }).finally(() => {
       setLoadingSlots(false);
     });
-  }, [selectedService, selectedDate]);
+  }, [selectedServiceIds, totalDurationMins, selectedDate]);
 
   useEffect(() => {
     const rawClean = formData.phone.replace(/\D/g, '');
@@ -180,10 +198,10 @@ export default function SimpleBookingForm() {
         }));
         setPhoneStatus('verified');
         toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
-        if (p.lastServiceId && !selectedService) {
+        if (p.lastServiceId && selectedServiceIds.length === 0) {
            // Gợi ý dịch vụ cũ
            setLastServiceId(p.lastServiceId);
-           setSelectedService(p.lastServiceId);
+           setSelectedServiceIds([p.lastServiceId]);
            toast.success(`Hệ thống đã tự động chọn dịch vụ: ${p.lastServiceName}`);
         }
       } else {
@@ -208,8 +226,8 @@ export default function SimpleBookingForm() {
       return;
     }
 
-    if (!selectedService || !selectedSlot) {
-      toast.error('Vui lòng chọn dịch vụ và thời gian khám');
+    if (selectedServiceIds.length === 0 || !selectedSlot) {
+      toast.error('Vui lòng chọn ít nhất một dịch vụ và thời gian khám');
       return;
     }
     if (!formData.fullName || !formData.phone) {
@@ -226,7 +244,9 @@ export default function SimpleBookingForm() {
       if (!sessionToken || activeSession?.startAt !== selectedSlot.startAt || Date.now() + 5000 > (activeSession?.expiresAt || 0)) {
         const holdRes = await api.post('/public/appointments/hold', {
           providerId: selectedSlot.providerId,
-          serviceId: selectedService,
+          serviceId: selectedServiceIds[0],
+          serviceIds: selectedServiceIds,
+          customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
           startAt: selectedSlot.startAt,
           endAt: selectedSlot.endAt
         });
@@ -249,7 +269,9 @@ export default function SimpleBookingForm() {
         fullName: formData.fullName,
         phone: formData.phone,
         email: formData.email || "",
-        notes: formData.notes
+        notes: formData.notes,
+        serviceIds: selectedServiceIds,
+        customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined
       });
 
       if (res.data.success) {
@@ -258,7 +280,6 @@ export default function SimpleBookingForm() {
           localStorage.setItem('verifiedPatient', JSON.stringify({ phone: formData.phone, fullName: formData.fullName }));
         }
 
-        const selectedServiceObj = services.find(s => s.id === selectedService);
         setAppointmentSuccess(
           appointmentData.appointmentId,
           formData.fullName,
@@ -267,8 +288,8 @@ export default function SimpleBookingForm() {
           appointmentData.patientTelegramId,
           appointmentData.telegramBotUsername,
           {
-            serviceName: appointmentData.serviceName || selectedServiceObj?.name || 'Khám răng nha khoa',
-            serviceDuration: selectedServiceObj?.durationMins || 45,
+            serviceName: appointmentData.serviceName || combinedServiceName || 'Khám răng nha khoa',
+            serviceDuration: totalDurationMins || 45,
             slotStartTime: appointmentData.startAt || selectedSlot?.startAt,
             slotEndTime: appointmentData.endAt || selectedSlot?.endAt,
             providerName: appointmentData.providerName || null,
@@ -283,7 +304,12 @@ export default function SimpleBookingForm() {
         setSelectedSlot(null);
         setLoadingSlots(true);
         api.get('/public/availability', {
-          params: { serviceId: selectedService, date: format(selectedDate, 'yyyy-MM-dd') }
+          params: { 
+            serviceId: selectedServiceIds[0], 
+            serviceIds: selectedServiceIds.join(','),
+            durationMins: totalDurationMins,
+            date: format(selectedDate, 'yyyy-MM-dd') 
+          }
         }).then(res2 => {
           if (res2.data.success) setSlots(res2.data.data || []);
           setLoadingSlots(false);
@@ -330,9 +356,9 @@ export default function SimpleBookingForm() {
               </div>
               <h3 className="text-base sm:text-xl font-bold text-slate-900">Chọn dịch vụ khám</h3>
             </div>
-            {selectedService && (
-              <span className="text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70">
-                Đã chọn 1
+            {selectedServiceIds.length > 0 && (
+              <span className="text-[11px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70">
+                Đã chọn {selectedServiceIds.length} dịch vụ
               </span>
             )}
           </div>
@@ -345,12 +371,12 @@ export default function SimpleBookingForm() {
               </div>
             ) : (
               services.map(svc => {
-                const isSelected = selectedService === svc.id;
+                const isSelected = selectedServiceIds.includes(svc.id);
                 return (
                   <button
                     key={svc.id}
                     type="button"
-                    onClick={() => { setSelectedService(svc.id); setSelectedSlot(null); }}
+                    onClick={() => handleToggleService(svc.id)}
                     className={`group relative flex items-center justify-between w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-200 outline-none text-left cursor-pointer active:scale-[0.99] select-none ${
                       isSelected 
                         ? 'bg-teal-50/90 border-2 border-teal-600 shadow-sm shadow-teal-600/10' 
@@ -400,7 +426,11 @@ export default function SimpleBookingForm() {
                           ? 'bg-teal-600 text-white shadow-xs ring-2 ring-teal-600/30' 
                           : 'border-2 border-slate-300 group-hover:border-teal-400 bg-white'
                       }`}>
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />}
+                        {isSelected ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                        ) : (
+                          <span className="text-[10px] text-slate-400 group-hover:text-teal-600 font-bold">+</span>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -408,12 +438,23 @@ export default function SimpleBookingForm() {
               })
             )}
           </div>
+
+          {selectedServiceIds.length > 1 && (
+            <div className="p-3 bg-teal-50/80 border border-teal-200 rounded-xl flex items-center justify-between text-xs text-teal-900">
+              <span className="font-medium">
+                Đã gộp <strong>{selectedServiceIds.length} dịch vụ</strong> ({combinedServiceName})
+              </span>
+              <span className="font-bold shrink-0 ml-2">
+                Tổng thời lượng: ~{totalDurationMins} phút
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="h-6 sm:h-10" />
 
         {/* Step 2: Chọn thời gian */}
-        <div className={`space-y-4 sm:space-y-5 transition-all duration-500 ${!selectedService ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
+        <div className={`space-y-4 sm:space-y-5 transition-all duration-500 ${selectedServiceIds.length === 0 ? 'opacity-30 pointer-events-none grayscale-[0.5]' : 'opacity-100'}`}>
           <div className="flex items-center justify-between border-b border-slate-100 pb-3 sm:pb-4">
             <div className="flex items-center gap-2.5 sm:gap-3">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-md shadow-teal-600/20">
@@ -798,10 +839,10 @@ export default function SimpleBookingForm() {
         <div className="fixed sm:static bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md p-3 sm:p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-0 border-t sm:border-0 border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] sm:shadow-none mt-4 sm:mt-6">
           <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
             {/* Mobile Summary preview above button */}
-            {(selectedServiceObj || selectedSlot) && (
+            {(selectedServiceIds.length > 0 || selectedSlot) && (
               <div className="sm:hidden w-full flex items-center justify-between text-xs px-1">
                 <span className="font-bold text-slate-800 truncate max-w-[200px]">
-                  {selectedServiceObj?.name || 'Chưa chọn dịch vụ'}
+                  {selectedServiceIds.length > 0 ? combinedServiceName : 'Chưa chọn dịch vụ'}
                 </span>
                 <span className="text-teal-700 font-extrabold shrink-0 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60">
                   {selectedSlot ? `${format(parseISO(selectedSlot.startAt), 'HH:mm • dd/MM')}` : 'Chưa chọn giờ'}
@@ -811,7 +852,7 @@ export default function SimpleBookingForm() {
 
             <button
               type="submit"
-              disabled={!selectedService || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
+              disabled={selectedServiceIds.length === 0 || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
               className="w-full sm:w-auto min-w-[280px] py-3.5 sm:py-4 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20 active:scale-[0.99] cursor-pointer"
             >
               {isSubmitting ? (

@@ -64,14 +64,18 @@ publicRouter.get("/providers", async (req, res, next) => {
 });
 
 const AvailabilityQuerySchema = z.object({
-  providerId: z.string().uuid("ID Bác sĩ không hợp lệ").optional(),
-  serviceId: z.string().uuid("ID Dịch vụ không hợp lệ"),
+  providerId: z.string().optional(),
+  serviceId: z.string().min(1, "Thiếu ID Dịch vụ"),
+  serviceIds: z.union([z.string(), z.array(z.string())]).optional(),
+  durationMins: z.coerce.number().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải là YYYY-MM-DD"),
 });
 
 const AvailabilitySummaryQuerySchema = z.object({
-  providerId: z.string().uuid("ID Bác sĩ không hợp lệ").optional(),
-  serviceId: z.string().uuid("ID Dịch vụ không hợp lệ"),
+  providerId: z.string().optional(),
+  serviceId: z.string().min(1, "Thiếu ID Dịch vụ"),
+  serviceIds: z.union([z.string(), z.array(z.string())]).optional(),
+  durationMins: z.coerce.number().optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Định dạng ngày phải là YYYY-MM-DD").optional(),
   days: z.coerce.number().min(1).max(60).optional().default(28),
 });
@@ -93,6 +97,14 @@ publicRouter.get("/availability/summary", async (req, res, next) => {
       providerId = defaultProvider.id;
     }
 
+    const targetServiceIds = Array.isArray(query.serviceIds)
+      ? query.serviceIds
+      : typeof query.serviceIds === "string"
+        ? query.serviceIds.split(",")
+        : (query.serviceId || "").includes(",")
+          ? query.serviceId.split(",")
+          : [query.serviceId];
+
     const dayPromises = Array.from({ length: daysCount }).map(async (_, idx) => {
       const targetDate = addDays(start, idx);
       const dateStr = format(targetDate, "yyyy-MM-dd");
@@ -100,7 +112,11 @@ publicRouter.get("/availability/summary", async (req, res, next) => {
         providerId!,
         query.serviceId,
         targetDate,
-        { includeUnavailable: false }
+        { 
+          includeUnavailable: false,
+          customDurationMins: query.durationMins,
+          serviceIds: targetServiceIds
+        }
       );
       const count = availableSlots.length;
       return {
@@ -147,11 +163,23 @@ publicRouter.get("/availability", async (req, res, next) => {
 
     const includeUnavailable = req.query.includeUnavailable !== "false";
 
+    const targetServiceIds = Array.isArray(query.serviceIds)
+      ? query.serviceIds
+      : typeof query.serviceIds === "string"
+        ? query.serviceIds.split(",")
+        : (query.serviceId || "").includes(",")
+          ? query.serviceId.split(",")
+          : [query.serviceId];
+
     const availableSlots = await calculateAvailableSlots(
       providerId,
       query.serviceId,
       targetDate,
-      { includeUnavailable }
+      { 
+        includeUnavailable,
+        customDurationMins: query.durationMins,
+        serviceIds: targetServiceIds
+      }
     );
 
     res.json({
@@ -207,6 +235,8 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
         sessionToken,
         providerId: data.providerId,
         serviceId: data.serviceId,
+        serviceIds: data.serviceIds || [data.serviceId],
+        customServiceName: data.customServiceName,
         startAt,
         endAt,
         expiresAt,
@@ -332,10 +362,15 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       }
 
       // 5. Create the Appointment
+      const serviceIdsToStore = data.serviceIds || (hold as any).serviceIds || [hold.serviceId];
+      const customServiceNameToStore = data.customServiceName || (hold as any).customServiceName;
+
       const newAppointment = await tx.insert(appointments).values({
         patientId,
         providerId: hold.providerId,
         serviceId: hold.serviceId,
+        serviceIds: serviceIdsToStore,
+        customServiceName: customServiceNameToStore,
         startAt: aptStartAt,
         endAt: aptEndAt,
         status: finalStatus,
@@ -389,6 +424,9 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
 
       if (fullApt.length > 0) {
         const payload = fullApt[0] as any;
+        if (bookingResult.customServiceName) {
+          payload.serviceName = bookingResult.customServiceName;
+        }
         aptDetailPayload = payload;
         try {
           const text = generateVietnameseAnnouncement(payload);
@@ -415,7 +453,7 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         status: bookingResult.status,
         startAt: bookingResult.startAt,
         endAt: bookingResult.endAt,
-        serviceName: aptDetailPayload?.serviceName || null,
+        serviceName: aptDetailPayload?.serviceName || bookingResult.customServiceName || null,
         providerName: aptDetailPayload?.providerName || null,
         patientEmail: data.email || null,
         patientTelegramId: data.telegramId || null,

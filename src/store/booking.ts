@@ -19,6 +19,14 @@ interface BookingState {
   serviceIsFree: boolean | null;
   serviceShowPrice: boolean | null;
   serviceDuration: number | null;
+  selectedServices: Array<{
+    id: string;
+    name: string;
+    price?: number | null;
+    durationMins?: number | null;
+    isFree?: boolean | null;
+    showPrice?: boolean | null;
+  }>;
   providerId: string | null;
   providerName: string | null;
   selectedDate: string | null;
@@ -64,6 +72,8 @@ interface BookingState {
   setTenantId: (id: string | null) => void;
   setStep: (step: number) => void;
   setService: (id: string, name: string, price?: number | null, duration?: number | null, isFree?: boolean | null, showPrice?: boolean | null) => void;
+  setSelectedServices: (services: Array<{ id: string; name: string; price?: number | null; durationMins?: number | null; isFree?: boolean | null; showPrice?: boolean | null }>) => void;
+  toggleServiceItem: (service: { id: string; name: string; price?: number | null; durationMins?: number | null; isFree?: boolean | null; showPrice?: boolean | null }) => void;
   clearHold: () => void;
   setSelectedSlot: (start: string, end: string) => void;
   setDateTimeSlot: (date: string, providerId: string | null, token: string, start: string, end: string, expiresAt: number, providerName?: string | null) => void;
@@ -109,6 +119,7 @@ export const useBookingStore = create<BookingState>()(
       serviceIsFree: null,
       serviceShowPrice: null,
       serviceDuration: null,
+      selectedServices: [],
       providerId: null,
       providerName: null,
       selectedDate: null,
@@ -148,13 +159,15 @@ export const useBookingStore = create<BookingState>()(
       setService: (id, name, price = null, duration = null, isFree = null, showPrice = null) => {
         const currentServiceId = get().serviceId;
         const isDifferent = currentServiceId !== id;
+        const singleServiceObj = { id, name, price, durationMins: duration, isFree, showPrice };
         set({ 
           serviceId: id, 
           serviceName: name, 
           servicePrice: price, 
           serviceIsFree: isFree,
           serviceShowPrice: showPrice,
-          serviceDuration: duration, 
+          serviceDuration: duration,
+          selectedServices: [singleServiceObj],
           step: 2,
           // Khi đổi dịch vụ khác, xoá hold cũ tránh lệch serviceId trong appointment
           ...(isDifferent ? {
@@ -163,6 +176,92 @@ export const useBookingStore = create<BookingState>()(
             slotEndTime: null,
             holdExpiresAt: null,
           } : {})
+        });
+      },
+
+      setSelectedServices: (servicesList) => {
+        if (!servicesList || servicesList.length === 0) {
+          set({
+            selectedServices: [],
+            serviceId: null,
+            serviceName: null,
+            servicePrice: null,
+            serviceDuration: null,
+            sessionToken: null,
+            slotStartTime: null,
+            slotEndTime: null,
+            holdExpiresAt: null,
+          });
+          return;
+        }
+
+        const combinedName = servicesList.map(s => s.name).join(' + ');
+        const totalDuration = servicesList.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+        const totalPrice = servicesList.reduce((acc, s) => acc + (s.price || 0), 0);
+        const isFree = servicesList.every(s => s.isFree || s.price === 0);
+        const showPrice = servicesList.some(s => s.showPrice);
+
+        set({
+          selectedServices: servicesList,
+          serviceId: servicesList[0].id,
+          serviceName: combinedName,
+          servicePrice: totalPrice,
+          serviceDuration: totalDuration,
+          serviceIsFree: isFree,
+          serviceShowPrice: showPrice,
+          sessionToken: null,
+          slotStartTime: null,
+          slotEndTime: null,
+          holdExpiresAt: null,
+        });
+      },
+
+      toggleServiceItem: (svc) => {
+        const current = get().selectedServices || [];
+        const exists = current.some(s => s.id === svc.id);
+        let next: Array<{ id: string; name: string; price?: number | null; durationMins?: number | null; isFree?: boolean | null; showPrice?: boolean | null }>;
+        
+        if (exists) {
+          next = current.filter(s => s.id !== svc.id);
+        } else {
+          next = [...current, svc];
+        }
+
+        if (next.length === 0) {
+          set({
+            selectedServices: [],
+            serviceId: null,
+            serviceName: null,
+            servicePrice: null,
+            serviceDuration: null,
+            serviceIsFree: null,
+            serviceShowPrice: null,
+            sessionToken: null,
+            slotStartTime: null,
+            slotEndTime: null,
+            holdExpiresAt: null,
+          });
+          return;
+        }
+
+        const combinedName = next.map(s => s.name).join(' + ');
+        const totalDuration = next.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+        const totalPrice = next.reduce((acc, s) => acc + (s.price || 0), 0);
+        const isFree = next.every(s => s.isFree || s.price === 0);
+        const showPrice = next.some(s => s.showPrice);
+
+        set({
+          selectedServices: next,
+          serviceId: next[0]?.id || null,
+          serviceName: combinedName,
+          servicePrice: totalPrice,
+          serviceDuration: totalDuration,
+          serviceIsFree: isFree,
+          serviceShowPrice: showPrice,
+          sessionToken: null,
+          slotStartTime: null,
+          slotEndTime: null,
+          holdExpiresAt: null,
         });
       },
 

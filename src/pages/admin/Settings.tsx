@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { DataCleanModal } from './components/DataCleanModal';
 import api from '../../services/api';
 import { 
   Send, 
@@ -234,6 +235,7 @@ export default function Settings() {
 
   // Safe Wipe Data Modal States
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
+  const [wipeModalMode, setWipeModalMode] = useState<'clean_demo' | 'full_reset'>('clean_demo');
   const [wipeConfirmInput, setWipeConfirmInput] = useState('');
   const [isWiping, setIsWiping] = useState(false);
 
@@ -1428,7 +1430,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <p className="text-sm text-status-cancelled mb-2">
-                  Xóa SẠCH toàn bộ dữ liệu hiện có trong hệ thống.
+                  Dọn dẹp dữ liệu demo hoặc reset hệ thống an toàn (tuân thủ thứ tự quan hệ khóa ngoại).
                 </p>
                 <div className="text-[11px] bg-white/80 dark:bg-surface-subtle p-2 rounded border border-emerald-300/80 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 space-y-0.5 mb-2">
                   <div className="font-semibold flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
@@ -1436,135 +1438,48 @@ export default function Settings() {
                     Bảo tồn an toàn:
                   </div>
                   <p className="text-text-muted text-[11px] leading-tight">
-                    Tài khoản <strong>admin@dentalsmartbooking.com</strong> & mật khẩu mặc định <strong>admin@123</strong> không bị xóa.
+                    Tài khoản <strong>admin@dentalsmartbooking.com</strong>, danh mục dịch vụ & bác sĩ (khi chọn xóa demo) và liên kết đặt lịch không bị mất.
                   </p>
                 </div>
               </div>
-              <Button 
-                onClick={() => {
-                  setWipeConfirmInput('');
-                  setIsWipeModalOpen(true);
-                }} 
-                variant="destructive" 
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-medium"
-              >
-                Xóa toàn bộ dữ liệu
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button 
+                  onClick={() => {
+                    setWipeModalMode('clean_demo');
+                    setIsWipeModalOpen(true);
+                  }} 
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Xóa sạch dữ liệu demo
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setWipeModalMode('full_reset');
+                    setIsWipeModalOpen(true);
+                  }} 
+                  variant="destructive" 
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Reset hệ thống toàn diện
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Modal Xác nhận Wipe Data An toàn */}
-      {isWipeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-surface rounded-xl shadow-2xl border border-border-subtle max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between border-b border-border-subtle pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/60 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-text-main">Xác nhận Wipe Data Phòng Khám</h3>
-                  <p className="text-xs text-text-muted">Chỉ xóa dữ liệu phòng khám, bảo tồn tài khoản admin</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !isWiping && setIsWipeModalOpen(false)}
-                className="text-text-muted hover:text-text-main p-1 rounded-lg transition-colors cursor-pointer"
-                disabled={isWiping}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-lg text-red-800 dark:text-red-300 text-xs leading-relaxed">
-                <strong>CẢNH BÁO QUAN TRỌNG:</strong> Thao tác này sẽ xóa sạch toàn bộ hồ sơ hoạt động của phòng khám. Sau khi xóa, bạn sẽ không thể phục hồi nếu chưa tải xuống bản <strong>Backup</strong>.
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-red-50/70 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 rounded-lg">
-                  <p className="font-bold text-red-700 dark:text-red-400 mb-1.5 flex items-center gap-1">
-                    <Trash2 className="w-3.5 h-3.5" /> Dữ liệu sẽ XÓA SẠCH:
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 text-red-600 dark:text-red-300">
-                    <li>Toàn bộ Lịch hẹn khám</li>
-                    <li>Toàn bộ Hồ sơ Bệnh nhân</li>
-                    <li>Danh sách giữ chỗ trực tuyến</li>
-                    <li>Danh sách chờ (Waitlist)</li>
-                    <li>Lịch nhắc tái khám</li>
-                    <li>Đăng ký thông báo push</li>
-                    <li>Nhật ký kiểm toán hệ thống</li>
-                  </ul>
-                </div>
-
-                <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-lg">
-                  <p className="font-bold text-emerald-700 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> BẢO VỆ TUYỆT ĐỐI:
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 text-emerald-700 dark:text-emerald-300">
-                    <li><strong>Admin email:</strong> admin@dentalsmartbooking.com</li>
-                    <li><strong>Mật khẩu mặc định:</strong> admin@123</li>
-                    <li><strong>Quyền:</strong> Quản trị tối cao (Admin)</li>
-                    <li><strong>Khởi tạo lại:</strong> Dịch vụ chuẩn & Bác sĩ mặc định để tiếp tục hoạt động ngay</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="space-y-1.5 pt-1">
-                <label className="text-xs font-semibold text-text-main block">
-                  Để xác nhận, vui lòng nhập chữ <span className="text-red-600 font-bold">XOA DU LIEU</span> vào ô bên dưới:
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Nhập XOA DU LIEU để xác nhận"
-                  value={wipeConfirmInput || ''}
-                  onChange={(e) => setWipeConfirmInput(e.target.value)}
-                  disabled={isWiping}
-                  className="w-full text-sm border-red-300 focus:border-red-500 focus:ring-red-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-3 pt-4 border-t border-border-subtle">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsWipeModalOpen(false)}
-                disabled={isWiping}
-                className="text-xs w-full sm:w-auto"
-              >
-                Hủy bỏ
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleExecuteWipe}
-                disabled={
-                  (wipeConfirmInput.trim().toUpperCase() !== 'XOA DU LIEU' &&
-                   wipeConfirmInput.trim().toUpperCase() !== 'WIPE') ||
-                  isWiping
-                }
-                className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-              >
-                {isWiping ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Đang dọn dẹp dữ liệu...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Xác nhận Xóa Sạch Dữ Liệu
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal Dọn dẹp & Reset Data An toàn */}
+      <DataCleanModal
+        isOpen={isWipeModalOpen}
+        onClose={() => setIsWipeModalOpen(false)}
+        defaultMode={wipeModalMode}
+        onSuccess={() => {
+          setDataMsg('Dọn dẹp dữ liệu thành công!');
+          setIsDataError(false);
+        }}
+      />
       </>
       )}
 

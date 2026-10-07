@@ -8,8 +8,10 @@ export const LoginSchema = z.object({
 export type LoginRequest = z.infer<typeof LoginSchema>;
 
 export const HoldSlotSchema = z.object({
-  providerId: z.string().uuid("ID Bác sĩ không hợp lệ"),
-  serviceId: z.string().uuid("ID Dịch vụ không hợp lệ"),
+  providerId: z.string().min(1, "ID Bác sĩ không hợp lệ"),
+  serviceId: z.string().min(1, "ID Dịch vụ không hợp lệ"),
+  serviceIds: z.array(z.string()).optional(),
+  customServiceName: z.string().optional(),
   startAt: z.string().datetime({ message: "Giờ bắt đầu không hợp lệ (ISO 8601)" }),
   endAt: z.string().datetime({ message: "Giờ kết thúc không hợp lệ (ISO 8601)" }),
 });
@@ -25,6 +27,8 @@ export const BookAppointmentSchema = z.object({
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ngày sinh phải là YYYY-MM-DD").optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
   notes: z.string().optional(),
+  serviceIds: z.array(z.string()).optional(),
+  customServiceName: z.string().optional(),
 });
 
 export type BookAppointmentRequest = z.infer<typeof BookAppointmentSchema>;

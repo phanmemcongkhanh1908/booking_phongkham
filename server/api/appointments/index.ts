@@ -59,6 +59,8 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         providerName: providers.name,
         serviceId: services.id,
         serviceName: services.name,
+        customServiceName: appointments.customServiceName,
+        serviceIds: appointments.serviceIds,
         durationMins: services.durationMins,
         rating: appointments.rating,
         reviewComment: appointments.reviewComment,
@@ -74,7 +76,11 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
 
     if (limit > 0) {
       const offset = (page - 1) * limit;
-      const results = await queryBuilder.limit(limit).offset(offset);
+      const rawResults = await queryBuilder.limit(limit).offset(offset);
+      const results = rawResults.map((r: any) => ({
+        ...r,
+        serviceName: r.customServiceName || r.serviceName
+      }));
       
       const countQuery = db.select({ id: appointments.id }).from(appointments).where(conditions.length > 0 ? and(...conditions) : undefined);
       const countResult = await countQuery;
@@ -91,7 +97,11 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         }
       });
     } else {
-      const results = await queryBuilder;
+      const rawResults = await queryBuilder;
+      const results = rawResults.map((r: any) => ({
+        ...r,
+        serviceName: r.customServiceName || r.serviceName
+      }));
       res.json({
         success: true,
         data: results,
@@ -191,6 +201,8 @@ appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), asyn
         allergies: patients.allergies,
         providerName: providers.name,
         serviceName: services.name,
+        customServiceName: appointments.customServiceName,
+        serviceIds: appointments.serviceIds,
         price: services.price,
         durationMins: services.durationMins,
       })
@@ -205,7 +217,14 @@ appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), asyn
       return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
     }
 
-    res.json({ success: true, data: results[0] });
+    const row = results[0];
+    res.json({ 
+      success: true, 
+      data: {
+        ...row,
+        serviceName: row.customServiceName || row.serviceName
+      } 
+    });
   } catch (error) {
     next(error);
   }
@@ -214,10 +233,16 @@ appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), asyn
 // [M02] Đặt lịch trực tiếp (Admin/Receptionist)
 appointmentRouter.post("/next", requirePermission("appointment.create"), async (req, res, next) => {
   try {
-    let { patientId, providerId, serviceId, startAt, endAt, notes } = req.body;
-    if (!patientId || !serviceId || !startAt || !endAt) {
+    let { patientId, providerId, serviceId, serviceIds, customServiceName, startAt, endAt, notes } = req.body;
+    const targetServiceIds = Array.isArray(serviceIds) && serviceIds.length > 0 
+      ? serviceIds 
+      : (serviceId ? [serviceId] : []);
+
+    if (!patientId || targetServiceIds.length === 0 || !startAt || !endAt) {
       throw new BadRequestError("Thiếu thông tin bắt buộc");
     }
+
+    const primaryServiceId = targetServiceIds[0];
 
     if (!providerId || providerId === 'default') {
       const providerRecords = await db.select().from(providers).limit(1);
@@ -232,10 +257,21 @@ appointmentRouter.post("/next", requirePermission("appointment.create"), async (
       throw new BadRequestError("Khung giờ này đã bị đụng lịch. Vui lòng chọn giờ khác.");
     }
 
+    let combinedCustomName = customServiceName;
+    if (!combinedCustomName && targetServiceIds.length > 1) {
+      const allSvc = await db.select().from(services);
+      const matched = allSvc.filter((s: any) => targetServiceIds.includes(s.id));
+      if (matched.length > 0) {
+        combinedCustomName = matched.map((s: any) => s.name).join(' + ');
+      }
+    }
+
     const newAppointment = await db.insert(appointments).values({
       patientId,
       providerId,
-      serviceId,
+      serviceId: primaryServiceId,
+      serviceIds: targetServiceIds,
+      customServiceName: combinedCustomName || undefined,
       startAt: new Date(startAt),
       endAt: new Date(endAt),
       status: "CONFIRMED",
@@ -256,6 +292,8 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
       patientName, 
       phone, 
       serviceId, 
+      serviceIds: reqServiceIds,
+      customServiceName: reqCustomServiceName,
       providerId: reqProviderId, 
       startAt, 
       endAt: reqEndAt, 
@@ -265,9 +303,15 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
       patientId: reqPatientId
     } = req.body;
 
-    if (!patientName || !phone || !serviceId || !startAt) {
+    const targetServiceIds: string[] = Array.isArray(reqServiceIds) && reqServiceIds.length > 0
+      ? reqServiceIds
+      : (serviceId ? [serviceId] : []);
+
+    if (!patientName || !phone || targetServiceIds.length === 0 || !startAt) {
       throw new BadRequestError("Thiếu thông tin bắt buộc (Họ tên, Số điện thoại, Dịch vụ, Thời gian bắt đầu)");
     }
+
+    const primaryServiceId = targetServiceIds[0];
 
     const bookingResult = await db.transaction(async (tx) => {
       let patientId = reqPatientId;
@@ -324,12 +368,27 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
         }
       }
 
+      // Determine combined duration and service names
+      let allSelectedServices: any[] = [];
+      for (const sId of targetServiceIds) {
+        const sRec = await tx.select().from(services).where(eq(services.id, sId)).limit(1);
+        if (sRec.length > 0) allSelectedServices.push(sRec[0]);
+      }
+
+      const totalDurationMins = allSelectedServices.length > 0
+        ? allSelectedServices.reduce((sum, s) => sum + (s.durationMins || 30), 0)
+        : 30;
+
+      const combinedCustomName = reqCustomServiceName || (
+        targetServiceIds.length > 1 && allSelectedServices.length > 0
+          ? allSelectedServices.map(s => s.name).join(' + ')
+          : undefined
+      );
+
       // Determine endAt if not provided
       let finalEndAt = reqEndAt ? new Date(reqEndAt) : null;
       if (!finalEndAt || isNaN(finalEndAt.getTime())) {
-        const serviceRec = await tx.select().from(services).where(eq(services.id, serviceId)).limit(1);
-        const durationMins = (serviceRec.length > 0 && serviceRec[0].durationMins) ? serviceRec[0].durationMins : 30;
-        finalEndAt = new Date(new Date(startAt).getTime() + durationMins * 60000);
+        finalEndAt = new Date(new Date(startAt).getTime() + totalDurationMins * 60000);
       }
 
       const finalStartAt = new Date(startAt);
@@ -346,7 +405,9 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
       const newAppointment = await tx.insert(appointments).values({
         patientId,
         providerId: chosenProviderId,
-        serviceId,
+        serviceId: primaryServiceId,
+        serviceIds: targetServiceIds,
+        customServiceName: combinedCustomName,
         startAt: finalStartAt,
         endAt: finalEndAt,
         status: initialStatus,
@@ -598,11 +659,19 @@ appointmentRouter.put("/:id", requirePermission("appointment.update"), async (re
   }
 });
 
-// [M02] Xóa Lịch hẹn (Admin)
+// [M02] Xóa Lịch hẹn (Admin - Cascade an toàn)
 appointmentRouter.delete("/:id", requirePermission("appointment.update"), async (req, res, next) => {
   try {
-    await db.delete(appointments).where(eq(appointments.id, req.params.id));
-    res.json({ success: true, message: "Đã xóa lịch hẹn" });
+    const appointmentId = req.params.id;
+    const { appointmentHolds, patientRecalls, auditLogs } = await import("../../db/schema.js");
+    
+    // Xóa các bản ghi con trước để bảo toàn ràng buộc quan hệ
+    await db.delete(appointmentHolds).where(eq(appointmentHolds.appointmentId, appointmentId));
+    await db.delete(patientRecalls).where(eq(patientRecalls.appointmentId, appointmentId));
+    await db.delete(auditLogs).where(eq(auditLogs.appointmentId, appointmentId));
+
+    await db.delete(appointments).where(eq(appointments.id, appointmentId));
+    res.json({ success: true, message: "Đã xóa lịch hẹn an toàn" });
   } catch (error) {
     next(error);
   }

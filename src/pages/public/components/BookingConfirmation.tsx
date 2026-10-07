@@ -31,6 +31,7 @@ export default function BookingConfirmation() {
     serviceIsFree,
     serviceShowPrice,
     serviceDuration,
+    selectedServices,
     holdExpiresAt, 
     patientDraft, 
     setStep, 
@@ -103,13 +104,22 @@ export default function BookingConfirmation() {
       : (patientDraft.notes || '').trim();
 
     try {
+      const targetServiceIds = (selectedServices && selectedServices.length > 0)
+        ? selectedServices.map(s => s.id)
+        : (serviceId ? [serviceId] : undefined);
+      const customName = selectedServices && selectedServices.length > 1
+        ? (serviceName || selectedServices.map(s => s.name).join(' + '))
+        : undefined;
+
       const res = await api.post('/public/appointments', {
         sessionToken,
         fullName: patientDraft.fullName.trim(),
         phone: patientDraft.phone.trim(),
         email: patientDraft.email ? patientDraft.email.trim() : undefined,
         telegramId: patientDraft.telegramId ? patientDraft.telegramId.trim() : undefined,
-        notes: patientNote || undefined
+        notes: patientNote || undefined,
+        serviceIds: targetServiceIds,
+        customServiceName: customName
       });
 
       if (res.data.success) {
@@ -271,10 +281,21 @@ export default function BookingConfirmation() {
                 <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
                   {serviceName || 'Dịch vụ khám tiêu chuẩn'}
                 </h3>
+                {selectedServices && selectedServices.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedServices.map(svc => (
+                      <span key={svc.id} className="inline-flex items-center gap-1 text-[11px] font-semibold bg-teal-50 text-teal-800 px-2.5 py-0.5 rounded-full border border-teal-200/60">
+                        <Sparkles className="w-3 h-3 text-teal-600" />
+                        {svc.name}
+                        {svc.durationMins ? ` (~${svc.durationMins}p)` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center gap-3 text-[12px] text-slate-500 mt-1.5 font-medium">
                   <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3 text-slate-400" />
-                    {serviceDuration ? `${serviceDuration} phút` : '30 - 45 phút'}
+                    {serviceDuration ? `Tổng thời lượng: ~${serviceDuration} phút` : '30 - 45 phút'}
                   </span>
                 </div>
               </div>
