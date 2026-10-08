@@ -79,7 +79,9 @@ export function useHoldSlot() {
         customServiceName: customName,
         providerId: slot.providerId,
         startAt: slot.startAt,
-        endAt: slot.endAt
+        endAt: slot.endAt,
+        tenantId: useBookingStore.getState().tenantId || undefined,
+        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
       });
 
       if (res.data?.success && res.data?.data?.sessionToken) {

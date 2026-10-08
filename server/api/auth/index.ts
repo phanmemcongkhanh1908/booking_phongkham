@@ -12,38 +12,109 @@ authRouter.post("/login", async (req, res, next) => {
   try {
     const { email, password } = LoginSchema.parse(req.body);
     const identifier = (email || "").trim().toLowerCase();
+    const clinicSlug = (req.body.clinicSlug || req.body.slug || req.query.clinic || req.query.slug || "")
+      .toString()
+      .trim()
+      .toLowerCase();
 
-    // Tìm tất cả users và join với role để so sánh case-insensitive
-    const userRecords = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        passwordHash: users.passwordHash,
-        isActive: users.isActive,
-        roleName: roles.name,
-        rolePermissions: roles.permissions,
-        userPermissions: users.permissions,
-        tenantId: users.tenantId,
-        uiMode: users.uiMode,
-        slug: users.slug,
-      })
-      .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id));
-
-    // Khớp tài khoản: hỗ trợ username bất kỳ (như admin) hoặc email
-    const user = userRecords.find((u: any) => {
-      const stored = (u.email || "").trim().toLowerCase();
-      if (stored === identifier) return true;
-      // Hỗ trợ nhập "admin" đăng nhập vào tài khoản mặc định admin@dentalsmartbooking.com nếu chưa tạo tài khoản admin riêng
-      if (identifier === "admin" && stored === "admin@dentalsmartbooking.com") return true;
-      return false;
+    // Tìm tất cả users và join với role để so sánh
+    let userRecords: any[] = [];
+    
+    // Đảm bảo chạy query không bị lọc context tenant khi login
+    const { appContext } = await import("../../core/context.js");
+    await appContext.run({ isFullAdmin: true }, async () => {
+      userRecords = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          username: users.username,
+          passwordHash: users.passwordHash,
+          isActive: users.isActive,
+          roleName: roles.name,
+          rolePermissions: roles.permissions,
+          userPermissions: users.permissions,
+          tenantId: users.tenantId,
+          uiMode: users.uiMode,
+          slug: users.slug,
+          clinicName: users.clinicName,
+          doctorName: users.doctorName,
+          address: users.address,
+          phone: users.phone,
+          hotline: users.hotline,
+        })
+        .from(users)
+        .leftJoin(roles, eq(users.roleId, roles.id));
     });
+
+    // Hàm kiểm tra khớp tài khoản linh hoạt
+    const isUserMatch = (u: any, targetId: string) => {
+      const storedEmail = (u.email || "").trim().toLowerCase();
+      const storedSlug = (u.slug || "").trim().toLowerCase();
+      const storedUsername = (u.username || "").trim().toLowerCase();
+      const storedPhone = (u.phone || u.hotline || "").trim();
+
+      if (storedEmail && storedEmail === targetId) return true;
+      if (storedSlug && storedSlug === targetId) return true;
+      if (storedUsername && storedUsername === targetId) return true;
+      if (storedPhone && storedPhone === targetId) return true;
+
+      // Hỗ trợ nhập "admin" vào tài khoản admin gốc
+      if (targetId === "admin" && storedEmail === "admin@dentalsmartbooking.com") return true;
+
+      return false;
+    };
+
+    let user: any = null;
+
+    // 1. Nếu có clinicSlug cụ thể (đăng nhập từ trang phòng khám riêng)
+    if (clinicSlug) {
+      // Ưu tiên tìm tài khoản thuộc phòng khám này
+      const clinicUsers = userRecords.filter((u: any) => {
+        const uSlug = (u.slug || "").trim().toLowerCase();
+        const uTenant = (u.tenantId || "").trim().toLowerCase();
+        return uSlug === clinicSlug || uTenant === `tenant_${clinicSlug}`;
+      });
+
+      // Nếu người dùng nhập identifier khớp user của clinic
+      user = clinicUsers.find((u: any) => isUserMatch(u, identifier));
+
+      // Nếu ở trang phòng khám mà nhập "admin" hoặc "root", và clinic có 1 user quản trị duy nhất
+      if (!user && (identifier === "admin" || identifier === "lephuong") && clinicUsers.length > 0) {
+        user = clinicUsers[0];
+      }
+    }
+
+    // 2. Nếu chưa tìm thấy, tìm trên toàn bộ danh sách users
+    if (!user) {
+      user = userRecords.find((u: any) => isUserMatch(u, identifier));
+    }
+
+    // 3. Fallback Firestore: nếu server trên Render vừa khởi động lại làm mất file cục bộ
+    if (!user) {
+      try {
+        const { serverDb } = await import("../../lib/firebase-server.js");
+        if (serverDb) {
+          const { collection, getDocs, query, where } = await import("firebase/firestore");
+          // Tìm theo slug hoặc email trong Firestore
+          const usersRef = collection(serverDb, "users");
+          const qSnap = await getDocs(usersRef);
+          qSnap.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (isUserMatch(data, identifier) || (clinicSlug && (data.slug === clinicSlug || data.tenantId === `tenant_${clinicSlug}`))) {
+              user = { id: docSnap.id, ...data };
+            }
+          });
+        }
+      } catch (fErr) {
+        // bỏ qua nếu Firestore không có
+      }
+    }
 
     if (!user) {
       throw new UnauthorizedError("Tài khoản hoặc mật khẩu không chính xác");
     }
 
-    if (!user.isActive) {
+    if (user.isActive === false) {
       throw new UnauthorizedError("Tài khoản đã bị khóa");
     }
 
@@ -55,13 +126,14 @@ authRouter.post("/login", async (req, res, next) => {
 
     const mergedPermissions = Array.from(new Set([
       ...(user.rolePermissions || []),
-      ...(user.userPermissions || [])
+      ...(user.userPermissions || []),
+      ...(user.permissions || [])
     ]));
 
     // Generate Token
     const token = generateToken({
       userId: user.id,
-      role: user.roleName || "guest",
+      role: user.roleName || (mergedPermissions.includes("*") ? "admin" : "staff"),
       permissions: mergedPermissions,
       tenantId: user.tenantId,
     });
@@ -73,11 +145,16 @@ authRouter.post("/login", async (req, res, next) => {
         user: {
           id: user.id,
           email: user.email,
-          role: user.roleName,
+          username: user.username || user.email,
+          role: user.roleName || (mergedPermissions.includes("*") ? "admin" : "staff"),
           permissions: mergedPermissions,
           tenantId: user.tenantId,
           uiMode: user.uiMode,
           slug: user.slug,
+          clinicName: user.clinicName,
+          doctorName: user.doctorName,
+          address: user.address,
+          phone: user.phone || user.hotline,
         },
       },
     });

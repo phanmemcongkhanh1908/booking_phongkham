@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
-import { ArrowLeft, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, MapPin, Phone } from 'lucide-react';
 import UnauthorizedEmailModal, { UnauthorizedModalData } from './components/UnauthorizedEmailModal';
+import { useClinicSettings } from '../../hooks/useClinicSettings';
 
 export default function Login() {
+  const { slug: routeSlug } = useParams<{ slug?: string }>();
+  const [searchParams] = useSearchParams();
+  const effectiveSlug = (routeSlug || searchParams.get('clinic') || searchParams.get('slug') || '').trim();
+
+  // Use the high-performance Clinic Settings Service Layer
+  const { clinicProfile: clinicInfo, loading: clinicLoading } = useClinicSettings(effectiveSlug);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +25,13 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Suggest effectiveSlug in username field if empty
+  useEffect(() => {
+    if (effectiveSlug) {
+      setEmail(prev => prev ? prev : effectiveSlug);
+    }
+  }, [effectiveSlug]);
 
   // Modal hiển thị khi tài khoản Google không thuộc Admin Whitelist hoặc bị access_denied
   const [unauthorizedModalData, setUnauthorizedModalData] = useState<UnauthorizedModalData>({
@@ -35,12 +50,12 @@ export default function Login() {
     const savedPassword = localStorage.getItem('rememberedPassword');
     const wasRemembered = localStorage.getItem('rememberMeChecked') === 'true';
 
-    if (lastEmail) setEmail(lastEmail);
+    if (lastEmail && !effectiveSlug) setEmail(lastEmail);
     if (wasRemembered && savedPassword) {
       setPassword(savedPassword);
       setRememberMe(true);
     }
-  }, []);
+  }, [effectiveSlug]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,10 +63,17 @@ export default function Login() {
     setError('');
     
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const res = await api.post('/auth/login', { 
+        email, 
+        password,
+        clinicSlug: effectiveSlug || undefined 
+      });
       if (res.data.success) {
         setAuth(res.data.data.token, res.data.data.user);
         localStorage.setItem('lastEmail', email);
+        if (res.data.data.user?.slug || effectiveSlug) {
+          localStorage.setItem('last_clinic_slug', res.data.data.user?.slug || effectiveSlug);
+        }
         if (rememberMe) {
           localStorage.setItem('rememberedPassword', password);
           localStorage.setItem('rememberMeChecked', 'true');
@@ -185,17 +207,47 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-base p-4 relative">
       <Link 
-        to={localStorage.getItem('last_clinic_slug') ? `/booking/${localStorage.getItem('last_clinic_slug')}` : "/"} 
-        className="absolute top-6 left-6 flex items-center text-sm font-medium text-text-muted hover:text-text-main bg-surface px-4 py-2 rounded-full shadow-soft border border-border-subtle transition-all hover:shadow"
+        to={effectiveSlug ? `/b/${effectiveSlug}` : (localStorage.getItem('last_clinic_slug') ? `/b/${localStorage.getItem('last_clinic_slug')}` : "/book")} 
+        className="absolute top-6 left-6 flex items-center text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white px-3.5 py-2 rounded-2xl shadow-sm border border-slate-200 transition-all hover:bg-slate-50"
       >
-        <ArrowLeft className="w-4 h-4 mr-2" />
-        Quay lại trang khách hàng
+        <ArrowLeft className="w-4 h-4 mr-2 text-teal-600" />
+        <span>{effectiveSlug && clinicInfo?.clinicName ? `Quay lại đặt lịch ${clinicInfo.clinicName}` : 'Quay lại trang đặt lịch'}</span>
       </Link>
 
       <Card className="w-full max-w-md shadow-xl border border-slate-200/80 rounded-3xl">
         <CardHeader className="text-center pt-8 pb-4">
-          <CardTitle className="text-2xl font-bold text-slate-800">Đăng nhập hệ thống</CardTitle>
-          <p className="text-xs text-slate-500 mt-1">Cổng quản trị nha khoa &amp; đồng bộ dữ liệu khám</p>
+          {effectiveSlug ? (
+            <div className="flex flex-col items-center">
+              <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl shadow-md mb-2.5">
+                {clinicInfo?.clinicName ? clinicInfo.clinicName.charAt(0).toUpperCase() : effectiveSlug.charAt(0).toUpperCase()}
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200 mb-2">
+                <Building2 className="w-3.5 h-3.5 text-teal-600" />
+                <span>Cổng Quản Trị Phòng Khám</span>
+              </div>
+              <CardTitle className="text-xl sm:text-2xl font-bold text-slate-800 text-center leading-snug">
+                {clinicInfo?.clinicName || `Phòng khám ${effectiveSlug}`}
+              </CardTitle>
+              {clinicInfo?.doctorName && (
+                <p className="text-xs text-teal-700 font-semibold mt-1">
+                  Bác sĩ phụ trách: {clinicInfo.doctorName}
+                </p>
+              )}
+              {clinicInfo?.address && (
+                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
+                  {clinicInfo.address}
+                </p>
+              )}
+              <p className="text-xs text-slate-500 mt-1 max-w-xs">
+                Quản lý lịch hẹn, hồ sơ bệnh nhân &amp; cấu hình phòng khám
+              </p>
+            </div>
+          ) : (
+            <>
+              <CardTitle className="text-2xl font-bold text-slate-800">Đăng nhập hệ thống</CardTitle>
+              <p className="text-xs text-slate-500 mt-1">Cổng quản trị nha khoa &amp; đồng bộ dữ liệu khám</p>
+            </>
+          )}
         </CardHeader>
         <CardContent className="px-6 pb-8">
           <div className="space-y-4">
@@ -247,7 +299,7 @@ export default function Login() {
                 <label className="text-xs font-semibold text-slate-700">Tên đăng nhập hoặc Email</label>
                 <Input 
                   type="text" 
-                  placeholder="VD: admin hoặc admin@dentalsmartbooking.com" 
+                  placeholder={effectiveSlug ? `VD: ${effectiveSlug} hoặc email phòng khám` : "VD: admin hoặc admin@dentalsmartbooking.com"} 
                   value={email || ''} 
                   onChange={e => setEmail(e.target.value)} 
                   required 
@@ -294,7 +346,7 @@ export default function Login() {
                 </label>
               </div>
               <Button type="submit" className="w-full py-2.5 rounded-xl font-semibold text-sm" disabled={loading || googleLoading}>
-                {loading ? 'Đang xử lý...' : 'Đăng nhập'}
+                {loading ? 'Đang xử lý...' : (effectiveSlug && clinicInfo?.clinicName ? `Đăng nhập ${clinicInfo.clinicName}` : 'Đăng nhập')}
               </Button>
             </form>
           </div>

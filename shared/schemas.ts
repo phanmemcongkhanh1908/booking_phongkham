@@ -14,6 +14,8 @@ export const HoldSlotSchema = z.object({
   customServiceName: z.string().optional(),
   startAt: z.string().datetime({ message: "Giờ bắt đầu không hợp lệ (ISO 8601)" }),
   endAt: z.string().datetime({ message: "Giờ kết thúc không hợp lệ (ISO 8601)" }),
+  clinicSlug: z.string().optional(),
+  tenantId: z.string().optional(),
 });
 
 export type HoldSlotRequest = z.infer<typeof HoldSlotSchema>;
@@ -29,6 +31,8 @@ export const BookAppointmentSchema = z.object({
   notes: z.string().optional(),
   serviceIds: z.array(z.string()).optional(),
   customServiceName: z.string().optional(),
+  clinicSlug: z.string().optional(),
+  tenantId: z.string().optional(),
 });
 
 export type BookAppointmentRequest = z.infer<typeof BookAppointmentSchema>;

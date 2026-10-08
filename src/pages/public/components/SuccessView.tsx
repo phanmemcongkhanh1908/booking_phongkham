@@ -26,7 +26,8 @@ import { PushNotificationPrompt } from "./PushNotificationPrompt";
 import { format, addMinutes } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import api from '../../../services/api';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 import GoogleCalendarSyncCard from './GoogleCalendarSyncCard';
 import { buildGoogleCalendarUrl, CalendarAppointmentDetails } from '../../../utils/calendarSync';
 
@@ -48,8 +49,9 @@ export default function SuccessView() {
   const bookingFormConfig: any = store.bookingFormConfig;
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
   const ticketRef = useRef<HTMLDivElement>(null);
   const [emailInput, setEmailInput] = useState(patientEmail || '');
   const [emailSent, setEmailSent] = useState(Boolean(patientEmail));

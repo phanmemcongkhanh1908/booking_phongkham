@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 
 export default function BookingConfirmation() {
   const { 
@@ -39,8 +40,9 @@ export default function BookingConfirmation() {
   } = useBookingStore();
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +121,9 @@ export default function BookingConfirmation() {
         telegramId: patientDraft.telegramId ? patientDraft.telegramId.trim() : undefined,
         notes: patientNote || undefined,
         serviceIds: targetServiceIds,
-        customServiceName: customName
+        customServiceName: customName,
+        tenantId: useBookingStore.getState().tenantId || undefined,
+        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
       });
 
       if (res.data.success) {

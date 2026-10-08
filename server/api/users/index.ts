@@ -191,6 +191,35 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     
     console.log("[Users API] User inserted successfully. User ID:", newUser[0]?.id);
     
+    // Synchronize clinic document and user credentials to Firestore
+    try {
+      const { serverDb } = await import('../../lib/firebase-server.js');
+      if (serverDb) {
+        const { doc, setDoc } = await import('firebase/firestore');
+        const userDocRef = doc(serverDb, "users", newUser[0]?.id || identifier);
+        await setDoc(userDocRef, {
+          id: newUser[0]?.id || identifier,
+          email: identifier,
+          username: rawIdentifier,
+          passwordHash: hashedPassword,
+          roleId: targetRoleId,
+          tenantId: newTenantId,
+          isActive: true,
+          permissions: permissions || [],
+          uiMode,
+          slug,
+          clinicName: clinicName || "Nha Khoa Dental Smart",
+          doctorName: doctorName || "",
+          address: address || "",
+          phone: hotline || "",
+          hotline: hotline || "",
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch((fErr) => console.warn("[Firestore] User sync warn:", fErr));
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // Auto-create basic settings for the new tenant
     try {
       const basicSettings = {
@@ -364,6 +393,27 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
         console.warn("[Users API] Could not update clinicProfile in settings:", err);
       }
     }
+
+    // Sync user updates to Firestore
+    try {
+      const { serverDb } = await import('../../lib/firebase-server.js');
+      if (serverDb) {
+        const { doc, setDoc } = await import('firebase/firestore');
+        const userDocRef = doc(serverDb, "users", userId);
+        const firestoreUpdate: any = {
+          id: userId,
+          updatedAt: new Date().toISOString(),
+        };
+        if (updateData.passwordHash) firestoreUpdate.passwordHash = updateData.passwordHash;
+        if (updateData.isActive !== undefined) firestoreUpdate.isActive = updateData.isActive;
+        if (updateData.slug !== undefined) firestoreUpdate.slug = updateData.slug;
+        if (updateData.clinicName !== undefined) firestoreUpdate.clinicName = updateData.clinicName;
+        if (updateData.doctorName !== undefined) firestoreUpdate.doctorName = updateData.doctorName;
+        if (updateData.phone !== undefined) firestoreUpdate.phone = updateData.phone;
+        if (updateData.tenantId !== undefined) firestoreUpdate.tenantId = updateData.tenantId;
+        await setDoc(userDocRef, firestoreUpdate, { merge: true }).catch(() => {});
+      }
+    } catch (e) {}
 
     res.json({ success: true, data: updated[0] });
   } catch (error) {

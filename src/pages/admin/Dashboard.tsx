@@ -23,11 +23,13 @@ import { DataCleanModal } from './components/DataCleanModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
+  const navigate = useNavigate();
   const isSimpleMode = user?.uiMode === 'simple';
   
   const { hasPermission } = usePermissions();
@@ -456,15 +458,15 @@ export default function Dashboard() {
           {/* Logo & Brand */}
           <div className="flex items-center gap-3 min-w-0 shrink-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl flex items-center justify-center text-white font-extrabold text-lg shadow-md shrink-0">
-              {clinicProfile?.clinicName ? clinicProfile.clinicName.charAt(0).toUpperCase() : 'D'}
+              {(clinicProfile?.clinicName || user?.clinicName || 'Dental Smart').charAt(0).toUpperCase()}
             </div>
             <div className="hidden sm:block min-w-0">
               <h1 className="text-base font-bold text-slate-800 leading-tight truncate tracking-tight">
-                {clinicProfile?.clinicName || 'Dental Smart'}
+                {clinicProfile?.clinicName || user?.clinicName || 'Dental Smart'}
               </h1>
-              {clinicProfile?.doctorName && (
+              {(clinicProfile?.doctorName || user?.doctorName) && (
                 <p className="text-xs text-slate-500 font-medium truncate">
-                  BS. {clinicProfile.doctorName}
+                  BS. {clinicProfile?.doctorName || user?.doctorName}
                 </p>
               )}
             </div>
@@ -527,7 +529,27 @@ export default function Dashboard() {
           </nav>
 
           {/* Right Actions & User Menu */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            {/* Quick Visit Public Booking Link */}
+            {(() => {
+              const activeSlug = user?.slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug');
+              const publicUrl = activeSlug ? `/b/${activeSlug}` : '/book';
+              return (
+                <a
+                  href={publicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold shadow-2xs transition-all"
+                  title="Mở trang đặt lịch trực tuyến của phòng khám trong tab mới"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
+                  <span className="truncate max-w-[140px]">
+                    {activeSlug ? `b/${activeSlug}` : 'Trang đặt lịch'}
+                  </span>
+                </a>
+              );
+            })()}
+
             {/* Quick QR Scanner */}
             <button 
               onClick={() => setShowScanner(true)}
@@ -635,8 +657,12 @@ export default function Dashboard() {
 
                     <div className="p-2 border-t border-slate-50">
                       <button 
-                        onClick={logout}
-                        className="w-full flex items-center px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                        onClick={() => {
+                          const activeSlug = user?.slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug');
+                          logout();
+                          navigate(activeSlug ? `/b/${activeSlug}/login` : '/admin/login');
+                        }}
+                        className="w-full flex items-center px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
                       >
                         <LogOut className="w-4 h-4 mr-3 text-red-500" />
                         Đăng xuất

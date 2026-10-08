@@ -198,11 +198,18 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
     const data = HoldSlotSchema.parse(req.body);
     const startAt = new Date(data.startAt);
     const endAt = new Date(data.endAt);
-    const expiresAt = addMinutes(new Date(), 5); // Hold 10 mins
+    const expiresAt = addMinutes(new Date(), 5); // Hold 5 mins
     
-    
-    
-    
+    // Resolve tenantId
+    let targetTenantId = (data.tenantId || req.headers["x-tenant-id"]) as string | undefined;
+    const rawClinicSlug = (data.clinicSlug || req.query.clinic || req.query.slug || "") as string;
+    if (!targetTenantId && rawClinicSlug) {
+      const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+      const matched = await findClinicBySlug(rawClinicSlug.trim());
+      if (matched?.tenantId) {
+        targetTenantId = matched.tenantId;
+      }
+    }
 
     // SERIALIZABLE Transaction to prevent double holding
     const holdResult = await db.transaction(async (tx) => {
@@ -240,6 +247,7 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
         startAt,
         endAt,
         expiresAt,
+        tenantId: targetTenantId || undefined,
       }).returning();
 
       return newHold[0];
@@ -262,6 +270,16 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
   try {
     const data = BookAppointmentSchema.parse(req.body);
 
+    let targetTenantId = (data.tenantId || req.headers["x-tenant-id"]) as string | undefined;
+    const rawClinicSlug = (data.clinicSlug || req.query.clinic || req.query.slug || "") as string;
+    if (!targetTenantId && rawClinicSlug) {
+      const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+      const matched = await findClinicBySlug(rawClinicSlug.trim());
+      if (matched?.tenantId) {
+        targetTenantId = matched.tenantId;
+      }
+    }
+
     const bookingResult = await db.transaction(async (tx) => {
       // 1. Verify the hold session
       const holds = await tx.select().from(appointmentHolds).where(
@@ -282,10 +300,18 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
           throw new BadRequestError("Thiếu ID bác sĩ trong phiên giữ chỗ");
       }
 
-      // 2. Find or Create Patient
-      let patientRecords = await tx.select().from(patients).where(eq(patients.phone, data.phone.replace(/\D/g, '').replace(/\D/g, ''))).limit(1);
-      let patientId;
+      if (!targetTenantId && (hold as any).tenantId) {
+        targetTenantId = (hold as any).tenantId;
+      }
 
+      // 2. Find or Create Patient (isolated by tenant)
+      const cleanPhone = data.phone.replace(/\D/g, '');
+      const allPhonePatients = await tx.select().from(patients).where(eq(patients.phone, cleanPhone));
+      const patientRecords = targetTenantId 
+        ? allPhonePatients.filter((p: any) => p.tenantId === targetTenantId)
+        : allPhonePatients;
+
+      let patientId;
       
       let patientNotes = data.notes;
       if (data.email) {
@@ -309,7 +335,6 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
          patientNotes = JSON.stringify({ text: patientNotes, diagnosis: '', treatmentPlan: '', documents: [] });
       }
 
-
       if (patientRecords.length > 0) {
         patientId = patientRecords[0].id;
         // Update patient info if provided
@@ -319,16 +344,18 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
           gender: data.gender || patientRecords[0].gender,
           telegramId: data.telegramId || patientRecords[0].telegramId,
           notes: patientNotes || patientRecords[0].notes,
+          tenantId: targetTenantId || patientRecords[0].tenantId,
           updatedAt: new Date(),
         }).where(eq(patients.id, patientId));
       } else {
         const newPatient = await tx.insert(patients).values({
           fullName: data.fullName,
-          phone: data.phone.replace(/\D/g, ''),
+          phone: cleanPhone,
           dob: data.dob,
           gender: data.gender,
           telegramId: data.telegramId || undefined,
           notes: patientNotes,
+          tenantId: targetTenantId || undefined,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }).returning();
@@ -361,7 +388,7 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         throw new ConflictError("Khung giờ này đã có người khác đặt trong tích tắc. Vui lòng thử lại với giờ khác.");
       }
 
-      // 5. Create the Appointment
+      // 5. Create the Appointment with tenantId
       const serviceIdsToStore = data.serviceIds || (hold as any).serviceIds || [hold.serviceId];
       const customServiceNameToStore = data.customServiceName || (hold as any).customServiceName;
 
@@ -375,7 +402,8 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         endAt: aptEndAt,
         status: finalStatus,
         notes: data.notes,
-        source: "ONLINE"
+        source: "ONLINE",
+        tenantId: targetTenantId || undefined,
       }).returning();
 
       // 5. Delete the hold session so it can't be reused
@@ -677,142 +705,38 @@ publicRouter.post("/appointments/:id/notify", async (req, res, next) => {
   }
 });
 
-// Public endpoint lấy thông tin cơ bản phòng khám & bot username theo slug hoặc mặc định
-publicRouter.get(["/clinic-info", "/clinic-info/:slug"], async (req, res, next) => {
+// Public endpoint lấy gói cấu hình trọn gói phòng khám (Branding, Giờ làm việc, Dịch vụ, Bác sĩ) theo slug hoặc subdomain
+const handleClinicBundle = async (req: any, res: any, next: any) => {
   try {
-    const rawSlug = req.params.slug || (req.query.slug as string) || (req.query.clinic as string) || (req.query.s as string) || "";
-    const slug = rawSlug.trim();
-    let targetTenantId: string | undefined = undefined;
+    const { getClinicFullBundle, extractSubdomainFromHost } = await import("../../services/clinicFirestoreService.js");
 
-    const { settings, users } = await import("../../db/schema.js");
-    const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+    let slug = (req.params.slug || (req.query.slug as string) || (req.query.clinic as string) || (req.query.s as string) || "").trim();
 
-    let clinicProfile: any = null;
-    let bookingFormConfig: any = null;
-    let announcementBanner: any = null;
-
-    if (slug) {
-      console.log(`[GET /clinic-info/:slug] Fetching clinic document for slug: "${slug}"`);
-      const matchedClinic = await findClinicBySlug(slug);
-
-      if (matchedClinic) {
-        targetTenantId = matchedClinic.tenantId;
-        clinicProfile = {
-          clinicName: matchedClinic.clinicName,
-          name: matchedClinic.clinicName,
-          doctorName: matchedClinic.doctorName || "",
-          slogan: matchedClinic.slogan || "",
-          address: matchedClinic.address || "",
-          phone: matchedClinic.phone || matchedClinic.hotline || "",
-          hotline: matchedClinic.hotline || matchedClinic.phone || "",
-          workingHours: matchedClinic.workingHours || matchedClinic.workingHoursStr || "",
-          workingHoursStr: matchedClinic.workingHoursStr || matchedClinic.workingHours || "",
-          slug: matchedClinic.slug || slug,
-          source: matchedClinic.source,
-        };
-
-        if (matchedClinic.bookingFormConfig) {
-          bookingFormConfig = matchedClinic.bookingFormConfig;
-        }
-        if (matchedClinic.announcementBanner) {
-          announcementBanner = matchedClinic.announcementBanner;
-        }
+    // Nếu không có slug trong URL path hoặc query, kiểm tra subdomain (ví dụ: lephuong.domain.com)
+    if (!slug) {
+      const host = req.headers["x-forwarded-host"] || req.headers.host;
+      const detectedSubdomain = extractSubdomainFromHost(typeof host === "string" ? host : Array.isArray(host) ? host[0] : undefined);
+      if (detectedSubdomain) {
+        console.log(`[ClinicBundle] Detected clinic slug from subdomain: "${detectedSubdomain}"`);
+        slug = detectedSubdomain;
       }
     }
 
-    // If no slug or clinicProfile still not determined, query settings in current/target tenant context
-    if (!clinicProfile) {
-      await appContext.run({ tenantId: targetTenantId }, async () => {
-        let settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-        if (settingRes.length === 0) {
-          settingRes = await db.select().from(settings).where(eq(settings.id, "clinic_profile")).limit(1);
-        }
-        if (settingRes.length === 0) {
-          settingRes = await db.select().from(settings).where(eq(settings.key, "clinicProfile")).limit(1);
-        }
-        if (settingRes.length === 0) {
-          settingRes = await db.select().from(settings).where(eq(settings.key, "clinic_profile")).limit(1);
-        }
-        if (settingRes.length > 0) {
-          clinicProfile = settingRes[0].value;
-          if (typeof clinicProfile === "string") {
-            try {
-              clinicProfile = JSON.parse(clinicProfile);
-            } catch (e) {}
-          }
-        }
-      });
-    }
+    const bundle = await getClinicFullBundle(slug || undefined);
 
-    // Fill missing form config and banner if not already set
-    if (!bookingFormConfig || !announcementBanner) {
-      await appContext.run({ tenantId: targetTenantId }, async () => {
-        if (!bookingFormConfig) {
-          let formConfigRes = await db.select().from(settings).where(eq(settings.id, "bookingFormConfig")).limit(1);
-          if (formConfigRes.length === 0) {
-            formConfigRes = await db.select().from(settings).where(eq(settings.key, "bookingFormConfig")).limit(1);
-          }
-          if (formConfigRes.length > 0) {
-            bookingFormConfig = formConfigRes[0].value;
-            if (typeof bookingFormConfig === "string") {
-              try {
-                bookingFormConfig = JSON.parse(bookingFormConfig);
-              } catch (e) {}
-            }
-          }
-        }
-
-        if (!announcementBanner) {
-          let bannerRes = await db.select().from(settings).where(eq(settings.id, "announcementBanner")).limit(1);
-          if (bannerRes.length === 0) {
-            bannerRes = await db.select().from(settings).where(eq(settings.key, "announcementBanner")).limit(1);
-          }
-          if (bannerRes.length > 0) {
-            announcementBanner = typeof bannerRes[0].value === "string" ? JSON.parse(bannerRes[0].value) : bannerRes[0].value;
-          }
-        }
-      });
-    }
-
-    if (clinicProfile) {
-      if (!clinicProfile.clinicName && clinicProfile.name) {
-        clinicProfile.clinicName = clinicProfile.name;
-      }
-      if (!clinicProfile.name && clinicProfile.clinicName) {
-        clinicProfile.name = clinicProfile.clinicName;
-      }
-      if (!clinicProfile.phone && clinicProfile.hotline) {
-        clinicProfile.phone = clinicProfile.hotline;
-      }
-      if (!clinicProfile.hotline && clinicProfile.phone) {
-        clinicProfile.hotline = clinicProfile.phone;
-      }
-      if (!clinicProfile.workingHours && clinicProfile.workingHoursStr) {
-        clinicProfile.workingHours = clinicProfile.workingHoursStr;
-      }
-      if (!clinicProfile.workingHoursStr && clinicProfile.workingHours) {
-        clinicProfile.workingHoursStr = clinicProfile.workingHours;
-      }
-    }
-
-    const botUsername = await getTelegramBotUsername();
-
-    // Send response with full clinicProfile and tenantId
     res.json({
       success: true,
-      data: {
-        clinicProfile,
-        bookingFormConfig,
-        telegramBotUsername: botUsername,
-        announcementBanner,
-        tenantId: targetTenantId || null,
-        slug: slug || null,
-      }
+      data: bundle,
     });
   } catch (error) {
     next(error);
   }
-});
+};
+
+publicRouter.get("/clinic-bundle", handleClinicBundle);
+publicRouter.get("/clinic-bundle/:slug", handleClinicBundle);
+publicRouter.get("/clinic-info", handleClinicBundle);
+publicRouter.get("/clinic-info/:slug", handleClinicBundle);
 
 publicRouter.get("/appointments/:id", async (req, res, next) => {
   try {

@@ -376,12 +376,15 @@ class QueryBuilder {
       let results = [];
       for (const docData of docsData) {
         if (!isFullAdmin && tenantId && tableName !== "roles") {
-          // If the record has a tenantId and it doesn't match, skip
-          // If the record doesn't have a tenantId, it's global, we might let them see it?
-          // To be strict, if tenantId exists on the context, we ONLY show records matching that tenantId,
-          // OR records that explicitly have no tenantId (shared globals).
-          if (docData.tenantId && docData.tenantId !== tenantId) {
-             continue;
+          const strictTenantTables = ["appointments", "patients", "appointmentHolds", "recalls"];
+          if (strictTenantTables.includes(tableName)) {
+            if (docData.tenantId !== tenantId) {
+              continue;
+            }
+          } else {
+            if (docData.tenantId && docData.tenantId !== tenantId) {
+              continue;
+            }
           }
         }
 
@@ -535,7 +538,7 @@ class QueryBuilder {
       const cleanedUpdate = removeUndefined(this.data);
       for (const docData of docsData) {
         if (!isFullAdmin && tenantId && tableName !== "roles") {
-          if (docData.tenantId && docData.tenantId !== tenantId) {
+          if (docData.tenantId !== tenantId) {
              continue;
           }
         }
@@ -571,7 +574,7 @@ class QueryBuilder {
       const deleted = [];
       for (const docData of docsData) {
         if (!isFullAdmin && tenantId && tableName !== "roles") {
-          if (docData.tenantId && docData.tenantId !== tenantId) {
+          if (docData.tenantId !== tenantId) {
              continue;
           }
         }

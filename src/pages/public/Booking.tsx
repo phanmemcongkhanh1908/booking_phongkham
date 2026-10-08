@@ -9,9 +9,13 @@ import {
   ShieldCheck, 
   ChevronRight, 
   Sparkles,
-  UserCheck
+  UserCheck,
+  Clock,
+  MapPin
 } from 'lucide-react';
 import api from '../../services/api';
+import { useClinicSettings } from '../../hooks/useClinicSettings';
+import { getClinicBasePath } from '../../services/clinicResolver';
 import ServiceSelection from './components/ServiceSelection';
 import DateTimeSelection from './components/DateTimeSelection';
 import PatientForm from './components/PatientForm';
@@ -30,14 +34,18 @@ export default function Booking() {
   const searchParams = new URLSearchParams(location.search);
   const querySlug = searchParams.get('slug') || searchParams.get('clinic') || searchParams.get('s');
   const slug = (routeSlug || querySlug || '').trim();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
   const isCompact = searchParams.get('compact') === 'true' || window.self !== window.top;
 
-  const clinicProfile = useBookingStore(s => s.clinicProfile);
-  const setClinicProfile = useBookingStore(s => s.setClinicProfile);
-  const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
-  const setBookingFormConfig = useBookingStore(s => s.setBookingFormConfig);
-  const setAnnouncementBanner = useBookingStore(s => s.setAnnouncementBanner);
+  // Use the dedicated Clinic Settings Service Layer
+  const { 
+    clinicProfile, 
+    businessHours, 
+    isCurrentlyOpen, 
+    bookingFormConfig,
+    announcementBanner 
+  } = useClinicSettings(slug);
+
   const setStepStore = useBookingStore(s => s.setStep);
 
   const steps = [
@@ -56,37 +64,6 @@ export default function Booking() {
   const selectedDate = useBookingStore(s => s.selectedDate);
   const sessionToken = useBookingStore(s => s.sessionToken);
   const patientDraft = useBookingStore(s => s.patientDraft);
-  const announcementBanner = useBookingStore(s => s.announcementBanner);
-
-  const setTenantId = useBookingStore(s => s.setTenantId);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    // 1. Tải cấu hình qua API backend (tìm kiếm document Firestore và CSDL dựa trên slug)
-    const endpoint = slug ? `/public/clinic-info/${encodeURIComponent(slug)}` : '/public/clinic-info';
-    api.get(endpoint)
-      .then(res => {
-        if (isCancelled) return;
-        if (res.data?.data?.clinicProfile) {
-          setClinicProfile(res.data.data.clinicProfile);
-        }
-        if (res.data?.data?.bookingFormConfig) {
-          setBookingFormConfig(res.data.data.bookingFormConfig);
-        }
-        if (res.data?.data?.announcementBanner) {
-          setAnnouncementBanner(res.data.data.announcementBanner);
-        }
-        if (res.data?.data?.tenantId !== undefined) {
-          setTenantId(res.data.data.tenantId);
-        }
-      })
-      .catch(console.error);
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [slug, setClinicProfile, setBookingFormConfig, setAnnouncementBanner, setTenantId]);
 
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
@@ -185,6 +162,22 @@ export default function Booking() {
                       <span>Bác sĩ phụ trách: <strong className="font-extrabold text-emerald-950">{doctorDisplayName}</strong></span>
                     </span>
                   )}
+                  {businessHours && (
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
+                      isCurrentlyOpen 
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80' 
+                        : 'bg-amber-50 text-amber-800 border-amber-200/80'
+                    }`} title={businessHours.scheduleSummary}>
+                      <Clock className="w-3 h-3" />
+                      <span>{isCurrentlyOpen ? 'Đang mở cửa' : 'Tạm đóng'} • {businessHours.workingHoursStr}</span>
+                    </span>
+                  )}
+                  {clinicProfile?.address && (
+                    <span className="hidden xl:inline-flex items-center gap-1 text-[11px] text-slate-500 truncate max-w-[260px]" title={clinicProfile.address}>
+                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{clinicProfile.address}</span>
+                    </span>
+                  )}
                 </div>
                 
                 {clinicProfile?.slogan ? (
@@ -216,9 +209,9 @@ export default function Booking() {
 
             <PWAInstallButton />
             <Link
-              to="/admin/login"
+              to={slug ? `/b/${slug}/login` : "/admin/login"}
               className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
-              title="Cổng Đăng nhập Quản trị viên"
+              title={clinicProfile?.clinicName ? `Cổng Đăng nhập Quản trị ${clinicProfile.clinicName}` : "Cổng Đăng nhập Quản trị viên"}
             >
               <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
             </Link>

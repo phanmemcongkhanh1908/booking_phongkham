@@ -20,8 +20,10 @@ import {
   Layers,
   CheckCircle2
 } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useClinicSettings } from '../../../hooks/useClinicSettings';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 
 interface Service {
   id: string;
@@ -36,6 +38,9 @@ interface Service {
 }
 
 export default function ServiceSelection() {
+  const { slug } = useParams();
+  const { services: bundleServices, loading: bundleLoading } = useClinicSettings(slug);
+
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +54,20 @@ export default function ServiceSelection() {
   const clearHold = useBookingStore(state => state.clearHold);
 
   const navigate = useNavigate();
-  const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const location = useLocation();
+  const basePath = getClinicBasePath(slug, location.pathname);
+
+  // Sync services from Clinic Settings Service Layer immediately
+  useEffect(() => {
+    if (bundleServices && bundleServices.length > 0) {
+      setServices(bundleServices as Service[]);
+      setLoading(false);
+      setError(null);
+    } else if (!bundleLoading) {
+      // Fallback to direct fetch if bundle didn't have services
+      fetchServices();
+    }
+  }, [bundleServices, bundleLoading]);
 
   const fetchServices = async () => {
     setLoading(true);
@@ -69,10 +86,6 @@ export default function ServiceSelection() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchServices();
-  }, []);
 
   // Categorize helper based on keywords
   const getCategory = (name: string): { key: string; label: string; icon: React.ReactNode } => {

@@ -19,10 +19,11 @@ import {
   Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../../../services/api';
 import { auth } from '../../../lib/firebase';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 
 const DEFAULT_QUICK_TAGS = [
@@ -46,8 +47,9 @@ export default function PatientForm() {
   } = useBookingStore();
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
 
   const showNotificationChannels = bookingFormConfig?.showNotificationChannels !== false;
   const showHoldCountdown = bookingFormConfig?.showHoldCountdown !== false;

@@ -8,7 +8,9 @@ import {
   Stethoscope, Calendar as CalendarIcon, Clock, User, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
   ChevronLeft, ChevronRight, CalendarDays
 } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useClinicSettings } from '../../../hooks/useClinicSettings';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -32,9 +34,12 @@ interface Slot {
 
 export default function SimpleBookingForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
   
+  const { services: bundleServices, loading: bundleLoading } = useClinicSettings(slug);
+
   // States
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
@@ -105,15 +110,20 @@ export default function SimpleBookingForm() {
   };
 
   useEffect(() => {
-    // 1. Fetch Services
-    api.get('/public/services')
-      .then(res => {
-        if (res.data.success && Array.isArray(res.data.data)) {
-          setServices(res.data.data);
-        }
-      })
-      .finally(() => setLoadingServices(false));
-  }, []);
+    if (bundleServices && bundleServices.length > 0) {
+      setServices(bundleServices as Service[]);
+      setLoadingServices(false);
+    } else if (!bundleLoading) {
+      // Fallback
+      api.get('/public/services')
+        .then(res => {
+          if (res.data.success && Array.isArray(res.data.data)) {
+            setServices(res.data.data);
+          }
+        })
+        .finally(() => setLoadingServices(false));
+    }
+  }, [bundleServices, bundleLoading]);
 
   useEffect(() => {
     // 2. Fetch Slots when services or date changes
@@ -248,7 +258,9 @@ export default function SimpleBookingForm() {
           serviceIds: selectedServiceIds,
           customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
           startAt: selectedSlot.startAt,
-          endAt: selectedSlot.endAt
+          endAt: selectedSlot.endAt,
+          tenantId: useBookingStore.getState().tenantId || undefined,
+          clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
         });
         
         if (!holdRes.data.success) {
@@ -271,7 +283,9 @@ export default function SimpleBookingForm() {
         email: formData.email || "",
         notes: formData.notes,
         serviceIds: selectedServiceIds,
-        customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined
+        customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
+        tenantId: useBookingStore.getState().tenantId || undefined,
+        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
       });
 
       if (res.data.success) {

@@ -516,16 +516,58 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
   try {
     const allSettings = await db.select().from(settings);
     const settingsObj: any = {};
-    allSettings.forEach(s => {
-      const key = s.key || s.id;
-      // Map legacy clinic_profile to clinicProfile
-      if (key === 'clinic_profile' || s.id === 'clinic_profile') {
-        settingsObj['clinicProfile'] = s.value;
-      } else {
-        settingsObj[s.id] = s.value;
-        if (s.key) settingsObj[s.key] = s.value;
+    const myTenantId = req.user?.tenantId;
+
+    // 1. Áp dụng cài đặt cơ sở toàn hệ thống (không có tenantId)
+    allSettings
+      .filter((s: any) => !s.tenantId)
+      .forEach((s: any) => {
+        const key = s.key || s.id;
+        if (key === 'clinic_profile' || s.id === 'clinic_profile') {
+          settingsObj['clinicProfile'] = s.value;
+        } else {
+          settingsObj[s.id] = s.value;
+          if (s.key) settingsObj[s.key] = s.value;
+        }
+      });
+
+    // 2. Nếu là phòng khám riêng (có tenantId), ưu tiên tuyệt đối ghi đè bằng cài đặt riêng
+    if (myTenantId) {
+      allSettings
+        .filter((s: any) => s.tenantId === myTenantId)
+        .forEach((s: any) => {
+          const key = s.key || s.id;
+          if (key === 'clinic_profile' || s.id === 'clinic_profile') {
+            settingsObj['clinicProfile'] = s.value;
+          } else {
+            settingsObj[s.id] = s.value;
+            if (s.key) settingsObj[s.key] = s.value;
+          }
+        });
+    }
+
+    // 3. Đảm bảo thông tin phòng khám luôn đồng bộ chuẩn xác với hồ sơ phòng khám của tài khoản
+    if (myTenantId && req.user?.userId) {
+      const userRows = await db.select().from(users).where(eq(users.id, req.user.userId));
+      if (userRows.length > 0) {
+        const u = userRows[0];
+        const currentProfile = settingsObj.clinicProfile || {};
+        const isDefaultRoot = !currentProfile.clinicName || currentProfile.name === "Nha Khoa Dental Smart" || currentProfile.clinicName === "Nha Khoa Dental Smart";
+        
+        settingsObj.clinicProfile = {
+          clinicName: (isDefaultRoot ? (u.clinicName || currentProfile.clinicName) : (currentProfile.clinicName || currentProfile.name || u.clinicName)) || "Nha Khoa",
+          name: (isDefaultRoot ? (u.clinicName || currentProfile.name) : (currentProfile.name || currentProfile.clinicName || u.clinicName)) || "Nha Khoa",
+          doctorName: (isDefaultRoot ? (u.doctorName || currentProfile.doctorName) : (currentProfile.doctorName || u.doctorName)) || "",
+          slogan: (isDefaultRoot ? (u.slogan || currentProfile.slogan) : (currentProfile.slogan || u.slogan)) || "",
+          address: (isDefaultRoot ? (u.address || currentProfile.address) : (currentProfile.address || u.address)) || "",
+          phone: (isDefaultRoot ? (u.phone || u.hotline || currentProfile.phone) : (currentProfile.phone || currentProfile.hotline || u.phone)) || "",
+          hotline: (isDefaultRoot ? (u.hotline || u.phone || currentProfile.hotline) : (currentProfile.hotline || currentProfile.phone || u.hotline)) || "",
+          workingHours: (isDefaultRoot ? (u.workingHoursStr || currentProfile.workingHours) : (currentProfile.workingHours || currentProfile.workingHoursStr || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00",
+          workingHoursStr: (isDefaultRoot ? (u.workingHoursStr || currentProfile.workingHoursStr) : (currentProfile.workingHoursStr || currentProfile.workingHours || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00",
+          slug: u.slug || currentProfile.slug || "",
+        };
       }
-    });
+    }
     
     // Mask sensitive data
     if (settingsObj.smtpPassword) settingsObj.smtpPassword = "••••••••";
@@ -541,46 +583,79 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
     const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes } = req.body;
+    const myTenantId = req.user?.tenantId;
     
     // Save to DB
     if (telegramToken !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramToken', key: 'telegramToken', value: telegramToken })
+        .values({ id: 'telegramToken', key: 'telegramToken', value: telegramToken, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramToken } });
     }
     if (telegramChatId !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramChatId', key: 'telegramChatId', value: telegramChatId })
+        .values({ id: 'telegramChatId', key: 'telegramChatId', value: telegramChatId, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramChatId } });
     }
     if (telegramBotUsername !== undefined) {
       await db.insert(settings)
-        .values({ id: 'telegramBotUsername', key: 'telegramBotUsername', value: telegramBotUsername })
+        .values({ id: 'telegramBotUsername', key: 'telegramBotUsername', value: telegramBotUsername, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramBotUsername } });
     }
     if (clinicProfile !== undefined) {
       await db.insert(settings)
-        .values({ id: 'clinicProfile', key: 'clinicProfile', value: clinicProfile })
+        .values({ id: 'clinicProfile', key: 'clinicProfile', value: clinicProfile, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
+      await db.insert(settings)
+        .values({ id: 'clinic_profile', key: 'clinic_profile', value: clinicProfile, tenantId: myTenantId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
+
+      // Synchronize back to users record and Firestore
+      if (req.user?.userId) {
+        const userUpdate: any = {};
+        if (clinicProfile.clinicName || clinicProfile.name) userUpdate.clinicName = clinicProfile.clinicName || clinicProfile.name;
+        if (clinicProfile.doctorName !== undefined) userUpdate.doctorName = clinicProfile.doctorName;
+        if (clinicProfile.address !== undefined) userUpdate.address = clinicProfile.address;
+        if (clinicProfile.phone || clinicProfile.hotline) {
+          userUpdate.phone = clinicProfile.phone || clinicProfile.hotline;
+          userUpdate.hotline = clinicProfile.hotline || clinicProfile.phone;
+        }
+        if (clinicProfile.workingHours || clinicProfile.workingHoursStr) {
+          userUpdate.workingHoursStr = clinicProfile.workingHours || clinicProfile.workingHoursStr;
+        }
+        if (clinicProfile.slogan !== undefined) userUpdate.slogan = clinicProfile.slogan;
+        if (Object.keys(userUpdate).length > 0) {
+          await db.update(users).set(userUpdate).where(eq(users.id, req.user.userId));
+        }
+
+        const effectiveSlug = clinicProfile.slug || (req.user as any)?.slug;
+        if (effectiveSlug) {
+          const { syncClinicToFirestore } = await import("../../services/clinicFirestoreService.js");
+          syncClinicToFirestore(effectiveSlug, {
+            ...clinicProfile,
+            tenantId: myTenantId,
+            slug: effectiveSlug
+          }).catch(err => console.warn("[Firestore] Sync on setting update failed:", err));
+        }
+      }
     }
     if (emailConfig !== undefined) {
       await db.insert(settings)
-        .values({ id: 'emailConfig', key: 'emailConfig', value: emailConfig })
+        .values({ id: 'emailConfig', key: 'emailConfig', value: emailConfig, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: emailConfig } });
     }
     if (bookingFormConfig !== undefined) {
       await db.insert(settings)
-        .values({ id: 'bookingFormConfig', key: 'bookingFormConfig', value: bookingFormConfig })
+        .values({ id: 'bookingFormConfig', key: 'bookingFormConfig', value: bookingFormConfig, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: bookingFormConfig } });
     }
     if (announcementBanner !== undefined) {
       await db.insert(settings)
-        .values({ id: 'announcementBanner', key: 'announcementBanner', value: announcementBanner })
+        .values({ id: 'announcementBanner', key: 'announcementBanner', value: announcementBanner, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: announcementBanner } });
     }
     if (idleTimeoutMinutes !== undefined) {
       await db.insert(settings)
-        .values({ id: 'idleTimeoutMinutes', key: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes) })
+        .values({ id: 'idleTimeoutMinutes', key: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes), tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: String(idleTimeoutMinutes) } });
     }
 

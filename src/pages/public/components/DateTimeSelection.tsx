@@ -26,8 +26,10 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useHoldSlot, Slot } from '../../../hooks/useHoldSlot';
+import { useClinicSettings } from '../../../hooks/useClinicSettings';
+import { getClinicBasePath } from '../../../services/clinicResolver';
 
 interface DaySummary {
   date: string;
@@ -40,7 +42,7 @@ interface Provider {
   id: string;
   name: string;
   title?: string;
-  isActive: boolean;
+  isActive?: boolean;
   experience?: string;
   specialties?: string[];
   certificates?: string[];
@@ -89,23 +91,29 @@ export default function DateTimeSelection() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams();
-  const basePath = slug ? `/booking/${slug}` : '/book';
+  const basePath = getClinicBasePath(slug, location.pathname);
+  const { providers: bundleProviders, loading: bundleLoading } = useClinicSettings(slug);
 
   // Generate 28 next days
   const nextDays = Array.from({ length: 28 }).map((_, i) => addDays(startOfToday(), i));
 
-  // 1. Fetch Providers
+  // 1. Fetch Providers (Sync from clinic bundle immediately if available)
   useEffect(() => {
-    api.get('/public/providers')
-      .then(res => {
-        if (res.data.success && Array.isArray(res.data.data)) {
-          const active = res.data.data.filter((p: any) => p.isActive);
-          setProviders(active);
-        }
-      })
-      .catch(err => console.error('Failed to load providers', err));
-  }, []);
+    if (bundleProviders && bundleProviders.length > 0) {
+      setProviders(bundleProviders.filter((p: any) => p.isActive !== false));
+    } else if (!bundleLoading) {
+      api.get('/public/providers')
+        .then(res => {
+          if (res.data.success && Array.isArray(res.data.data)) {
+            const active = res.data.data.filter((p: any) => p.isActive);
+            setProviders(active);
+          }
+        })
+        .catch(err => console.error('Failed to load providers', err));
+    }
+  }, [bundleProviders, bundleLoading]);
 
   // Compute target service IDs for multi-service availability
   const targetServiceIds = useMemo(() => {

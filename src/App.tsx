@@ -104,12 +104,19 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Navigate to="/book" replace />} />
+            
+            {/* Dedicated Clinic Admin Login Routes */}
+            <Route path="/b/:slug/login" element={<Login />} />
+            <Route path="/b/:slug/admin" element={<Login />} />
+            <Route path="/booking/:slug/login" element={<Login />} />
+            <Route path="/booking/:slug/admin" element={<Login />} />
+            <Route path="/admin/login" element={<Login />} />
+
             <Route path="/book/*" element={<PublicBooking />} />
             <Route path="/booking/:slug/*" element={<PublicBooking />} />
             <Route path="/b/:slug/*" element={<PublicBooking />} />
             <Route path="/s/:slug/*" element={<PublicBooking />} />
             <Route path="/lich-hen-cua-toi" element={<MyBooking />} />
-            <Route path="/admin/login" element={<Login />} />
 
             {/* Admin Routes */}
             <Route

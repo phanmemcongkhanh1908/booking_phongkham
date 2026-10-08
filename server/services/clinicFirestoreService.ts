@@ -1,9 +1,35 @@
 import { adminDb } from "../lib/firebase-admin.js";
 import { serverDb } from "../lib/firebase-server.js";
 import { db } from "../db/index.js";
-import { users, settings, providers } from "../db/schema.js";
+import { users, settings, providers, services } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { appContext } from "../core/context.js";
+
+export interface BusinessHoursInfo {
+  workingHoursStr: string;
+  openTime: string;
+  closeTime: string;
+  days: string[];
+  isOpenToday: boolean;
+  isCurrentlyOpen: boolean;
+  scheduleSummary: string;
+}
+
+export interface ClinicBrandingInfo {
+  clinicName: string;
+  name: string;
+  doctorName?: string;
+  slogan?: string;
+  address?: string;
+  phone?: string;
+  hotline?: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  theme?: string;
+  slug?: string;
+}
 
 export interface ClinicConfig {
   clinicName: string;
@@ -20,6 +46,45 @@ export interface ClinicConfig {
   bookingFormConfig?: any;
   announcementBanner?: any;
   telegramBotUsername?: string;
+  logoUrl?: string;
+  coverUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  theme?: string;
+}
+
+export interface ClinicFullBundle {
+  clinicProfile: ClinicBrandingInfo;
+  branding: ClinicBrandingInfo;
+  businessHours: BusinessHoursInfo;
+  services: any[];
+  providers: any[];
+  bookingFormConfig: any;
+  announcementBanner: any;
+  telegramBotUsername: string | null;
+  tenantId: string | null;
+  slug: string | null;
+  source: string;
+}
+
+/**
+ * Extracts clinic slug from subdomain if present (e.g. lephuong.domain.com -> lephuong)
+ */
+export function extractSubdomainFromHost(host: string | undefined): string | null {
+  if (!host) return null;
+  const cleanHost = host.split(':')[0].toLowerCase();
+  const parts = cleanHost.split('.');
+  if (parts.length === 2 && parts[1] === 'localhost') {
+    return parts[0];
+  }
+  if (parts.length >= 3) {
+    const sub = parts[0];
+    const reserved = ['www', 'api', 'app', 'dev', 'stage', 'preview', 'admin', 'auth', 'mail', 'static'];
+    if (!reserved.includes(sub) && !sub.startsWith('ais-dev-') && !sub.startsWith('ais-pre-') && !sub.startsWith('ais-app-') && !sub.includes('run.app')) {
+      return sub;
+    }
+  }
+  return null;
 }
 
 /**
@@ -344,4 +409,126 @@ export async function syncClinicToFirestore(slug: string, config: Partial<Clinic
     console.warn(`[ClinicSync] Failed to sync clinic "${cleanSlug}" to Firestore:`, err?.message || err);
   }
   return false;
+}
+
+/**
+ * Parses working hours string into structured format and checks open status
+ */
+export function parseBusinessHours(hoursStr?: string): BusinessHoursInfo {
+  const defaultHours = "T2 - CN: 08:00 - 20:00";
+  const raw = (hoursStr || "").trim() || defaultHours;
+  
+  // Extract time format (e.g. 08:00 - 20:00 or 8:00 - 17:00)
+  const timeMatch = raw.match(/(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/);
+  const openTime = timeMatch ? timeMatch[1].padStart(5, '0') : "08:00";
+  const closeTime = timeMatch ? timeMatch[2].padStart(5, '0') : "20:00";
+
+  // Check days
+  let days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  if (raw.toLowerCase().includes('thứ 2 - thứ 7') || raw.toLowerCase().includes('t2 - t7')) {
+    days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  } else if (raw.toLowerCase().includes('thứ 2 - thứ 6') || raw.toLowerCase().includes('t2 - t6')) {
+    days = ['T2', 'T3', 'T4', 'T5', 'T6'];
+  }
+
+  // Calculate current Vietnam time (GMT+7)
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const vnTime = new Date(utc + (3600000 * 7));
+  const currentDayIndex = vnTime.getDay(); // 0 is Sunday, 1 is Monday...
+  const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const currentDayName = dayNames[currentDayIndex];
+  
+  const currentMinutes = vnTime.getHours() * 60 + vnTime.getMinutes();
+  const [openH, openM] = openTime.split(':').map(Number);
+  const [closeH, closeM] = closeTime.split(':').map(Number);
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
+
+  const isOpenToday = days.includes(currentDayName);
+  const isCurrentlyOpen = isOpenToday && (currentMinutes >= openMinutes && currentMinutes <= closeMinutes);
+
+  return {
+    workingHoursStr: raw,
+    openTime,
+    closeTime,
+    days,
+    isOpenToday,
+    isCurrentlyOpen,
+    scheduleSummary: `${openTime} - ${closeTime} (${days.join(', ')})`,
+  };
+}
+
+/**
+ * Resolves the full configuration bundle for a clinic
+ */
+export async function getClinicFullBundle(slugOrDomain?: string): Promise<ClinicFullBundle> {
+  const cleanSlug = (slugOrDomain || "").trim().toLowerCase();
+  let clinicConfig: ClinicConfig | null = null;
+  
+  if (cleanSlug) {
+    clinicConfig = await findClinicBySlug(cleanSlug);
+  }
+
+  const tenantId = clinicConfig?.tenantId || (cleanSlug ? `tenant_${cleanSlug}` : null);
+
+  // Fallback default profile if not found
+  const clinicProfile: ClinicBrandingInfo = {
+    clinicName: clinicConfig?.clinicName || "Nha Khoa Dental Smart",
+    name: clinicConfig?.clinicName || "Nha Khoa Dental Smart",
+    doctorName: clinicConfig?.doctorName || "Bs. Chuyên Khoa Răng Hàm Mặt",
+    slogan: clinicConfig?.slogan || "Nụ cười rạng rỡ, tự tin đón tương lai",
+    address: clinicConfig?.address || "123 Nguyễn Văn Cừ, Quận 5, TP. Hồ Chí Minh",
+    phone: clinicConfig?.phone || clinicConfig?.hotline || "0901 234 567",
+    hotline: clinicConfig?.hotline || clinicConfig?.phone || "0901 234 567",
+    logoUrl: clinicConfig?.logoUrl || "",
+    coverUrl: clinicConfig?.coverUrl || "",
+    primaryColor: clinicConfig?.primaryColor || "#0d9488",
+    accentColor: clinicConfig?.accentColor || "#14b8a6",
+    theme: clinicConfig?.theme || "teal",
+    slug: clinicConfig?.slug || cleanSlug || "",
+  };
+
+  const businessHours = parseBusinessHours(clinicConfig?.workingHoursStr || clinicConfig?.workingHours);
+
+  let activeServices: any[] = [];
+  let activeProviders: any[] = [];
+
+  await appContext.run({ tenantId }, async () => {
+    try {
+      const allServices = await db.select().from(services);
+      activeServices = allServices.filter((s: any) => s.isActive !== false);
+
+      const allProviders = await db.select().from(providers);
+      activeProviders = allProviders.filter((p: any) => p.isActive !== false);
+    } catch (e) {
+      console.warn("[ClinicBundle] Error loading services/providers for tenant:", e);
+    }
+  });
+
+  // Get Telegram Bot username if configured
+  let botUsername: string | null = null;
+  try {
+    const { getTelegramBotUsername } = await import("../core/telegram.js");
+    botUsername = await getTelegramBotUsername();
+  } catch (e) {}
+
+  return {
+    clinicProfile,
+    branding: clinicProfile,
+    businessHours,
+    services: activeServices,
+    providers: activeProviders,
+    bookingFormConfig: clinicConfig?.bookingFormConfig || {
+      uiVersion: "full",
+      showNotificationChannels: true,
+      showHoldCountdown: true,
+      quickNotesTags: ["Khám tổng quát", "Nhổ răng", "Lấy cao răng", "Trám răng thẩm mỹ"]
+    },
+    announcementBanner: clinicConfig?.announcementBanner || null,
+    telegramBotUsername: botUsername,
+    tenantId,
+    slug: clinicConfig?.slug || cleanSlug || null,
+    source: clinicConfig?.source || "default",
+  };
 }

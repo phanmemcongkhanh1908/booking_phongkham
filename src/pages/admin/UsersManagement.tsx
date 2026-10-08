@@ -531,28 +531,56 @@ export default function UsersManagement() {
                           </span>
                         )}
                         {u.slug && (
-                          <div className="flex items-center gap-1.5 mt-2">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-mono text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/80">
-                              <LinkIcon className="w-3 h-3 text-teal-600 shrink-0" />
-                              /b/{u.slug}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyLink(`${window.location.origin}/b/${u.slug}`)}
-                              className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
-                              title="Sao chép link đặt hẹn"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <a
-                              href={`${window.location.origin}/b/${u.slug}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors"
-                              title="Mở trang đặt hẹn phòng khám"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
+                          <div className="flex flex-col gap-1.5 mt-2.5">
+                            {/* Link đặt lịch khách hàng */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                                <LinkIcon className="w-3 h-3 text-teal-600 shrink-0" />
+                                <span>Đặt lịch: /b/{u.slug}</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLink(`${window.location.origin}/b/${u.slug}`)}
+                                className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors cursor-pointer"
+                                title="Sao chép link đặt hẹn cho khách hàng"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <a
+                                href={`${window.location.origin}/b/${u.slug}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors cursor-pointer"
+                                title="Mở trang đặt hẹn phòng khám"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            </div>
+
+                            {/* Link cổng quản trị phòng khám */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                                <Shield className="w-3 h-3 text-indigo-600 shrink-0" />
+                                <span>Đăng nhập: /b/{u.slug}/login</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLink(`${window.location.origin}/b/${u.slug}/login`)}
+                                className="p-1 text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                                title="Sao chép link đăng nhập quản trị phòng khám này"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <a
+                                href={`${window.location.origin}/b/${u.slug}/login`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1 text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                                title="Mở cổng đăng nhập của phòng khám này"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1063,6 +1091,39 @@ export default function UsersManagement() {
                                 <strong>Cam kết chất lượng:</strong> 100% Chuyển hướng trực tiếp (Direct Redirect), không qua trang quảng cáo trung gian, tốc độ mở trang tức thì.
                               </span>
                             </div>
+
+                            {/* Link Cổng Quản Trị Chi Nhánh */}
+                            {slug && (
+                              <div className="flex items-center justify-between p-2.5 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="font-semibold text-slate-800 block text-[11px]">Link Cổng Quản Trị Chi Nhánh (Bác sĩ &amp; Nhân viên):</span>
+                                    <span className="font-mono text-indigo-900 text-[11px] truncate block select-all">
+                                      {`${window.location.origin}/b/${slug}/login`}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(`${window.location.origin}/b/${slug}/login`)}
+                                    className="px-2.5 py-1 text-[11px] font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md transition-all shadow-2xs cursor-pointer"
+                                  >
+                                    Sao chép link đăng nhập
+                                  </button>
+                                  <a
+                                    href={`${window.location.origin}/b/${slug}/login`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-slate-500 hover:text-indigo-700 hover:bg-white rounded border border-transparent hover:border-slate-200"
+                                    title="Mở cổng đăng nhập chi nhánh"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
