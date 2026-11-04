@@ -851,7 +851,7 @@ export default function SimpleBookingForm() {
 
         {/* Mobile Sticky / Desktop static Button */}
         <div className="fixed sm:static bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md p-3 sm:p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-0 border-t sm:border-0 border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] sm:shadow-none mt-4 sm:mt-6">
-          <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <div className="max-w-3xl mx-auto flex flex-col items-center justify-center gap-2.5 w-full">
             {/* Mobile Summary preview above button */}
             {(selectedServiceIds.length > 0 || selectedSlot) && (
               <div className="sm:hidden w-full flex items-center justify-between text-xs px-1">
@@ -867,7 +867,7 @@ export default function SimpleBookingForm() {
             <button
               type="submit"
               disabled={selectedServiceIds.length === 0 || !selectedSlot || !formData.fullName || !formData.phone || isSubmitting || phoneStatus === 'existing_unverified' || phoneStatus === 'checking'}
-              className="w-full sm:w-auto min-w-[280px] py-3.5 sm:py-4 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-bold shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40 hover:-translate-y-0.5 flex items-center justify-center gap-2 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20 active:scale-[0.99] cursor-pointer"
+              className="w-full sm:w-auto sm:min-w-[380px] max-w-md mx-auto py-3.5 sm:py-4 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-teal-600 via-teal-700 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold shadow-lg shadow-teal-900/20 hover:shadow-teal-900/30 hover:-translate-y-0.5 flex items-center justify-center gap-2.5 transition-all duration-300 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:transform-none text-base sm:text-lg outline-none focus:ring-4 focus:ring-teal-500/20 active:scale-[0.99] cursor-pointer"
             >
               {isSubmitting ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Đang xử lý hồ sơ...</>

@@ -148,6 +148,7 @@ export default function ServiceSelection() {
     e.stopPropagation();
     clearHold();
     setService(svc.id, svc.name, svc.price, svc.durationMins, svc.isFree, svc.showPrice);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     navigate(`${basePath}/chon-gio`);
   };
 
@@ -156,6 +157,7 @@ export default function ServiceSelection() {
       toast.error('Vui lòng chọn ít nhất 1 dịch vụ khám để tiếp tục');
       return;
     }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     navigate(`${basePath}/chon-gio`);
   };
 

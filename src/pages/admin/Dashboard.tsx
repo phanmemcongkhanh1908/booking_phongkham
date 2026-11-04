@@ -8,14 +8,17 @@ import { usePermissions } from '../../hooks/usePermissions';
 import api from '../../services/api';
 import { format, differenceInMinutes, startOfWeek } from 'date-fns';
 import { APPOINTMENT_STATUSES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
-import Settings from './Settings';
-import CalendarView from './CalendarView';
-import ServicesConfig from './ServicesConfig';
-import Analytics from './Analytics';
+
+// React.lazy Code-Splitting for Heavy Admin Modules
+const CalendarView = React.lazy(() => import('./CalendarView'));
+const ServicesConfig = React.lazy(() => import('./ServicesConfig'));
+const Analytics = React.lazy(() => import('./Analytics'));
+const Patients = React.lazy(() => import('./Patients'));
+const Settings = React.lazy(() => import('./Settings'));
+const UsersManagement = React.lazy(() => import('./UsersManagement'));
+
 import OtpQuotaWidget from './components/OtpQuotaWidget';
 import IdleTimeoutManager from '../../components/admin/IdleTimeoutManager';
-import Patients from './Patients';
-import UsersManagement from './UsersManagement';
 import QrScanner from './components/QrScanner';
 import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import CreateAppointmentModal from './components/CreateAppointmentModal';
@@ -757,8 +760,18 @@ export default function Dashboard() {
         )}
         
         <div className={user?.tenantId && !isConnected ? 'opacity-30 pointer-events-none blur-sm select-none' : ''}>
-          {activeTab === 'analytics' && <Analytics />}
-        {activeTab === 'patients' && <Patients />}
+          <React.Suspense fallback={
+            <div className="min-h-[400px] flex flex-col items-center justify-center p-8 text-slate-500 gap-3">
+              <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm font-semibold text-slate-600">Đang khởi tạo module quản trị...</span>
+            </div>
+          }>
+            {activeTab === 'analytics' && <Analytics />}
+            {activeTab === 'patients' && <Patients />}
+            {activeTab === 'services' && <ServicesConfig />}
+            {activeTab === 'settings' && <Settings />}
+            {activeTab === 'users' && <UsersManagement />}
+          </React.Suspense>
         {activeTab === 'appointments' && (
           <>
             {!isSimpleMode && (
@@ -945,7 +958,14 @@ export default function Dashboard() {
 
               {viewMode === 'calendar' ? (
                 <div className="p-2.5 sm:p-4">
-                  <CalendarView appointments={appointments} handleUpdateStatus={handleUpdateStatus} refreshAppointments={fetchAppointments} onRangeChange={setDateRange} />
+                  <React.Suspense fallback={
+                    <div className="h-[480px] flex items-center justify-center text-slate-500 gap-2">
+                      <div className="w-6 h-6 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm font-semibold">Đang tải Lịch biểu Calendar...</span>
+                    </div>
+                  }>
+                    <CalendarView appointments={appointments} handleUpdateStatus={handleUpdateStatus} refreshAppointments={fetchAppointments} onRangeChange={setDateRange} />
+                  </React.Suspense>
                 </div>
               ) : (
                 <>
@@ -1389,9 +1409,6 @@ export default function Dashboard() {
             </div>
           </>
         )}
-        {activeTab === 'services' && <ServicesConfig />}
-        {activeTab === 'settings' && <Settings />}
-        {activeTab === 'users' && <UsersManagement />}
         </div>
       </main>
 

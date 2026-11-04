@@ -36,7 +36,8 @@ export default function BookingConfirmation() {
     holdExpiresAt, 
     patientDraft, 
     setStep, 
-    bookingFormConfig 
+    bookingFormConfig,
+    appointmentId
   } = useBookingStore();
 
   const navigate = useNavigate();
@@ -47,18 +48,24 @@ export default function BookingConfirmation() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [isNavigatingSuccess, setIsNavigatingSuccess] = useState(false);
 
   useEffect(() => {
-    if (!sessionToken || !slotStartTime || !patientDraft?.fullName || !patientDraft?.phone) {
+    // Tuyệt đối không redirect ngược nếu đã có appointmentId hoặc đang trong tiến trình tạo lịch thành công
+    if (appointmentId || submittingRef.current || submitting || isNavigatingSuccess) {
+      return;
+    }
+
+    if (!slotStartTime || !patientDraft?.fullName || !patientDraft?.phone) {
       if (!serviceId) {
-        navigate(`${basePath}/dich-vu`);
-      } else if (!sessionToken || !slotStartTime) {
-        navigate(`${basePath}/chon-gio`);
+        navigate(`${basePath}/dich-vu`, { replace: true });
+      } else if (!slotStartTime) {
+        navigate(`${basePath}/chon-gio`, { replace: true });
       } else {
-        navigate(`${basePath}/thong-tin`);
+        navigate(`${basePath}/thong-tin`, { replace: true });
       }
     }
-  }, [sessionToken, slotStartTime, patientDraft, serviceId, navigate]);
+  }, [slotStartTime, patientDraft, serviceId, appointmentId, submitting, isNavigatingSuccess, basePath, navigate]);
 
   useEffect(() => {
     if (!holdExpiresAt) return;
@@ -113,10 +120,13 @@ export default function BookingConfirmation() {
         ? (serviceName || selectedServices.map(s => s.name).join(' + '))
         : undefined;
 
+      const rawPhone = (patientDraft.phone || '').trim();
+      const cleanPhone = rawPhone.replace(/[\s.-]/g, '');
+
       const res = await api.post('/public/appointments', {
         sessionToken,
         fullName: patientDraft.fullName.trim(),
-        phone: patientDraft.phone.trim(),
+        phone: cleanPhone,
         email: patientDraft.email ? patientDraft.email.trim() : undefined,
         telegramId: patientDraft.telegramId ? patientDraft.telegramId.trim() : undefined,
         notes: patientNote || undefined,
@@ -127,14 +137,15 @@ export default function BookingConfirmation() {
       });
 
       if (res.data.success) {
+        setIsNavigatingSuccess(true);
         const appointmentData = res.data.data;
         if (appointmentData && appointmentData.appointmentId) {
-          localStorage.setItem('verifiedPatient', JSON.stringify({ phone: patientDraft.phone.trim(), fullName: patientDraft.fullName.trim() }));
+          localStorage.setItem('verifiedPatient', JSON.stringify({ phone: cleanPhone, fullName: patientDraft.fullName.trim() }));
           
           useBookingStore.getState().setAppointmentSuccess(
             appointmentData.appointmentId,
             patientDraft.fullName,
-            patientDraft.phone,
+            cleanPhone,
             patientDraft.email || null,
             patientDraft.telegramId || null,
             appointmentData.telegramBotUsername || null,
@@ -146,10 +157,13 @@ export default function BookingConfirmation() {
               providerName: appointmentData.providerName || undefined,
             }
           );
-          navigate(`${basePath}/hoan-tat`);
+          setStep(5);
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          navigate(`${basePath}/hoan-tat`, { replace: true });
         } else {
           setStep(5);
-          navigate(`${basePath}/hoan-tat`);
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          navigate(`${basePath}/hoan-tat`, { replace: true });
         }
       } else {
         setError(res.data.message || 'Không thể hoàn tất lịch hẹn. Vui lòng thử lại.');
@@ -457,30 +471,74 @@ export default function BookingConfirmation() {
               </div>
             </div>
 
-            {/* Desktop CTA */}
-            <div className="hidden sm:block pt-4 border-t border-teal-100">
-              <button
-                type="button"
-                onClick={handleConfirmAppointment}
-                disabled={submitting || !!error || isExpired}
-                className="w-full py-3.5 px-6 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-bold text-[14px] rounded-xl shadow-lg shadow-teal-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {submitting ? (
-                  <>
-                    <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    <span>Đang xử lý...</span>
-                  </>
-                ) : (
-                  <>
-                    Xác nhận đặt lịch
-                    <CheckCircle2 className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {/* Desktop CTA inside sidebar card */}
+              <div className="hidden sm:block pt-4 border-t border-teal-100">
+                <button
+                  type="button"
+                  onClick={handleConfirmAppointment}
+                  disabled={submitting || !!error || isExpired}
+                  className="w-full py-3.5 px-6 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-bold text-[14px] rounded-xl shadow-lg shadow-teal-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {submitting ? (
+                    <>
+                      <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      <span>Đang xử lý...</span>
+                    </>
+                  ) : (
+                    <>
+                      Xác nhận đặt lịch
+                      <CheckCircle2 className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+
+        {/* Primary Desktop Action Navigation Bar (Full Width & Perfectly Balanced on PC) */}
+        <div className="hidden sm:flex rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-sm items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              setStep(3);
+              window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+              navigate(`${basePath}/thong-tin`);
+            }}
+            className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Quay lại sửa hồ sơ</span>
+          </button>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <span className="text-[11px] text-slate-400 block font-bold uppercase tracking-wider">Lịch hẹn dự kiến</span>
+              <span className="text-sm font-extrabold text-teal-900">
+                {slotStartTime ? format(new Date(slotStartTime), 'HH:mm - dd/MM/yyyy') : ''}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleConfirmAppointment}
+              disabled={submitting || !!error || isExpired}
+              className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-extrabold text-[15px] rounded-xl shadow-lg shadow-teal-900/20 hover:shadow-teal-900/30 transition-all cursor-pointer min-w-[240px]"
+            >
+              {submitting ? (
+                <>
+                  <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <span>Đang xử lý đặt lịch...</span>
+                </>
+              ) : (
+                <>
+                  <span>Xác nhận đặt lịch</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
 
       {/* Sticky Mobile Footer */}
       <div className="sm:hidden sticky bottom-0 left-0 right-0 p-3.5 bg-white border-t border-slate-200 z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3 -mx-4 -mb-4 mt-6">

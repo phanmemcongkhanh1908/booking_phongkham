@@ -198,7 +198,7 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
     const data = HoldSlotSchema.parse(req.body);
     const startAt = new Date(data.startAt);
     const endAt = new Date(data.endAt);
-    const expiresAt = addMinutes(new Date(), 5); // Hold 5 mins
+    const expiresAt = addMinutes(new Date(), 10); // Hold 10 mins (generous for patient form filling)
     
     // Resolve tenantId
     let targetTenantId = (data.tenantId || req.headers["x-tenant-id"]) as string | undefined;

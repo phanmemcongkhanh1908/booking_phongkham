@@ -345,6 +345,13 @@ export const useBookingStore = create<BookingState>()(
         slotEndTime: state.slotEndTime,
         holdExpiresAt: state.holdExpiresAt,
         patientDraft: state.patientDraft,
+        // Persist completed appointment details so refreshing on Step 5 retains the e-ticket
+        appointmentId: state.appointmentId,
+        patientName: state.patientName,
+        patientPhone: state.patientPhone,
+        patientEmail: state.patientEmail,
+        patientTelegramId: state.patientTelegramId,
+        telegramBotUsername: state.telegramBotUsername,
         // Do not persist tenantId, clinicProfile, bookingFormConfig, etc. (they should be fetched from URL on reload)
       }),
     }

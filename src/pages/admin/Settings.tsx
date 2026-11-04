@@ -63,6 +63,8 @@ export default function Settings() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
   const isSimpleMode = user?.uiMode === 'simple';
+  // Super admin gốc có quyền '*' và không có tenantId riêng
+  const isSuperAdmin = !user?.tenantId && (user?.role === 'admin' || user?.permissions?.includes('*') || user?.permissions?.includes('all'));
   const { 
     isConnected: isGoogleConnected, 
     accessToken: googleToken, 
@@ -656,14 +658,15 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Email Config (SMTP) */}
-      <Card className="col-span-1">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-primary" />
-              Cấu hình Dịch vụ Gửi Email (SMTP)
-            </CardTitle>
+      {/* Email Config (SMTP) - Cấu hình hạ tầng mail máy chủ chỉ dành cho Super Admin */}
+      {isSuperAdmin && (
+        <Card className="col-span-1">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-primary" />
+                Cấu hình Dịch vụ Gửi Email (SMTP Toàn hệ thống)
+              </CardTitle>
             <button 
               type="button" 
               onClick={() => setShowEmailHelp(!showEmailHelp)}
@@ -791,6 +794,7 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
+      )}
 
       {/* Clinic Profile */}
       <Card>
@@ -1363,12 +1367,15 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Data Management */}
-      {!isSimpleMode && (
+      {/* Data Management & Wipe Data (Chỉ hiển thị cho Tài khoản Quản trị Hệ thống Gốc - Super Admin) */}
+      {!isSimpleMode && isSuperAdmin && (
         <>
-        <Card className="col-span-1 md:col-span-2">
-          <CardHeader>
-            <CardTitle>Quản lý Dữ liệu</CardTitle>
+        <Card className="col-span-1 md:col-span-2 border-red-200">
+          <CardHeader className="bg-red-50/50">
+            <CardTitle className="text-red-900 flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-600" />
+              Quản trị Hệ thống Gốc: Backup & Xóa Dữ liệu (Wipe Data)
+            </CardTitle>
           </CardHeader>
         <CardContent className="space-y-4">
           {dataMsg && (

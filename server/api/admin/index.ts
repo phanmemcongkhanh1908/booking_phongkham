@@ -38,6 +38,7 @@ adminRouter.post("/services", requirePermission("service.manage"), async (req, r
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
       isActive: true,
+      tenantId: req.user?.tenantId || undefined,
     }).returning();
     res.json({ success: true, data: newService[0] });
   } catch (error) {
@@ -112,6 +113,7 @@ adminRouter.post("/providers", requirePermission("provider.manage"), async (req,
       bookingEnabled: req.body.bookingEnabled !== false,
       isActive: req.body.isActive !== false,
       isDefault: Boolean(req.body.isDefault),
+      tenantId: req.user?.tenantId || undefined,
     }).returning();
     res.json({ success: true, data: newProvider[0] });
   } catch (error) {

@@ -320,15 +320,18 @@ export default function PatientForm() {
       return;
     }
 
+    const cleanPhone = formData.phone.trim().replace(/[\s.-]/g, '');
+
     setPatientDraft({
       bookingFor,
       fullName: formData.fullName.trim(),
-      phone: formData.phone.trim(),
+      phone: cleanPhone,
       email: formData.email.trim(),
       telegramId: formData.telegramId.trim(),
       notes: formData.notes.trim()
     });
 
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     setStep(4);
     navigate(`${basePath}/xac-nhan`);
   };
@@ -750,13 +753,27 @@ export default function PatientForm() {
             Bằng việc xác nhận, bạn đồng ý đến đúng giờ. Vui lòng thông báo hủy hoặc dời lịch trước <strong>24h</strong> nếu có thay đổi để phòng khám sắp xếp phục vụ bệnh nhân khác.
           </p>
         </div>
-          <div className="hidden sm:block pt-4">
+          {/* Desktop Navigation Action Bar */}
+          <div className="hidden sm:flex items-center justify-between gap-4 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setStep(2);
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                navigate(`${basePath}/chon-gio`);
+              }}
+              className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Quay lại chọn giờ</span>
+            </button>
+
             <button
               type="submit"
               disabled={!!error || (holdExpiresAt && timeLeft === 0)}
-              className="w-full py-3.5 px-6 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:hover:bg-teal-700 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-teal-900/20 transition-all cursor-pointer min-w-[220px]"
             >
-              Tiếp tục kiểm tra
+              <span>Tiếp tục kiểm tra</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

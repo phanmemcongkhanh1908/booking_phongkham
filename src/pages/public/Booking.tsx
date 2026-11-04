@@ -64,9 +64,28 @@ export default function Booking() {
   const selectedDate = useBookingStore(s => s.selectedDate);
   const sessionToken = useBookingStore(s => s.sessionToken);
   const patientDraft = useBookingStore(s => s.patientDraft);
+  const appointmentId = useBookingStore(s => s.appointmentId);
+
+  // Tự động cuộn lên đầu trang khi chuyển bước (khắc phục lỗi mobile bị giữ cuộn ở cuối trang)
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+
+    const timer = setTimeout(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [currentPath, step]);
 
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
+
+    // Nếu đã hoàn tất đặt lịch (bước 5 / hoan-tat / có appointmentId), tuyệt đối không redirect ngược lại
+    if (step === 5 || currentPath === 'hoan-tat' || appointmentId) return;
 
     const hasService = !!serviceId || (selectedServices && selectedServices.length > 0);
 
@@ -74,12 +93,12 @@ export default function Booking() {
       navigate(`${basePath}/dich-vu`, { replace: true });
     } else if (step >= 2 && !hasService && currentPath !== 'dich-vu') {
       navigate(`${basePath}/dich-vu`, { replace: true });
-    } else if (step >= 3 && (!selectedDate || !sessionToken) && currentPath !== 'chon-gio') {
+    } else if (step >= 3 && step < 5 && (!selectedDate || (!sessionToken && !appointmentId)) && currentPath !== 'chon-gio') {
       navigate(`${basePath}/chon-gio`, { replace: true });
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone) && currentPath !== 'thong-tin') {
       navigate(`${basePath}/thong-tin`, { replace: true });
     }
-  }, [currentPath, step, serviceId, selectedServices, selectedDate, sessionToken, patientDraft, navigate, bookingFormConfig?.uiVersion, basePath]);
+  }, [currentPath, step, serviceId, selectedServices, selectedDate, sessionToken, patientDraft, appointmentId, navigate, bookingFormConfig?.uiVersion, basePath]);
 
   const clinicDisplayName = clinicProfile?.clinicName || clinicProfile?.name || 'Dental Smart Clinic';
   const doctorDisplayName = clinicProfile?.doctorName ? (

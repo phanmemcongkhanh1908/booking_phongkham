@@ -373,6 +373,18 @@ class QueryBuilder {
       const tenantId = ctx?.tenantId;
       const isFullAdmin = ctx?.isFullAdmin;
 
+      // Check if tenant has customized services or providers
+      let tenantHasCustomServices = false;
+      let tenantHasCustomProviders = false;
+      if (!isFullAdmin && tenantId) {
+        if (tableName === "services" && memoryStore["services"]) {
+          tenantHasCustomServices = Object.values(memoryStore["services"]).some((s: any) => s.tenantId === tenantId);
+        }
+        if (tableName === "providers" && memoryStore["providers"]) {
+          tenantHasCustomProviders = Object.values(memoryStore["providers"]).some((p: any) => p.tenantId === tenantId);
+        }
+      }
+
       let results = [];
       for (const docData of docsData) {
         if (!isFullAdmin && tenantId && tableName !== "roles") {
@@ -380,6 +392,21 @@ class QueryBuilder {
           if (strictTenantTables.includes(tableName)) {
             if (docData.tenantId !== tenantId) {
               continue;
+            }
+          } else if (tableName === "services") {
+            // If tenant has custom services, show ONLY tenant's services.
+            // If tenant has no custom services yet, show default template services (where tenantId is null/undefined)
+            if (tenantHasCustomServices) {
+              if (docData.tenantId !== tenantId) continue;
+            } else {
+              if (docData.tenantId && docData.tenantId !== tenantId) continue;
+            }
+          } else if (tableName === "providers") {
+            // Same isolation policy for providers/dentists
+            if (tenantHasCustomProviders) {
+              if (docData.tenantId !== tenantId) continue;
+            } else {
+              if (docData.tenantId && docData.tenantId !== tenantId) continue;
             }
           } else {
             if (docData.tenantId && docData.tenantId !== tenantId) {
