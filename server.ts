@@ -36,7 +36,7 @@ webpush.setVapidDetails(
 const subscriptions = new Map<string, any>();
 
 const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Trust reverse proxy (Cloudflare, Render, Google Cloud Run) for accurate client IP
   app.set('trust proxy', 1);
