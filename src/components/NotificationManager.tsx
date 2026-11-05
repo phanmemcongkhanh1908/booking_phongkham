@@ -31,7 +31,8 @@ export default function NotificationManager() {
   useEffect(() => {
     const checkUpcomingAppointments = async () => {
       const now = new Date();
-      if (token) {
+      // Skip notification check when user is on login page or unauthenticated
+      if (token && !location.pathname.includes('/login')) {
         // ADMIN MODE: Fetch today's appointments
         try {
           const res = await api.get('/appointments');
