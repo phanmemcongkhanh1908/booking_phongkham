@@ -160,10 +160,19 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
                 Cuộn xuống mục <strong>Mã nguồn JavaScript đã cho phép (Authorized JavaScript origins)</strong>, bấm nút <strong>Thêm URI (Add URI)</strong>.
               </li>
               <li className="leading-relaxed">
-                Dán địa chỉ: <code className="bg-slate-200 px-1 py-0.5 rounded font-bold text-slate-800">{currentOrigin}</code>
+                Dán địa chỉ: <code className="bg-slate-200 px-1.5 py-0.5 rounded font-bold text-slate-800 font-mono">{currentOrigin}</code>
+                <p className="mt-1 text-slate-500">
+                  <em>(Khuyên dùng: Bấm Add URI thêm cả địa chỉ phụ nếu có dùng www: <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">https://www.booking-phongkham.onrender.com</code>)</em>
+                </p>
               </li>
               <li className="leading-relaxed">
-                Nhấn nút <strong>Lưu (Save)</strong> ở cuối trang. Sau đó đợi 1-2 phút để Google cập nhật rồi thử đăng nhập lại.
+                Nhấn nút <strong>Lưu (Save)</strong> ở cuối trang.
+              </li>
+              <li className="leading-relaxed text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mt-2">
+                <strong>⏳ Lưu ý quan trọng về thời gian hiệu lực:</strong> Google Cloud ghi rõ <em>"It may take 5 minutes to a few hours for settings to take effect"</em>. Hệ thống máy chủ Google cần từ <strong>5 đến 15 phút</strong> để phân phối URI mới tới tất cả các cụm máy chủ toàn cầu.
+                <div className="mt-1.5 text-[11px] text-slate-700">
+                  👉 Sau khi Save, vui lòng <strong>đợi khoảng 5–10 phút</strong>, sau đó nhấn <strong>Ctrl + Shift + R</strong> hoặc mở <strong>Cửa sổ ẩn danh (Ctrl + Shift + N)</strong> để thử lại nhằm tránh trình duyệt lưu đệm kết quả lỗi cũ.
+                </div>
               </li>
             </ol>
           </div>

@@ -345,11 +345,11 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
             <button
               type="button"
               onClick={() => setIsOriginHelpOpen(true)}
-              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-300 bg-amber-50 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
-              title="Xem hướng dẫn khắc phục nếu gặp lỗi origin_mismatch từ Google"
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
+              title="Xem hướng dẫn cấu hình và khai báo tên miền Google OAuth"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Sửa lỗi Google 400</span>
+              <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+              <span>Hướng dẫn cấu hình</span>
             </button>
 
             {onNavigateToSettings && (

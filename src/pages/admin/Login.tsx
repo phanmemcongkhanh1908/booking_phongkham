@@ -8,6 +8,7 @@ import { useNavigate, Link, useParams, useSearchParams } from 'react-router-dom'
 import api from '../../services/api';
 import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, MapPin, Phone } from 'lucide-react';
 import UnauthorizedEmailModal, { UnauthorizedModalData } from './components/UnauthorizedEmailModal';
+import { GoogleOriginHelpModal } from './components/GoogleOriginHelpModal';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
 
 export default function Login() {
@@ -41,6 +42,8 @@ export default function Login() {
     details: '',
   });
 
+  const [isOriginHelpOpen, setIsOriginHelpOpen] = useState(false);
+
   const connectGoogle = useGoogleAuthStore(state => state.connect);
   const setAuth = useAuthStore(state => state.setAuth);
   const navigate = useNavigate();
@@ -57,41 +60,66 @@ export default function Login() {
     }
   }, [effectiveSlug]);
 
+  // Tự động gửi request ping đánh thức máy chủ khi người dùng vừa mở trang login
+  useEffect(() => {
+    fetch('/api/health').catch(() => {});
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     
-    try {
-      const res = await api.post('/auth/login', { 
-        email, 
-        password,
-        clinicSlug: effectiveSlug || undefined 
-      });
-      if (res.data.success) {
-        setAuth(res.data.data.token, res.data.data.user);
-        localStorage.setItem('lastEmail', email);
-        if (res.data.data.user?.slug || effectiveSlug) {
-          localStorage.setItem('last_clinic_slug', res.data.data.user?.slug || effectiveSlug);
+    // Auto-retry helper for cold start (503 / network transient)
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    const executeLogin = async (): Promise<boolean> => {
+      try {
+        const res = await api.post('/auth/login', { 
+          email, 
+          password,
+          clinicSlug: effectiveSlug || undefined 
+        });
+        if (res.data.success) {
+          setAuth(res.data.data.token, res.data.data.user);
+          localStorage.setItem('lastEmail', email);
+          if (res.data.data.user?.slug || effectiveSlug) {
+            localStorage.setItem('last_clinic_slug', res.data.data.user?.slug || effectiveSlug);
+          }
+          if (rememberMe) {
+            localStorage.setItem('rememberedPassword', password);
+            localStorage.setItem('rememberMeChecked', 'true');
+          } else {
+            localStorage.removeItem('rememberedPassword');
+            localStorage.removeItem('rememberMeChecked');
+          }
+          navigate('/admin/dashboard');
+          return true;
         }
-        if (rememberMe) {
-          localStorage.setItem('rememberedPassword', password);
-          localStorage.setItem('rememberMeChecked', 'true');
+        return false;
+      } catch (err: any) {
+        const status = err.response?.status;
+        attempts++;
+        if ((status === 503 || !err.response) && attempts < maxAttempts) {
+          setError(`Máy chủ đang thức giấc từ chế độ ngủ đông (Render Cold Start)... Đang tự động kết nối lại (Lần ${attempts}/${maxAttempts})...`);
+          await new Promise(resolve => setTimeout(resolve, 3500));
+          return await executeLogin();
+        }
+
+        if (status === 503) {
+          setError('Máy chủ vừa hoàn tất khởi động lại từ chế độ ngủ đông (Render Cold Start). Vui lòng bấm "Đăng nhập" lần nữa để vào hệ thống ngay.');
+        } else if (status === 429) {
+          setError('Hệ thống phát hiện nhiều yêu cầu liên tiếp. Vui lòng đợi khoảng 1 phút rồi thử lại.');
         } else {
-          localStorage.removeItem('rememberedPassword');
-          localStorage.removeItem('rememberMeChecked');
+          setError(err.response?.data?.error?.message || err.response?.data?.message || 'Tài khoản hoặc mật khẩu không chính xác');
         }
-        navigate('/admin/dashboard');
+        return false;
       }
-    } catch (err: any) {
-      const status = err.response?.status;
-      if (status === 503) {
-        setError('Máy chủ đang khởi động lại (Render Cold Start). Vui lòng đợi 20-30 giây rồi bấm Đăng nhập lại.');
-      } else if (status === 429) {
-        setError('Hệ thống phát hiện nhiều yêu cầu liên tiếp. Vui lòng đợi khoảng 1 phút rồi thử lại.');
-      } else {
-        setError(err.response?.data?.error?.message || err.response?.data?.message || 'Tài khoản hoặc mật khẩu không chính xác');
-      }
+    };
+
+    try {
+      await executeLogin();
     } finally {
       setLoading(false);
     }
@@ -197,6 +225,22 @@ export default function Login() {
         return;
       }
 
+      // Nhận diện lỗi origin_mismatch (Lỗi 400 Google OAuth khi chưa whitelist tên miền)
+      const isOriginMismatch = 
+        authErr?.code === 'origin_mismatch' ||
+        authErr?.code === 'idpiframe_initialization_failed' ||
+        (typeof authErr?.message === 'string' && (
+          authErr.message.toLowerCase().includes('origin_mismatch') ||
+          authErr.message.toLowerCase().includes('origin') ||
+          authErr.message.toLowerCase().includes('400')
+        ));
+
+      if (isOriginMismatch) {
+        setIsOriginHelpOpen(true);
+        setError('Google báo lỗi "origin_mismatch" (400) do tên miền này chưa được thêm vào "Authorized JavaScript origins" trên Google Cloud Console. Nhấn vào hướng dẫn bên dưới để xem cách khắc phục.');
+        return;
+      }
+
       console.error('[Login] Lỗi khi xử lý đăng nhập Google:', authErr);
       setError(authErr.response?.data?.error?.message || authErr.message || 'Đăng nhập bằng Google thất bại');
     } finally {
@@ -282,6 +326,17 @@ export default function Login() {
               )}
             </button>
 
+            {/* Helper link for Google OAuth 400 origin_mismatch */}
+            <div className="flex justify-center -mt-1">
+              <button
+                type="button"
+                onClick={() => setIsOriginHelpOpen(true)}
+                className="text-[11px] text-slate-500 hover:text-teal-700 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <span>❓ Hướng dẫn kết nối Google OAuth (Khắc phục lỗi 400 nếu có)</span>
+              </button>
+            </div>
+
             {/* Đường phân cách hoặc */}
             <div className="relative my-2">
               <div className="absolute inset-0 flex items-center">
@@ -358,6 +413,12 @@ export default function Login() {
         data={unauthorizedModalData}
         onClose={() => setUnauthorizedModalData(prev => ({ ...prev, isOpen: false }))}
         onRetryWithDifferentAccount={() => handleGoogleSignIn('select_account')}
+      />
+
+      {/* Modal hướng dẫn chi tiết cách sửa Lỗi 400 origin_mismatch từ Google */}
+      <GoogleOriginHelpModal
+        isOpen={isOriginHelpOpen}
+        onClose={() => setIsOriginHelpOpen(false)}
       />
     </div>
   );

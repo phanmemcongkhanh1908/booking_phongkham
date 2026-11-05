@@ -475,81 +475,92 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Main Navigation (Desktop) */}
-          <nav className="hidden md:flex items-center space-x-1 lg:space-x-2 absolute left-1/2 -translate-x-1/2">
+          {/* Main Navigation (Desktop) - Flex centered without absolute to prevent collision */}
+          <nav className="hidden md:flex items-center justify-center space-x-1 lg:space-x-1.5 flex-1 min-w-0 px-1 sm:px-2">
             {hasPermission('appointment.view') && (
               <button 
                 onClick={() => setActiveTab('appointments')}
-                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
+                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
                   activeTab === 'appointments' 
-                    ? 'bg-teal-50 text-teal-700' 
+                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Calendar className="w-4 h-4 mr-2" />
+                <Calendar className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
                 Lịch hẹn
               </button>
             )}
             {hasPermission('patient.view') && (
               <button 
                 onClick={() => setActiveTab('patients')}
-                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
+                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
                   activeTab === 'patients' 
-                    ? 'bg-teal-50 text-teal-700' 
+                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Users className="w-4 h-4 mr-2" />
+                <Users className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
                 Hồ sơ Bệnh án
               </button>
             )}
             {!isSimpleMode && hasPermission('service.manage') && (
               <button 
                 onClick={() => setActiveTab('services')}
-                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
+                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
                   activeTab === 'services' 
-                    ? 'bg-teal-50 text-teal-700' 
+                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <LayoutList className="w-4 h-4 mr-2" />
+                <LayoutList className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
                 Dịch vụ & Lịch
               </button>
             )}
             {!isSimpleMode && hasPermission('analytics.view') && (
               <button 
                 onClick={() => setActiveTab('analytics')}
-                className={`text-sm font-semibold flex items-center px-4 py-2 rounded-full transition-all ${
+                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
                   activeTab === 'analytics' 
-                    ? 'bg-teal-50 text-teal-700' 
+                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <BarChart3 className="w-4 h-4 mr-2" />
+                <BarChart3 className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
                 Báo cáo
               </button>
             )}
           </nav>
 
           {/* Right Actions & User Menu */}
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            {/* Quick Visit Public Booking Link */}
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            {/* Quick Visit Public Booking Link - Expanded on large screens, compact icon on medium */}
             {(() => {
               const activeSlug = user?.slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug');
               const publicUrl = activeSlug ? `/b/${activeSlug}` : '/book';
               return (
-                <a
-                  href={publicUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold shadow-2xs transition-all"
-                  title="Mở trang đặt lịch trực tuyến của phòng khám trong tab mới"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
-                  <span className="truncate max-w-[140px]">
-                    {activeSlug ? `b/${activeSlug}` : 'Trang đặt lịch'}
-                  </span>
-                </a>
+                <>
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold shadow-2xs transition-all shrink-0"
+                    title="Mở trang đặt lịch trực tuyến của phòng khám trong tab mới"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                    <span className="truncate max-w-[130px]">
+                      {activeSlug ? `b/${activeSlug}` : 'Trang đặt lịch'}
+                    </span>
+                  </a>
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hidden md:inline-flex xl:hidden p-2 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-full transition-colors shrink-0"
+                    title={`Mở trang đặt lịch: ${activeSlug ? `b/${activeSlug}` : '/book'}`}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </>
               );
             })()}
 

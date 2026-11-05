@@ -38,7 +38,9 @@ import {
   ArrowRight,
   ShieldAlert,
   LayoutList,
-  Megaphone
+  Megaphone,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -1393,69 +1395,129 @@ export default function Settings() {
             </div>
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2 border p-4 rounded bg-bg-base flex flex-col justify-between">
-              <div>
-                <h3 className="font-semibold text-text-main">Backup Dữ liệu</h3>
-                <p className="text-sm text-text-muted">Tải xuống toàn bộ dữ liệu (bệnh nhân, lịch hẹn, dịch vụ, cấu hình) dưới dạng JSON.</p>
-              </div>
-              <Button onClick={handleBackup} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Tải Backup</Button>
-            </div>
-
-            <div className="space-y-2 border p-4 rounded bg-bg-base flex flex-col justify-between">
-              <div>
-                <h3 className="font-semibold text-text-main">Khôi phục (Restore)</h3>
-                <p className="text-sm text-text-muted">Tải lên file JSON backup để khôi phục dữ liệu.</p>
-                <input 
-                  type="file" 
-                  accept=".json"
-                  className="w-full text-sm border border-border-subtle rounded file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mt-2"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        setBackupData(ev.target?.result as string);
-                      };
-                      reader.readAsText(file);
-                    }
-                  }}
-                />
-              </div>
-              <Button onClick={handleRestore} variant="outline" className="w-full" disabled={!backupData}>Restore</Button>
-            </div>
-
-            <div className="space-y-2.5 border border-status-cancelled p-4 rounded bg-status-cancelled-bg flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-red-800 dark:text-red-400 flex items-center gap-1.5">
-                    <Trash2 className="w-4 h-4" />
-                    Wipe Data
-                  </h3>
-                  <span className="text-[10px] font-semibold text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">
-                    Phòng khám
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
+            {/* Card 1: Backup Dữ liệu */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <Download className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                    JSON Export
                   </span>
                 </div>
-                <p className="text-sm text-status-cancelled mb-2">
-                  Dọn dẹp dữ liệu demo hoặc reset hệ thống an toàn (tuân thủ thứ tự quan hệ khóa ngoại).
-                </p>
-                <div className="text-[11px] bg-white/80 dark:bg-surface-subtle p-2 rounded border border-emerald-300/80 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 space-y-0.5 mb-2">
-                  <div className="font-semibold flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Bảo tồn an toàn:
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Backup Dữ liệu</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Tải xuống toàn bộ hồ sơ bệnh nhân, lịch hẹn, dịch vụ và cấu hình hệ thống dưới dạng tệp tin JSON an toàn.
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[11px] text-slate-600 space-y-1">
+                  <div className="flex items-center gap-1.5 text-blue-700 font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>Sao lưu bảo mật 1-Click:</span>
                   </div>
-                  <p className="text-text-muted text-[11px] leading-tight">
-                    Tài khoản <strong>admin@dentalsmartbooking.com</strong>, danh mục dịch vụ & bác sĩ (khi chọn xóa demo) và liên kết đặt lịch không bị mất.
+                  <p className="text-slate-500 text-[11px]">
+                    Lưu trữ cục bộ trên máy tính của bạn làm bản dự phòng ngoại vi độc lập.
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="pt-4 mt-auto">
+                <Button 
+                  onClick={handleBackup} 
+                  className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center gap-2 rounded-xl shadow-xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Tải file Backup JSON
+                </Button>
+              </div>
+            </div>
+
+            {/* Card 2: Khôi phục Dữ liệu */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    JSON Restore
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Khôi phục (Restore)</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Đọc và khôi phục dữ liệu từ tệp JSON backup đã tải xuống trước đó để tái tạo trạng thái phòng khám.
+                  </p>
+                </div>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                  <input 
+                    type="file" 
+                    accept=".json"
+                    className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 cursor-pointer"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setBackupData(ev.target?.result as string);
+                        };
+                        reader.readAsText(file);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="pt-4 mt-auto">
+                <Button 
+                  onClick={handleRestore} 
+                  variant="outline" 
+                  className="w-full h-10 border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold text-xs flex items-center justify-center gap-2 rounded-xl cursor-pointer" 
+                  disabled={!backupData}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Khôi phục dữ liệu
+                </Button>
+              </div>
+            </div>
+
+            {/* Card 3: Wipe Data (Super Admin) */}
+            <div className="rounded-2xl border border-red-200 bg-red-50/20 p-5 shadow-xs flex flex-col justify-between hover:border-red-300 transition-all">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-red-700 bg-red-100 px-2.5 py-0.5 rounded-full border border-red-200">
+                    Chỉ Super Admin
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-red-900 text-base">Wipe Data & Reset</h3>
+                  <p className="text-xs text-red-700/80 mt-1 leading-relaxed">
+                    Dọn dẹp lịch hẹn demo thử nghiệm hoặc làm mới hệ thống tuân thủ toàn vẹn khóa ngoại.
+                  </p>
+                </div>
+                <div className="text-[11px] bg-white p-3 rounded-xl border border-emerald-200 text-emerald-800 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5 text-emerald-700">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>Cơ chế bảo toàn an toàn:</span>
+                  </div>
+                  <p className="text-slate-600 text-[11px] leading-tight">
+                    Tài khoản Super Admin, liên kết đặt lịch và danh mục dịch vụ gốc luôn được bảo vệ an toàn tuyệt đối.
+                  </p>
+                </div>
+              </div>
+              
+              {/* Vertically stacked buttons with equal height & clean hierarchy */}
+              <div className="pt-4 mt-auto space-y-2">
                 <Button 
                   onClick={() => {
                     setWipeModalMode('clean_demo');
                     setIsWipeModalOpen(true);
                   }} 
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 rounded-xl shadow-xs cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Xóa sạch dữ liệu demo
@@ -1466,7 +1528,7 @@ export default function Settings() {
                     setIsWipeModalOpen(true);
                   }} 
                   variant="destructive" 
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full h-10 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 rounded-xl shadow-xs cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   Reset hệ thống toàn diện
