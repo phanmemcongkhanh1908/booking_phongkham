@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { services, providers, settings, appointments, patients, users } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
-import { BadRequestError } from "../../core/errors.js";
+import { BadRequestError, ForbiddenError } from "../../core/errors.js";
 
 const adminRouter = Router();
 
@@ -581,11 +581,21 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
   }
 });
 
-// Cập nhật cài đặt hệ thống
-adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
+// Cập nhật cài đặt hệ thống & hồ sơ phòng khám
+adminRouter.post("/settings", requireAuth, async (req, res, next) => {
   try {
     const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes } = req.body;
     const myTenantId = req.user?.tenantId;
+    
+    // Kiểm tra quyền: Chỉ yêu cầu setting.manage đối với các cài đặt hệ thống / hạ tầng nhạy cảm (Telegram, SMTP, Banner toàn site)
+    const isUpdatingSystemConfig = telegramToken !== undefined || telegramChatId !== undefined || telegramBotUsername !== undefined || emailConfig !== undefined || announcementBanner !== undefined;
+    if (isUpdatingSystemConfig) {
+      const permissions = req.user?.permissions || [];
+      const hasSettingPerm = req.user?.role === "admin" || permissions.includes("*") || permissions.includes("all") || permissions.includes("setting.manage");
+      if (!hasSettingPerm) {
+        throw new ForbiddenError("Bạn không có quyền thay đổi cấu hình hạ tầng hệ thống.");
+      }
+    }
     
     // Save to DB
     if (telegramToken !== undefined) {
@@ -661,11 +671,13 @@ adminRouter.post("/settings", requireAuth, requirePermission("setting.manage"), 
         .onConflictDoUpdate({ target: settings.id, set: { value: String(idleTimeoutMinutes) } });
     }
 
-    // Trigger reload bot
-    const { reloadBotConfig } = await import("../../core/telegram.js");
-    await reloadBotConfig(telegramToken, telegramChatId, telegramBotUsername);
+    // Chỉ reload Telegram bot nếu có cập nhật cấu hình Telegram
+    if (telegramToken !== undefined || telegramChatId !== undefined || telegramBotUsername !== undefined) {
+      const { reloadBotConfig } = await import("../../core/telegram.js");
+      await reloadBotConfig(telegramToken, telegramChatId, telegramBotUsername);
+    }
 
-    res.json({ success: true });
+    res.json({ success: true, message: "Cập nhật cấu hình thành công" });
   } catch (error) {
     next(error);
   }

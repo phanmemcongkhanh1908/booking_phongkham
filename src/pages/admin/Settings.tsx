@@ -64,7 +64,7 @@ declare global {
 export default function Settings() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
-  const isSimpleMode = user?.uiMode === 'simple';
+  const isSimpleMode = user?.uiMode === 'simple' || !!user?.tenantId;
   // Super admin gốc có quyền '*' và không có tenantId riêng
   const isSuperAdmin = !user?.tenantId && (user?.role === 'admin' || user?.permissions?.includes('*') || user?.permissions?.includes('all'));
   const { 
@@ -130,6 +130,8 @@ export default function Settings() {
     slogan: '',
   });
   const [clinicMsg, setClinicMsg] = useState('');
+  const [clinicError, setClinicError] = useState(false);
+  const [clinicSaving, setClinicSaving] = useState(false);
 
   // Cấu hình Trang Hồ Sơ Tiếp Đón Chu Đáo
   const DEFAULT_TAGS = [
@@ -576,11 +578,27 @@ export default function Settings() {
   const handleSaveClinic = async (e: React.FormEvent) => {
     e.preventDefault();
     setClinicMsg('');
+    setClinicError(false);
+    setClinicSaving(true);
     try {
-      await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
-      setClinicMsg('Lưu thông tin phòng khám thành công!');
+      const res = await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
+      setClinicError(false);
+      setClinicMsg(res.data?.message || 'Lưu thông tin phòng khám thành công!');
+      setTimeout(() => setClinicMsg(''), 4000);
     } catch (err: any) {
-      setClinicMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra');
+      setClinicError(true);
+      const status = err.response?.status;
+      if (status === 429) {
+        setClinicMsg('Hệ thống đang nhận nhiều yêu cầu liên tiếp (429 Rate Limit). Vui lòng đợi 30 giây rồi bấm lưu lại.');
+      } else if (status === 502 || status === 503) {
+        setClinicMsg('Máy chủ đang khởi động lại hoặc kết nối gián đoạn (502/503). Vui lòng đợi 15-20 giây rồi bấm lưu lại.');
+      } else if (status === 403) {
+        setClinicMsg(err.response?.data?.error?.message || 'Tài khoản phòng khám chưa được phân quyền cập nhật cài đặt.');
+      } else {
+        setClinicMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu thông tin phòng khám.');
+      }
+    } finally {
+      setClinicSaving(false);
     }
   };
 
@@ -872,7 +890,16 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSaveClinic}>
-            {clinicMsg && <div className="text-sm text-primary bg-mint p-2 rounded">{clinicMsg}</div>}
+            {clinicMsg && (
+              <div className={`text-sm p-3 rounded-xl flex items-start gap-2.5 transition-all ${
+                clinicError 
+                  ? 'bg-red-50/90 text-red-700 border border-red-200 shadow-sm' 
+                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-sm'
+              }`}>
+                <span className="text-base select-none">{clinicError ? '⚠️' : '✅'}</span>
+                <span className="font-medium text-xs sm:text-sm leading-relaxed">{clinicMsg}</span>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Tên phòng khám</label>
               <Input 
@@ -933,7 +960,9 @@ export default function Settings() {
             <p className="text-[11px] text-text-muted">
               💡 Thông tin phòng khám và slogan sẽ tự động hiển thị trang trọng trên trang đặt lịch của khách hàng để cá nhân hóa thương hiệu.
             </p>
-            <Button type="submit" className="w-full">Lưu thông tin phòng khám</Button>
+            <Button type="submit" disabled={clinicSaving} className="w-full font-semibold">
+              {clinicSaving ? 'Đang lưu thông tin...' : 'Lưu thông tin phòng khám'}
+            </Button>
           </form>
         </CardContent>
       </Card>

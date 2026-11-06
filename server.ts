@@ -22,8 +22,13 @@ import { bootstrapSystem } from "./server/core/bootstrap.js";
 import { initReminderCronJob } from "./server/jobs/appointmentReminder.js";
 
 dotenv.config();
+
+// Tự động nhận diện môi trường:
+// 1. Chạy bundle đã build (node dist/server.cjs trên Render) -> NODE_ENV = 'production'
+// 2. Chạy file nguồn server.ts trong môi trường phát triển (tsx / npm run dev) -> NODE_ENV = 'development'
+const isProductionBundle = (process.argv[1] || '').includes('dist') || (process.argv[1] || '').endsWith('.cjs');
 if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = 'production';
+  process.env.NODE_ENV = isProductionBundle ? 'production' : 'development';
 }
 
 async function startServer() {
