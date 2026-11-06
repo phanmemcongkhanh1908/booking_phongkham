@@ -22,6 +22,9 @@ import { bootstrapSystem } from "./server/core/bootstrap.js";
 import { initReminderCronJob } from "./server/jobs/appointmentReminder.js";
 
 dotenv.config();
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
 
 async function startServer() {
   
@@ -155,9 +158,10 @@ const app = express();
   });
 
   // ==========================================
-  // VITE MIDDLEWARE (For React PWA)
+  // STATIC ASSETS OR VITE MIDDLEWARE
   // ==========================================
-  if (process.env.NODE_ENV !== "production") {
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

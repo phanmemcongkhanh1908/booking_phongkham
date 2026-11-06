@@ -101,63 +101,10 @@ export default function Login() {
       } catch (err: any) {
         const status = err.response?.status;
         
-        // Nếu gặp 503 hoặc mất kết nối do Render Cold Start, tuyệt đối không spam POST /auth/login
-        // Thay vào đó thăm dò nhẹ qua GET /api/health để tránh bị kích hoạt chặn 429 Too Many Requests
         if (status === 503 || !err.response) {
-          setError('Máy chủ đang thức giấc từ chế độ ngủ đông (Render Cold Start)... Đang tự động kết nối lại an toàn, vui lòng đợi giây lát...');
-          
-          let isServerReady = false;
-          for (let i = 1; i <= 5; i++) {
-            await new Promise(resolve => setTimeout(resolve, 3500));
-            try {
-              const ping = await fetch('/api/health');
-              if (ping.ok) {
-                isServerReady = true;
-                break;
-              }
-            } catch (e) {
-              // Server vẫn đang boot container
-            }
-          }
-
-          if (isServerReady) {
-            setError('Máy chủ đã sẵn sàng! Đang hoàn tất đăng nhập...');
-            try {
-              const res = await api.post('/auth/login', { 
-                email, 
-                password,
-                clinicSlug: effectiveSlug || undefined 
-              });
-              if (res.data.success) {
-                setAuth(res.data.data.token, res.data.data.user);
-                localStorage.setItem('lastEmail', email);
-                if (res.data.data.user?.slug || effectiveSlug) {
-                  localStorage.setItem('last_clinic_slug', res.data.data.user?.slug || effectiveSlug);
-                }
-                if (rememberMe) {
-                  localStorage.setItem('rememberedPassword', password);
-                  localStorage.setItem('rememberMeChecked', 'true');
-                } else {
-                  localStorage.removeItem('rememberedPassword');
-                  localStorage.removeItem('rememberMeChecked');
-                }
-                navigate('/admin/dashboard');
-                return true;
-              }
-            } catch (retryErr: any) {
-              if (retryErr.response?.status === 429) {
-                setError('Hệ thống phát hiện nhiều yêu cầu liên tiếp. Vui lòng đợi khoảng 30 giây rồi thử lại.');
-              } else {
-                setError(retryErr.response?.data?.error?.message || retryErr.response?.data?.message || 'Tài khoản hoặc mật khẩu không chính xác');
-              }
-              return false;
-            }
-          } else {
-            setError('Máy chủ Render cần thêm chút thời gian khởi động. Vui lòng bấm "Đăng nhập" lần nữa.');
-            return false;
-          }
+          setError('Máy chủ đang thức giấc từ chế độ ngủ đông (Render Cold Start). Vui lòng đợi khoảng 15-20 giây rồi bấm Đăng nhập lại.');
         } else if (status === 429) {
-          setError('Hệ thống phát hiện nhiều yêu cầu liên tiếp (429). Vui lòng đợi khoảng 30 giây rồi bấm Đăng nhập lại.');
+          setError('Hệ thống phát hiện nhiều thao tác liên tiếp (429). Vui lòng đợi khoảng 30 giây rồi bấm Đăng nhập lại.');
         } else {
           setError(err.response?.data?.error?.message || err.response?.data?.message || 'Tài khoản hoặc mật khẩu không chính xác');
         }
