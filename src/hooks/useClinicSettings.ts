@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams, useLocation } from 'react-router-dom';
 import {
   fetchClinicSettings,
+  getCachedClinicSettings,
   extractClinicIdentifier,
   ClinicBundleData,
   ClinicBrandingInfo,
@@ -9,6 +10,9 @@ import {
   invalidateClinicCache
 } from '../services/clinicResolver';
 import { useBookingStore } from '../store/booking';
+
+const EMPTY_SERVICES: ClinicBundleData['services'] = [];
+const EMPTY_PROVIDERS: ClinicBundleData['providers'] = [];
 
 export interface UseClinicSettingsResult {
   bundle: ClinicBundleData | null;
@@ -42,12 +46,12 @@ export function useClinicSettings(explicitSlug?: string): UseClinicSettingsResul
     return extractClinicIdentifier(location.pathname, location.search, window.location.hostname);
   }, [explicitSlug, routeSlug, location.pathname, location.search]);
 
-  // Initial state check from booking store if already cached
+  // Initial state check from cache or booking store
   const storeClinicProfile = useBookingStore(s => s.clinicProfile);
   const storeTenantId = useBookingStore(s => s.tenantId);
 
-  const [bundle, setBundle] = useState<ClinicBundleData | null>(null);
-  const [loading, setLoading] = useState<boolean>(!storeClinicProfile?.clinicName);
+  const [bundle, setBundle] = useState<ClinicBundleData | null>(() => getCachedClinicSettings(targetIdentifier));
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClinicSettings(targetIdentifier));
   const [error, setError] = useState<string | null>(null);
 
   const loadSettings = useCallback(async (isRefresh = false) => {
@@ -77,8 +81,8 @@ export function useClinicSettings(explicitSlug?: string): UseClinicSettingsResul
 
   const clinicProfile = bundle?.clinicProfile || (storeClinicProfile as ClinicBrandingInfo) || null;
   const businessHours = bundle?.businessHours || null;
-  const services = bundle?.services || [];
-  const providers = bundle?.providers || [];
+  const services = bundle?.services ?? EMPTY_SERVICES;
+  const providers = bundle?.providers ?? EMPTY_PROVIDERS;
   const bookingFormConfig = bundle?.bookingFormConfig || null;
   const announcementBanner = bundle?.announcementBanner || null;
   const tenantId = bundle?.tenantId || storeTenantId || null;

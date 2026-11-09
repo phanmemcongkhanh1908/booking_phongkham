@@ -109,19 +109,27 @@ export default function SimpleBookingForm() {
     setSelectedSlot(null);
   };
 
+  const hasFallbackFetchedRef = useRef(false);
+
   useEffect(() => {
     if (bundleServices && bundleServices.length > 0) {
       setServices(bundleServices as Service[]);
       setLoadingServices(false);
-    } else if (!bundleLoading) {
+    } else if (!bundleLoading && !hasFallbackFetchedRef.current) {
+      hasFallbackFetchedRef.current = true;
       // Fallback
       api.get('/public/services')
         .then(res => {
-          if (res.data.success && Array.isArray(res.data.data)) {
+          if (res.data?.success && Array.isArray(res.data.data)) {
             setServices(res.data.data);
           }
         })
+        .catch(err => {
+          console.warn('Could not fetch services in SimpleBookingForm:', err);
+        })
         .finally(() => setLoadingServices(false));
+    } else if (!bundleLoading && bundleServices && bundleServices.length === 0) {
+      setLoadingServices(false);
     }
   }, [bundleServices, bundleLoading]);
 

@@ -126,6 +126,33 @@ export function extractClinicIdentifier(
 }
 
 /**
+ * Synchronous cache lookup for clinic bundle
+ */
+export function getCachedClinicSettings(slugOrDomain?: string): ClinicBundleData | null {
+  const effectiveIdentifier = (slugOrDomain !== undefined ? slugOrDomain : extractClinicIdentifier()).trim().toLowerCase();
+  const cacheKey = effectiveIdentifier || '__default_root__';
+
+  const cached = memoryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  try {
+    const sessionRaw = sessionStorage.getItem(`clinic_bundle_${cacheKey}`);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
+      if (parsed && Date.now() - (parsed._cachedAt || 0) < CACHE_TTL_MS) {
+        delete parsed._cachedAt;
+        memoryCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
+        return parsed;
+      }
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+/**
  * High-performance service layer function for resolving full clinic bundle
  */
 export async function fetchClinicSettings(slugOrDomain?: string): Promise<ClinicBundleData> {

@@ -40,9 +40,13 @@ class RealtimeNotificationService extends EventEmitter {
   private sendHeartbeat() {
     const data = `data: {"type": "HEARTBEAT"}\n\n`;
     for (const client of this.clients) {
-      if (client.writable) {
-        client.write(data);
-      } else {
+      try {
+        if (client.writable && !client.destroyed) {
+          client.write(data);
+        } else {
+          this.clients.delete(client);
+        }
+      } catch (err) {
         this.clients.delete(client);
       }
     }
@@ -52,9 +56,13 @@ class RealtimeNotificationService extends EventEmitter {
     this.emit('BOOKING_CREATED', payload);
     const data = `event: BOOKING_CREATED\ndata: ${JSON.stringify(payload)}\n\n`;
     for (const client of this.clients) {
-      if (client.writable) {
-        client.write(data);
-      } else {
+      try {
+        if (client.writable && !client.destroyed) {
+          client.write(data);
+        } else {
+          this.clients.delete(client);
+        }
+      } catch (err) {
         this.clients.delete(client);
       }
     }

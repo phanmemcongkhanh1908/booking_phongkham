@@ -171,15 +171,33 @@ export default function Settings() {
     e.preventDefault();
     setBookingFormLoading(true);
     setBookingFormMsg('');
-    try {
-      await api.post('/admin/settings', { bookingFormConfig });
-      setBookingFormMsg('✅ Lưu cấu hình trang Hồ Sơ Tiếp Đón thành công!');
-      setTimeout(() => setBookingFormMsg(''), 4000);
-    } catch (err: any) {
-      setBookingFormMsg('❌ ' + (err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu'));
-    } finally {
-      setBookingFormLoading(false);
-    }
+
+    const trySave = async (retryCount = 0): Promise<void> => {
+      try {
+        const res = await api.post('/admin/settings', { bookingFormConfig });
+        setBookingFormMsg(res.data?.message || '✅ Lưu cấu hình trang Hồ Sơ Tiếp Đón thành công!');
+        setTimeout(() => setBookingFormMsg(''), 4000);
+      } catch (err: any) {
+        const status = err.response?.status;
+        if ((status === 502 || status === 503) && retryCount < 2) {
+          setBookingFormMsg(`⏳ Máy chủ Render đang khởi động từ chế độ ngủ (503). Đang tự động kết nối lại (thử lại sau 4s, lần ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 4000));
+          return trySave(retryCount + 1);
+        }
+        if (status === 502 || status === 503) {
+          setBookingFormMsg('⚠️ Máy chủ Render đang khởi động (Cold Start 503). Vui lòng đợi khoảng 15-20 giây rồi bấm lưu lại.');
+        } else if (status === 429) {
+          setBookingFormMsg('⚠️ Hệ thống đang nhận nhiều yêu cầu (429 Rate Limit). Vui lòng đợi 30 giây rồi bấm lưu lại.');
+        } else if (status === 403) {
+          setBookingFormMsg('⚠️ Tài khoản phòng khám chưa được cấp quyền cập nhật cấu hình này.');
+        } else {
+          setBookingFormMsg('❌ ' + (err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi lưu cấu hình.'));
+        }
+      }
+    };
+
+    await trySave();
+    setBookingFormLoading(false);
   };
 
   const handleAddTag = () => {
@@ -580,26 +598,35 @@ export default function Settings() {
     setClinicMsg('');
     setClinicError(false);
     setClinicSaving(true);
-    try {
-      const res = await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
-      setClinicError(false);
-      setClinicMsg(res.data?.message || 'Lưu thông tin phòng khám thành công!');
-      setTimeout(() => setClinicMsg(''), 4000);
-    } catch (err: any) {
-      setClinicError(true);
-      const status = err.response?.status;
-      if (status === 429) {
-        setClinicMsg('Hệ thống đang nhận nhiều yêu cầu liên tiếp (429 Rate Limit). Vui lòng đợi 30 giây rồi bấm lưu lại.');
-      } else if (status === 502 || status === 503) {
-        setClinicMsg('Máy chủ đang khởi động lại hoặc kết nối gián đoạn (502/503). Vui lòng đợi 15-20 giây rồi bấm lưu lại.');
-      } else if (status === 403) {
-        setClinicMsg(err.response?.data?.error?.message || 'Tài khoản phòng khám chưa được phân quyền cập nhật cài đặt.');
-      } else {
-        setClinicMsg(err.response?.data?.error?.message || 'Có lỗi xảy ra khi lưu thông tin phòng khám.');
+
+    const trySave = async (retryCount = 0): Promise<void> => {
+      try {
+        const res = await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
+        setClinicError(false);
+        setClinicMsg(res.data?.message || 'Lưu thông tin phòng khám thành công!');
+        setTimeout(() => setClinicMsg(''), 4000);
+      } catch (err: any) {
+        setClinicError(true);
+        const status = err.response?.status;
+        if ((status === 502 || status === 503) && retryCount < 2) {
+          setClinicMsg(`⏳ Máy chủ Render đang khởi động (503). Đang tự động thử lại sau 4s (lần ${retryCount + 1}/2)...`);
+          await new Promise(resolve => setTimeout(resolve, 4000));
+          return trySave(retryCount + 1);
+        }
+        if (status === 429) {
+          setClinicMsg('Hệ thống đang nhận nhiều yêu cầu liên tiếp (429 Rate Limit). Vui lòng đợi 30 giây rồi bấm lưu lại.');
+        } else if (status === 502 || status === 503) {
+          setClinicMsg('Máy chủ đang khởi động lại hoặc kết nối gián đoạn (502/503). Vui lòng đợi 15-20 giây rồi bấm lưu lại.');
+        } else if (status === 403) {
+          setClinicMsg(err.response?.data?.error?.message || 'Tài khoản phòng khám chưa được phân quyền cập nhật cài đặt.');
+        } else {
+          setClinicMsg(err.response?.data?.error?.message || err.response?.data?.message || 'Có lỗi xảy ra khi lưu thông tin phòng khám.');
+        }
       }
-    } finally {
-      setClinicSaving(false);
-    }
+    };
+
+    await trySave();
+    setClinicSaving(false);
   };
 
   return (

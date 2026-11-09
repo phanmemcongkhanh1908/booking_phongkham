@@ -100,13 +100,16 @@ export default function DateTimeSelection() {
   const nextDays = Array.from({ length: 28 }).map((_, i) => addDays(startOfToday(), i));
 
   // 1. Fetch Providers (Sync from clinic bundle immediately if available)
+  const hasFallbackProvidersRef = useRef(false);
+
   useEffect(() => {
     if (bundleProviders && bundleProviders.length > 0) {
       setProviders(bundleProviders.filter((p: any) => p.isActive !== false));
-    } else if (!bundleLoading) {
+    } else if (!bundleLoading && !hasFallbackProvidersRef.current) {
+      hasFallbackProvidersRef.current = true;
       api.get('/public/providers')
         .then(res => {
-          if (res.data.success && Array.isArray(res.data.data)) {
+          if (res.data?.success && Array.isArray(res.data.data)) {
             const active = res.data.data.filter((p: any) => p.isActive);
             setProviders(active);
           }

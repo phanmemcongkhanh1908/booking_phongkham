@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useBookingStore } from '../../../store/booking';
 import api from '../../../services/api';
 import { 
@@ -58,14 +58,18 @@ export default function ServiceSelection() {
   const basePath = getClinicBasePath(slug, location.pathname);
 
   // Sync services from Clinic Settings Service Layer immediately
+  const hasFallbackFetchedRef = useRef(false);
+
   useEffect(() => {
     if (bundleServices && bundleServices.length > 0) {
       setServices(bundleServices as Service[]);
       setLoading(false);
       setError(null);
-    } else if (!bundleLoading) {
-      // Fallback to direct fetch if bundle didn't have services
+    } else if (!bundleLoading && !hasFallbackFetchedRef.current) {
+      hasFallbackFetchedRef.current = true;
       fetchServices();
+    } else if (!bundleLoading && bundleServices && bundleServices.length === 0) {
+      setLoading(false);
     }
   }, [bundleServices, bundleLoading]);
 
@@ -74,14 +78,19 @@ export default function ServiceSelection() {
     setError(null);
     try {
       const res = await api.get('/public/services');
-      if (res.data.success && Array.isArray(res.data.data)) {
+      if (res.data?.success && Array.isArray(res.data.data)) {
         setServices(res.data.data);
       } else {
-        setError('Không thể tải danh sách dịch vụ y tế. Vui lòng thử lại.');
+        setError('Không thể tải danh sách dịch vụ y tế. Vui lòng bấm Thử lại.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch services", err);
-      setError('Không thể kết nối đến hệ thống máy chủ để tải danh mục dịch vụ. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      const isRateLimit = err?.response?.status === 429;
+      if (isRateLimit) {
+        setError('Hệ thống đang tiếp nhận nhiều lượt truy cập (429 Rate Limit). Vui lòng đợi khoảng 15-30 giây rồi bấm Thử lại.');
+      } else {
+        setError('Không thể kết nối đến máy chủ để tải danh mục dịch vụ. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      }
     } finally {
       setLoading(false);
     }

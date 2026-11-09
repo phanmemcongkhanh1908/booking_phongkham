@@ -202,35 +202,29 @@
     },
     "tenant_lephuong__clinicProfile": {
       "id": "clinicProfile",
-      "tenantId": "tenant_lephuong",
       "key": "clinicProfile",
       "value": {
         "clinicName": "Nha Khoa Lê Phương",
-        "name": "Nha Khoa Lê Phương",
-        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
         "doctorName": "Bs. Lê Phương",
-        "workingHours": "T2 - CN: 08:00 - 20:00",
-        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
-        "address": "456 Lê Lợi, TP. HCM",
-        "phone": "0987654321",
-        "hotline": "0987654321"
-      }
+        "address": "123 Đường A",
+        "phone": "0901234567",
+        "workingHours": "08:00 - 20:00",
+        "slogan": "Nụ cười đẹp"
+      },
+      "tenantId": "tenant_lephuong"
     },
     "tenant_lephuong__clinic_profile": {
       "id": "clinic_profile",
-      "tenantId": "tenant_lephuong",
       "key": "clinic_profile",
       "value": {
         "clinicName": "Nha Khoa Lê Phương",
-        "name": "Nha Khoa Lê Phương",
-        "slogan": "Nụ cười rạng rỡ, tự tin đón tương lai",
         "doctorName": "Bs. Lê Phương",
-        "workingHours": "T2 - CN: 08:00 - 20:00",
-        "workingHoursStr": "T2 - CN: 08:00 - 20:00",
-        "address": "456 Lê Lợi, TP. HCM",
-        "phone": "0987654321",
-        "hotline": "0987654321"
-      }
+        "address": "123 Đường A",
+        "phone": "0901234567",
+        "workingHours": "08:00 - 20:00",
+        "slogan": "Nụ cười đẹp"
+      },
+      "tenantId": "tenant_lephuong"
     },
     "tenant_nhakhoanucuoi__clinicProfile": {
       "id": "clinicProfile",
@@ -300,6 +294,29 @@
       },
       "tenantId": "tenant_lephuong",
       "updatedAt": "2026-10-08T09:54:35.527Z"
+    },
+    "tenant_lephuong__bookingFormConfig": {
+      "id": "bookingFormConfig",
+      "key": "bookingFormConfig",
+      "value": {
+        "uiVersion": "full",
+        "showNotificationChannels": true,
+        "showHoldCountdown": true,
+        "quickNotesTags": [
+          "Tag1",
+          "Tag2"
+        ],
+        "preVisitNotes": [
+          "Note1"
+        ]
+      },
+      "tenantId": "tenant_lephuong"
+    },
+    "tenant_lephuong__idleTimeoutMinutes": {
+      "id": "idleTimeoutMinutes",
+      "key": "idleTimeoutMinutes",
+      "value": "30",
+      "tenantId": "tenant_lephuong"
     }
   },
   "appointment_holds": {},
