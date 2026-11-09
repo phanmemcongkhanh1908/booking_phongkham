@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../../db/index.js";
+import { db, loadStore, persistStore } from "../../db/index.js";
 import { services, providers, settings, appointments, patients, users } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
@@ -27,6 +27,13 @@ adminRouter.post("/services", requirePermission("service.manage"), async (req, r
     if (isNaN(durationMins) || durationMins <= 0) throw new BadRequestError("Thời lượng khám không hợp lệ");
     if (price !== null && price < 0) throw new BadRequestError("Giá tiền không hợp lệ");
 
+    const tenantId = req.user?.tenantId;
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["settings"]) store["settings"] = {};
+      store["settings"][`${tenantId}__services_customized`] = { id: "services_customized", tenantId, value: true };
+    }
+
     const newService = await db.insert(services).values({
       name: req.body.name,
       description: req.body.description,
@@ -38,7 +45,7 @@ adminRouter.post("/services", requirePermission("service.manage"), async (req, r
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
       isActive: true,
-      tenantId: req.user?.tenantId || undefined,
+      tenantId: tenantId || undefined,
     }).returning();
     res.json({ success: true, data: newService[0] });
   } catch (error) {
@@ -48,13 +55,15 @@ adminRouter.post("/services", requirePermission("service.manage"), async (req, r
 
 adminRouter.put("/services/:id", requirePermission("service.manage"), async (req, res, next) => {
   try {
+    const serviceId = req.params.id;
+    const tenantId = req.user?.tenantId;
     const durationMins = parseInt(req.body.durationMins);
     const price = req.body.price ? parseInt(req.body.price.toString().replace(/\D/g, '')) : null;
     
     if (isNaN(durationMins) || durationMins <= 0) throw new BadRequestError("Thời lượng khám không hợp lệ");
     if (price !== null && price < 0) throw new BadRequestError("Giá tiền không hợp lệ");
 
-    const updated = await db.update(services).set({
+    const updateFields = {
       name: req.body.name,
       description: req.body.description,
       durationMins,
@@ -65,7 +74,51 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
-    }).where(eq(services.id, req.params.id)).returning();
+      updatedAt: new Date().toISOString()
+    };
+
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["services"]) store["services"] = {};
+      const allServices = Object.values(store["services"] || {});
+      const hasCustom = allServices.some((s: any) => s.tenantId === tenantId);
+
+      if (!hasCustom) {
+        // Clone all template services for this tenant, and apply the update to the targeted service
+        const templateServices = allServices.filter((s: any) => !s.tenantId);
+        let updatedItem = null;
+        for (const t of templateServices) {
+          const newId = `${tenantId}_${t.id}`;
+          const isTarget = t.id === serviceId;
+          const serviceObj = {
+            ...t,
+            ...(isTarget ? updateFields : {}),
+            id: newId,
+            originalId: t.id,
+            tenantId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          store["services"][newId] = serviceObj;
+          if (isTarget) updatedItem = serviceObj;
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__services_customized`] = { id: "services_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, data: updatedItem || updateFields });
+      } else {
+        // Tenant already has custom services: find and update
+        for (const [key, s] of Object.entries(store["services"] as Record<string, any>)) {
+          if (s.tenantId === tenantId && (s.id === serviceId || s.originalId === serviceId || key.endsWith(serviceId))) {
+            store["services"][key] = { ...s, ...updateFields };
+            persistStore();
+            return res.json({ success: true, data: store["services"][key] });
+          }
+        }
+      }
+    }
+
+    const updated = await db.update(services).set(updateFields).where(eq(services.id, serviceId)).returning();
     res.json({ success: true, data: updated[0] });
   } catch (error) {
     next(error);
@@ -74,7 +127,49 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
 
 adminRouter.delete("/services/:id", requirePermission("service.manage"), async (req, res, next) => {
   try {
-    await db.delete(services).where(eq(services.id, req.params.id));
+    const serviceId = req.params.id;
+    const tenantId = req.user?.tenantId;
+
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["services"]) store["services"] = {};
+      const allServices = Object.values(store["services"] || {});
+      const hasCustom = allServices.some((s: any) => s.tenantId === tenantId);
+
+      if (!hasCustom) {
+        // Clone all template services for this tenant EXCEPT the one being deleted!
+        const templateServices = allServices.filter((s: any) => !s.tenantId);
+        for (const t of templateServices) {
+          if (t.id !== serviceId) {
+            const newId = `${tenantId}_${t.id}`;
+            store["services"][newId] = {
+              ...t,
+              id: newId,
+              originalId: t.id,
+              tenantId,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+          }
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__services_customized`] = { id: "services_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, message: "Đã xóa dịch vụ thành công" });
+      } else {
+        for (const [key, s] of Object.entries(store["services"] as Record<string, any>)) {
+          if (s.tenantId === tenantId && (s.id === serviceId || s.originalId === serviceId || key.endsWith(serviceId))) {
+            delete store["services"][key];
+          }
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__services_customized`] = { id: "services_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, message: "Đã xóa dịch vụ thành công" });
+      }
+    }
+
+    await db.delete(services).where(eq(services.id, serviceId));
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -93,7 +188,13 @@ adminRouter.get("/providers", async (req, res, next) => {
 
 adminRouter.post("/providers", requirePermission("provider.manage"), async (req, res, next) => {
   try {
-    // If this provider is marked as default, unset others first (simulated in memory via update loop if needed, but here we just update all)
+    const tenantId = req.user?.tenantId;
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["settings"]) store["settings"] = {};
+      store["settings"][`${tenantId}__providers_customized`] = { id: "providers_customized", tenantId, value: true };
+    }
+
     if (req.body.isDefault) {
        const allProviders = await db.select().from(providers);
        for (const p of allProviders) {
@@ -113,7 +214,7 @@ adminRouter.post("/providers", requirePermission("provider.manage"), async (req,
       bookingEnabled: req.body.bookingEnabled !== false,
       isActive: req.body.isActive !== false,
       isDefault: Boolean(req.body.isDefault),
-      tenantId: req.user?.tenantId || undefined,
+      tenantId: tenantId || undefined,
     }).returning();
     res.json({ success: true, data: newProvider[0] });
   } catch (error) {
@@ -122,18 +223,11 @@ adminRouter.post("/providers", requirePermission("provider.manage"), async (req,
 });
 
 adminRouter.put("/providers/:id", requirePermission("provider.manage"), async (req, res, next) => {
-console.log("PUT /providers/:id called. req.user=", req.user);
   try {
-    if (req.body.isDefault) {
-       const allProviders = await db.select().from(providers);
-       for (const p of allProviders) {
-         if (p.isDefault && p.id !== req.params.id) {
-           await db.update(providers).set({ isDefault: false }).where(eq(providers.id, p.id));
-         }
-       }
-    }
+    const providerId = req.params.id;
+    const tenantId = req.user?.tenantId;
 
-    const updated = await db.update(providers).set({
+    const updateFields = {
       name: req.body.name,
       specialty: req.body.specialty,
       experience: req.body.experience,
@@ -143,7 +237,67 @@ console.log("PUT /providers/:id called. req.user=", req.user);
       bookingEnabled: req.body.bookingEnabled !== false,
       isActive: req.body.isActive !== false,
       isDefault: Boolean(req.body.isDefault),
-    }).where(eq(providers.id, req.params.id)).returning();
+      updatedAt: new Date().toISOString()
+    };
+
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["providers"]) store["providers"] = {};
+      const allProviders = Object.values(store["providers"] || {});
+      const hasCustom = allProviders.some((p: any) => p.tenantId === tenantId);
+
+      if (req.body.isDefault) {
+        for (const [key, p] of Object.entries(store["providers"] as Record<string, any>)) {
+          if (p.tenantId === tenantId && p.isDefault) {
+            p.isDefault = false;
+          }
+        }
+      }
+
+      if (!hasCustom) {
+        // Clone all template providers for this tenant, applying updates to the targeted one
+        const templateProviders = allProviders.filter((p: any) => !p.tenantId);
+        let updatedItem = null;
+        for (const t of templateProviders) {
+          const newId = `${tenantId}_${t.id}`;
+          const isTarget = t.id === providerId;
+          const providerObj = {
+            ...t,
+            ...(isTarget ? updateFields : {}),
+            id: newId,
+            originalId: t.id,
+            tenantId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          store["providers"][newId] = providerObj;
+          if (isTarget) updatedItem = providerObj;
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__providers_customized`] = { id: "providers_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, data: updatedItem || updateFields });
+      } else {
+        for (const [key, p] of Object.entries(store["providers"] as Record<string, any>)) {
+          if (p.tenantId === tenantId && (p.id === providerId || p.originalId === providerId || key.endsWith(providerId))) {
+            store["providers"][key] = { ...p, ...updateFields };
+            persistStore();
+            return res.json({ success: true, data: store["providers"][key] });
+          }
+        }
+      }
+    }
+
+    if (req.body.isDefault) {
+       const allProviders = await db.select().from(providers);
+       for (const p of allProviders) {
+         if (p.isDefault && p.id !== providerId) {
+           await db.update(providers).set({ isDefault: false }).where(eq(providers.id, p.id));
+         }
+       }
+    }
+
+    const updated = await db.update(providers).set(updateFields).where(eq(providers.id, providerId)).returning();
     res.json({ success: true, data: updated[0] });
   } catch (error) {
     next(error);
@@ -152,7 +306,49 @@ console.log("PUT /providers/:id called. req.user=", req.user);
 
 adminRouter.delete("/providers/:id", requirePermission("provider.manage"), async (req, res, next) => {
   try {
-    await db.delete(providers).where(eq(providers.id, req.params.id));
+    const providerId = req.params.id;
+    const tenantId = req.user?.tenantId;
+
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["providers"]) store["providers"] = {};
+      const allProviders = Object.values(store["providers"] || {});
+      const hasCustom = allProviders.some((p: any) => p.tenantId === tenantId);
+
+      if (!hasCustom) {
+        // Clone all template providers for this tenant EXCEPT the one being deleted
+        const templateProviders = allProviders.filter((p: any) => !p.tenantId);
+        for (const t of templateProviders) {
+          if (t.id !== providerId) {
+            const newId = `${tenantId}_${t.id}`;
+            store["providers"][newId] = {
+              ...t,
+              id: newId,
+              originalId: t.id,
+              tenantId,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+          }
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__providers_customized`] = { id: "providers_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, message: "Đã xóa bác sĩ thành công" });
+      } else {
+        for (const [key, p] of Object.entries(store["providers"] as Record<string, any>)) {
+          if (p.tenantId === tenantId && (p.id === providerId || p.originalId === providerId || key.endsWith(providerId))) {
+            delete store["providers"][key];
+          }
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__providers_customized`] = { id: "providers_customized", tenantId, value: true };
+        persistStore();
+        return res.json({ success: true, message: "Đã xóa bác sĩ thành công" });
+      }
+    }
+
+    await db.delete(providers).where(eq(providers.id, providerId));
     res.json({ success: true });
   } catch (error) {
     next(error);

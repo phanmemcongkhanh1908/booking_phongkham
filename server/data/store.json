@@ -138,6 +138,58 @@
       "id": "5b8bed3e-981c-4e0d-bfe6-c0013b078a48",
       "createdAt": "2026-10-05T12:15:09.424Z",
       "updatedAt": "2026-10-05T12:15:09.424Z"
+    },
+    "tenant_lephuong_d8c911c3-2ea8-451a-81de-10bd1031625f": {
+      "name": "Khám răng tổng quát & Tư vấn",
+      "description": "Khám kiểm tra sức khỏe răng miệng toàn diện, chụp phim X-quang kiểm tra tổng quát.",
+      "durationMins": 30,
+      "price": 0,
+      "bufferBefore": 0,
+      "bufferAfter": 10,
+      "id": "tenant_lephuong_d8c911c3-2ea8-451a-81de-10bd1031625f",
+      "createdAt": "2026-11-09T08:13:52.625Z",
+      "updatedAt": "2026-11-09T08:13:52.625Z",
+      "originalId": "d8c911c3-2ea8-451a-81de-10bd1031625f",
+      "tenantId": "tenant_lephuong"
+    },
+    "tenant_lephuong_38e7ad47-7950-479b-8020-ce8ff95330eb": {
+      "name": "Trám răng thẩm mỹ Composite",
+      "description": "Phục hồi hình thể răng sâu, mẻ với vật liệu Composite trùng màu răng tự nhiên.",
+      "durationMins": 45,
+      "price": 350000,
+      "bufferBefore": 5,
+      "bufferAfter": 10,
+      "id": "tenant_lephuong_38e7ad47-7950-479b-8020-ce8ff95330eb",
+      "createdAt": "2026-11-09T08:13:52.625Z",
+      "updatedAt": "2026-11-09T08:13:52.625Z",
+      "originalId": "38e7ad47-7950-479b-8020-ce8ff95330eb",
+      "tenantId": "tenant_lephuong"
+    },
+    "tenant_lephuong_ba0d52a8-64cc-4db5-afa6-a7d2bffd3565": {
+      "name": "Nhổ răng khôn / Tiểu phẫu",
+      "description": "Tiểu phẫu nhổ răng khôn mọc lệch, ngầm an toàn bằng công nghệ Piezotome.",
+      "durationMins": 60,
+      "price": 1200000,
+      "bufferBefore": 10,
+      "bufferAfter": 15,
+      "id": "tenant_lephuong_ba0d52a8-64cc-4db5-afa6-a7d2bffd3565",
+      "createdAt": "2026-11-09T08:13:52.625Z",
+      "updatedAt": "2026-11-09T08:13:52.625Z",
+      "originalId": "ba0d52a8-64cc-4db5-afa6-a7d2bffd3565",
+      "tenantId": "tenant_lephuong"
+    },
+    "tenant_lephuong_5b8bed3e-981c-4e0d-bfe6-c0013b078a48": {
+      "name": "Tẩy trắng răng công nghệ cao",
+      "description": "Tẩy trắng răng bằng ánh sáng Laser/LED hiện đại, bật từ 2-4 tông màu an toàn.",
+      "durationMins": 60,
+      "price": 1500000,
+      "bufferBefore": 10,
+      "bufferAfter": 15,
+      "id": "tenant_lephuong_5b8bed3e-981c-4e0d-bfe6-c0013b078a48",
+      "createdAt": "2026-11-09T08:13:52.625Z",
+      "updatedAt": "2026-11-09T08:13:52.625Z",
+      "originalId": "5b8bed3e-981c-4e0d-bfe6-c0013b078a48",
+      "tenantId": "tenant_lephuong"
     }
   },
   "settings": {
@@ -317,6 +369,11 @@
       "key": "idleTimeoutMinutes",
       "value": "30",
       "tenantId": "tenant_lephuong"
+    },
+    "tenant_lephuong__services_customized": {
+      "id": "services_customized",
+      "tenantId": "tenant_lephuong",
+      "value": true
     }
   },
   "appointment_holds": {},

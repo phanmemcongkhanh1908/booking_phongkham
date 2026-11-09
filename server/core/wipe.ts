@@ -40,7 +40,8 @@ export async function wipeClinicData(options: WipeOptions = {}) {
   // Helper kiểm tra xem bản ghi có thuộc tenant đang dọn dẹp hay không
   const belongsToTenant = (item: any): boolean => {
     if (!tenantId) return true; // Toàn hệ thống
-    return item.tenantId === tenantId;
+    // Xóa các bản ghi của chính tenant này, hoặc bản ghi demo mẫu ban đầu chưa gán tenantId
+    return item.tenantId === tenantId || !item.tenantId;
   };
 
   // 1. Xác định danh sách ID lịch hẹn và bệnh nhân mục tiêu cần xóa

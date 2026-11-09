@@ -156,8 +156,8 @@ export const GoogleBackupWarningBanner: React.FC<GoogleBackupWarningBannerProps>
     }
   };
 
-  // 1. If Connected: Show clean reassurance status bar
-  if (isConnected) {
+  // 1. If Connected or Google account is already linked: Show clean reassurance status bar
+  if (isConnected || !!user?.email) {
     return (
       <div className="mb-6 rounded-2xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-emerald-50/90 p-4 shadow-xs text-slate-800 transition-all print:hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

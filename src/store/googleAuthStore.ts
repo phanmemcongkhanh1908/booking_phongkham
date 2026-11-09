@@ -83,8 +83,17 @@ const getInitialClientId = (): string => {
   return firebaseConfig.oAuthClientId || '';
 };
 
-// In-memory token cache per security instructions
-let inMemoryAccessToken: string | null = null;
+// In-memory token cache backed by sessionStorage to survive page reloads (F5) within browser tab
+const getStoredSessionToken = (): string | null => {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      return sessionStorage.getItem('dental_google_access_token') || null;
+    }
+  } catch (e) {}
+  return null;
+};
+
+let inMemoryAccessToken: string | null = getStoredSessionToken();
 
 export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
   // Read saved non-sensitive metadata from localStorage (never secrets/tokens)
@@ -104,10 +113,13 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     || firebaseConfig.oAuthClientId 
     || '';
 
+  const initialToken = inMemoryAccessToken || getStoredSessionToken();
+  const isInitiallyLinked = !!(initialToken || savedMeta.user?.email);
+
   return {
-    accessToken: inMemoryAccessToken,
+    accessToken: initialToken,
     user: savedMeta.user || null,
-    isConnected: !!inMemoryAccessToken,
+    isConnected: isInitiallyLinked,
     isConnecting: false,
     error: null,
     spreadsheetId: savedMeta.spreadsheetId || localStorage.getItem('emr_spreadsheet_id') || null,
@@ -167,6 +179,9 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
       const handleSuccess = (token: string, userProfile: GoogleUserProfile) => {
         inMemoryAccessToken = token;
         try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem('dental_google_access_token', token);
+          }
           const prev = JSON.parse(localStorage.getItem(STORAGE_KEY_CONFIG) || '{}');
           localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
             ...prev,
@@ -435,6 +450,9 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
       }
       inMemoryAccessToken = null;
       try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.removeItem('dental_google_access_token');
+        }
         localStorage.removeItem(STORAGE_KEY_CONFIG);
       } catch(e) {}
 
@@ -448,7 +466,16 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
 
     setAccessToken: (token: string | null) => {
       inMemoryAccessToken = token;
-      set({ accessToken: token, isConnected: !!token });
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          if (token) {
+            sessionStorage.setItem('dental_google_access_token', token);
+          } else {
+            sessionStorage.removeItem('dental_google_access_token');
+          }
+        }
+      } catch (e) {}
+      set({ accessToken: token, isConnected: !!(token || get().user?.email) });
     },
 
     setSpreadsheetInfo: (id: string, url: string) => {

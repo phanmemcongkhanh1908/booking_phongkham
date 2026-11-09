@@ -378,10 +378,12 @@ class QueryBuilder {
       let tenantHasCustomProviders = false;
       if (!isFullAdmin && tenantId) {
         if (tableName === "services" && memoryStore["services"]) {
-          tenantHasCustomServices = Object.values(memoryStore["services"]).some((s: any) => s.tenantId === tenantId);
+          const isFlagged = memoryStore["settings"]?.[`${tenantId}__services_customized`]?.value === true;
+          tenantHasCustomServices = isFlagged || Object.values(memoryStore["services"]).some((s: any) => s.tenantId === tenantId);
         }
         if (tableName === "providers" && memoryStore["providers"]) {
-          tenantHasCustomProviders = Object.values(memoryStore["providers"]).some((p: any) => p.tenantId === tenantId);
+          const isFlagged = memoryStore["settings"]?.[`${tenantId}__providers_customized`]?.value === true;
+          tenantHasCustomProviders = isFlagged || Object.values(memoryStore["providers"]).some((p: any) => p.tenantId === tenantId);
         }
       }
 

@@ -36,7 +36,8 @@ export default function Dashboard() {
   const isSimpleMode = user?.uiMode === 'simple';
   
   const { hasPermission } = usePermissions();
-  const { isConnected, accessToken, init: initGoogleAuth, connect: connectGoogleStore } = useGoogleAuthStore();
+  const { isConnected, accessToken, user: googleUser, init: initGoogleAuth, connect: connectGoogleStore } = useGoogleAuthStore();
+  const isGoogleLinked = isConnected || !!googleUser?.email;
   const [quotaResult, setQuotaResult] = useState<any>(null);
   const [checkingQuota, setCheckingQuota] = useState(false);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -628,7 +629,7 @@ export default function Dashboard() {
                       {user?.tenantId && (
                         <button 
                           onClick={async () => {
-                            if (!isConnected) {
+                            if (!isGoogleLinked) {
                               try {
                                 await connectGoogleStore();
                               } catch (err: any) {
@@ -637,13 +638,13 @@ export default function Dashboard() {
                             }
                           }}
                           className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${
-                            isConnected 
+                            isGoogleLinked 
                               ? 'text-emerald-700 bg-emerald-50 pointer-events-none' 
                               : 'text-amber-700 bg-amber-50 hover:bg-amber-100'
                           }`}
                         >
-                          {isConnected ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 mr-3 text-amber-500" />}
-                          {isConnected ? 'Đã kết nối Google' : 'Kết nối Google Drive'}
+                          {isGoogleLinked ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 mr-3 text-amber-500" />}
+                          {isGoogleLinked ? (googleUser?.email ? `Google: ${googleUser.email}` : 'Đã kết nối Google') : 'Kết nối Google Drive'}
                         </button>
                       )}
 
@@ -692,7 +693,7 @@ export default function Dashboard() {
 
       
       <main className="flex-1 p-3.5 sm:p-6 pb-24 md:pb-6 max-w-7xl mx-auto w-full relative print:p-0 print:m-0 print:max-w-none">
-        {user?.tenantId && !isConnected && (
+        {user?.tenantId && !isGoogleLinked && (
           <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center pt-20 px-4 print:hidden">
              <div className="w-full max-w-3xl shadow-2xl rounded-2xl overflow-hidden ring-4 ring-white relative bg-white">
                 <GoogleBackupWarningBanner 
@@ -703,7 +704,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {!(user?.tenantId && !isConnected) && (
+        {!(user?.tenantId && !isGoogleLinked) && (
           <GoogleBackupWarningBanner 
             onNavigateToSettings={() => setActiveTab('settings')} 
             appointments={appointments}
@@ -770,7 +771,7 @@ export default function Dashboard() {
           </div>
         )}
         
-        <div className={user?.tenantId && !isConnected ? 'opacity-30 pointer-events-none blur-sm select-none' : ''}>
+        <div className={user?.tenantId && !isGoogleLinked ? 'opacity-30 pointer-events-none blur-sm select-none' : ''}>
           <React.Suspense fallback={
             <div className="min-h-[400px] flex flex-col items-center justify-center p-8 text-slate-500 gap-3">
               <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
