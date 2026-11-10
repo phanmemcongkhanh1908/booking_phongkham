@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
 import { toast } from 'react-hot-toast';
@@ -11,6 +11,8 @@ import { PushNotificationPrompt } from './components/PushNotificationPrompt';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import ClinicReputationWidget from '../../components/ClinicReputationWidget';
 import GoogleCalendarSyncCard from './components/GoogleCalendarSyncCard';
+import { useBookingStore } from '../../store/booking';
+import { fetchClinicSettings } from '../../services/clinicResolver';
 
 interface AppointmentData {
   id: string;
@@ -29,6 +31,64 @@ interface AppointmentData {
 }
 
 export default function MyBooking() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+
+  const querySlug = searchParams.get('slug') || searchParams.get('clinic') || searchParams.get('s');
+  const stateSlug = (location.state as any)?.slug;
+  const storeSlug = useBookingStore(s => s.clinicProfile?.slug);
+  const localSlug = typeof window !== 'undefined' 
+    ? (sessionStorage.getItem('last_clinic_slug') || localStorage.getItem('last_clinic_slug')) 
+    : null;
+
+  const effectiveSlug = (params.slug || querySlug || stateSlug || storeSlug || localSlug || '').trim().toLowerCase();
+
+  // Clinic branding
+  const stateClinicName = (location.state as any)?.clinicName;
+  const storeClinicName = useBookingStore(s => s.clinicProfile?.clinicName || s.clinicProfile?.name);
+  const [clinicDisplayName, setClinicDisplayName] = useState<string>(stateClinicName || storeClinicName || '');
+
+  useEffect(() => {
+    if (effectiveSlug) {
+      try {
+        localStorage.setItem('last_clinic_slug', effectiveSlug);
+        sessionStorage.setItem('last_clinic_slug', effectiveSlug);
+      } catch (e) {}
+
+      if (!clinicDisplayName) {
+        fetchClinicSettings(effectiveSlug).then(bundle => {
+          if (bundle?.clinicProfile) {
+            const name = bundle.clinicProfile.clinicName || bundle.clinicProfile.name || '';
+            if (name) setClinicDisplayName(name);
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [effectiveSlug, clinicDisplayName]);
+
+  // Determine Safe Public Return URL (STRICTLY FORBID ANY ADMIN ROUTE)
+  const stateReturnUrl = (location.state as any)?.returnUrl;
+  const sessionReturnUrl = typeof window !== 'undefined' ? sessionStorage.getItem('booking_return_url') : null;
+
+  let safeReturnUrl = '';
+  if (stateReturnUrl && typeof stateReturnUrl === 'string' && !stateReturnUrl.includes('/admin')) {
+    safeReturnUrl = stateReturnUrl;
+  } else if (sessionReturnUrl && typeof sessionReturnUrl === 'string' && !sessionReturnUrl.includes('/admin')) {
+    safeReturnUrl = sessionReturnUrl;
+  } else if (effectiveSlug) {
+    const pathPrefix = location.pathname.startsWith('/booking/') ? 'booking' : location.pathname.startsWith('/s/') ? 's' : 'b';
+    safeReturnUrl = `/${pathPrefix}/${effectiveSlug}/dich-vu`;
+  } else {
+    safeReturnUrl = '/book/dich-vu';
+  }
+
+  const handleGoBack = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    navigate(safeReturnUrl);
+  };
+
   const [appointments, setAppointments] = useState<AppointmentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -189,13 +249,32 @@ export default function MyBooking() {
   return (
     <div className="min-h-screen bg-bg-base p-4 md:p-8">
       <div className="mx-auto max-w-2xl">
-        <header className="mb-8 flex items-center gap-4">
-          <Link to="/book/dich-vu" className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition-colors text-text-muted">
+        <header className="mb-8 flex items-center gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="p-2 sm:p-2.5 bg-white border border-slate-200/90 rounded-2xl shadow-sm hover:bg-slate-50 transition-all text-slate-700 hover:text-slate-900 active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+            title="Quay lại trang đặt lịch khám của phòng khám"
+          >
             <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <h1 className="text-2xl font-extrabold tracking-tight text-text-main">
-            Lịch hẹn của tôi
-          </h1>
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-text-main">
+                Lịch hẹn của tôi
+              </h1>
+              {clinicDisplayName && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-800 border border-teal-200/80 shadow-2xs truncate max-w-[240px]">
+                  {clinicDisplayName}
+                </span>
+              )}
+            </div>
+            {clinicDisplayName && (
+              <p className="text-[11px] text-teal-700 font-semibold sm:hidden truncate mt-0.5">
+                {clinicDisplayName}
+              </p>
+            )}
+          </div>
         </header>
 
         {/* Lookup Form for Self-Reschedule */}
@@ -233,9 +312,13 @@ export default function MyBooking() {
         ) : appointments.length === 0 ? (
           <div className="text-center py-12 bg-surface rounded-card border border-border-subtle">
             <p className="text-text-muted mb-4">Bạn chưa có lịch hẹn nào hoặc bạn dùng trình duyệt khác.</p>
-            <Link to="/book/dich-vu" className="text-primary font-medium hover:underline">
-              Đặt lịch mới ngay
-            </Link>
+            <button
+              type="button"
+              onClick={handleGoBack}
+              className="text-primary font-bold hover:underline cursor-pointer inline-flex items-center gap-1"
+            >
+              Đặt lịch mới ngay →
+            </button>
           </div>
         ) : (
           <div className="space-y-4">

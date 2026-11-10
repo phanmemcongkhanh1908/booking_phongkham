@@ -134,6 +134,14 @@ export default function App() {
             <Route path="/booking/:slug/admin" element={<Login />} />
             <Route path="/admin/login" element={<Login />} />
 
+            {/* Dedicated Clinic Patient Appointment Lookup Routes */}
+            <Route path="/b/:slug/lich-hen" element={<MyBooking />} />
+            <Route path="/b/:slug/lich-hen-cua-toi" element={<MyBooking />} />
+            <Route path="/booking/:slug/lich-hen" element={<MyBooking />} />
+            <Route path="/booking/:slug/lich-hen-cua-toi" element={<MyBooking />} />
+            <Route path="/s/:slug/lich-hen" element={<MyBooking />} />
+            <Route path="/s/:slug/lich-hen-cua-toi" element={<MyBooking />} />
+
             <Route path="/book/*" element={<PublicBooking />} />
             <Route path="/booking/:slug/*" element={<PublicBooking />} />
             <Route path="/b/:slug/*" element={<PublicBooking />} />

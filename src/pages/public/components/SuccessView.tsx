@@ -169,6 +169,39 @@ export default function SuccessView() {
     navigate(`${basePath}/dich-vu`);
   };
 
+  const handleViewMyBookings = () => {
+    // 1. Lưu thông tin verifiedPatient để trang tra cứu tự động nạp lịch hẹn của bệnh nhân
+    if (patientPhone && patientName) {
+      try {
+        localStorage.setItem('verifiedPatient', JSON.stringify({
+          phone: patientPhone,
+          fullName: patientName
+        }));
+      } catch (e) {}
+    }
+
+    // 2. Ghi nhớ slug phòng khám và returnUrl an toàn (tuyệt đối không link sang admin)
+    const effectiveSlug = (slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || '').trim();
+    const returnUrl = effectiveSlug ? `${basePath}/dich-vu` : '/book/dich-vu';
+    if (effectiveSlug) {
+      localStorage.setItem('last_clinic_slug', effectiveSlug);
+      sessionStorage.setItem('last_clinic_slug', effectiveSlug);
+    }
+    sessionStorage.setItem('booking_return_url', returnUrl);
+
+    // 3. Điều hướng bằng React Router tới đúng route phòng khám
+    const targetUrl = effectiveSlug ? `${basePath}/lich-hen` : '/lich-hen-cua-toi';
+    navigate(targetUrl, {
+      state: {
+        slug: effectiveSlug,
+        returnUrl,
+        clinicName: clinicProfile?.clinicName || clinicName,
+        phone: patientPhone,
+        fullName: patientName
+      }
+    });
+  };
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
       {/* Top Reassurance Card */}
@@ -452,7 +485,7 @@ export default function SuccessView() {
         </button>
         <button
           type="button"
-          onClick={() => window.location.href = '/lich-hen-cua-toi'}
+          onClick={handleViewMyBookings}
           className="flex-1 py-3.5 px-6 rounded-2xl bg-white border-2 border-teal-600 text-teal-700 hover:bg-teal-50 font-extrabold text-sm shadow-sm transition-colors text-center cursor-pointer"
         >
           Tra cứu & Quản lý lịch
