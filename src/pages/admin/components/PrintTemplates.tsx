@@ -17,11 +17,42 @@ const getNoteText = (notes: any) => {
   }
 };
 
-export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false }, ref) => {
+const getClinicInfo = (clinicProfile?: any) => {
+  let profile = clinicProfile;
+  if (!profile) {
+    try {
+      const stored = localStorage.getItem('clinic_profile');
+      if (stored) profile = JSON.parse(stored);
+      else {
+        const user = JSON.parse(localStorage.getItem('admin_user') || 'null');
+        if (user) {
+          profile = {
+            clinicName: user.clinicName,
+            doctorName: user.doctorName,
+            phone: user.phone,
+            address: user.address,
+            slug: user.slug,
+          };
+        }
+      }
+    } catch (e) {}
+  }
+  return {
+    clinicName: profile?.clinicName || 'PHÒNG KHÁM NHA KHOA',
+    slogan: profile?.slogan || 'Nha Khoa Thẩm Mỹ & Điều Trị',
+    phone: profile?.phone ? (profile.phone.startsWith('Hotline') ? profile.phone : `Hotline: ${profile.phone}`) : 'Hotline: Đang cập nhật',
+    address: profile?.address || 'Hệ thống Nha khoa Hiện đại',
+    website: profile?.website || (profile?.slug ? `${window.location.origin}/b/${profile.slug}` : window.location.host),
+    doctorName: profile?.doctorName ? (profile.doctorName.startsWith('BS') || profile.doctorName.startsWith('Bs') ? profile.doctorName : `BS. ${profile.doctorName}`) : 'BS. Trưởng Phòng Khám'
+  };
+};
+
+export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean, clinicProfile?: any }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false, clinicProfile }, ref) => {
   const safeOldDebt = Number(oldDebt) || 0;
   const safeTotal = Number(total) || 0;
   const safePaid = Number(paid) || 0;
   const safeNewDebt = Number(newDebt) || 0;
+  const clinic = getClinicInfo(clinicProfile);
 
   return (
     <div 
@@ -43,14 +74,14 @@ export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?
             <Stethoscope size={28} />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-teal-700 tracking-tight leading-tight">DENTAL SMART</h1>
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Nha Khoa Thẩm Mỹ</p>
+            <h1 className="text-xl font-extrabold text-teal-700 tracking-tight leading-tight uppercase">{clinic.clinicName}</h1>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{clinic.slogan}</p>
           </div>
         </div>
         <div className="text-right text-[10px] text-slate-500 space-y-1">
-          <p className="flex items-center justify-end gap-1"><Phone size={10}/> 1900 xxxx</p>
-          <p className="flex items-center justify-end gap-1"><MapPin size={10}/> 123 Đường ABC, TP.HCM</p>
-          <p className="flex items-center justify-end gap-1"><Globe size={10}/> dentalsmart.vn</p>
+          <p className="flex items-center justify-end gap-1"><Phone size={10}/> {clinic.phone}</p>
+          <p className="flex items-center justify-end gap-1"><MapPin size={10}/> {clinic.address}</p>
+          <p className="flex items-center justify-end gap-1"><Globe size={10}/> {clinic.website}</p>
         </div>
       </div>
 
@@ -129,7 +160,8 @@ export const ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?
   );
 });
 
-export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, records: any[], forPrint?: boolean }>(({ patient, records, forPrint = false }, ref) => {
+export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, records: any[], forPrint?: boolean, clinicProfile?: any }>(({ patient, records, forPrint = false, clinicProfile }, ref) => {
+  const clinic = getClinicInfo(clinicProfile);
   return (
     <div 
       ref={ref} 
@@ -150,14 +182,17 @@ export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, 
             <Stethoscope size={32} />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-teal-700 tracking-tight leading-tight">DENTAL SMART</h1>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5">Nha Khoa Thẩm Mỹ & Điều Trị</p>
+            <h1 className="text-2xl font-extrabold text-teal-700 tracking-tight leading-tight uppercase">{clinic.clinicName}</h1>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5">{clinic.slogan}</p>
+            {clinic.doctorName && (
+              <p className="text-[11px] font-semibold text-teal-600 mt-1">Phụ trách chuyên môn: {clinic.doctorName}</p>
+            )}
           </div>
         </div>
         <div className="text-right text-xs text-slate-500 space-y-1.5">
-          <p className="flex items-center justify-end gap-1.5"><Phone size={12}/> Hotline: 1900 xxxx</p>
-          <p className="flex items-center justify-end gap-1.5"><MapPin size={12}/> 123 Đường ABC, Quận X, TP.HCM</p>
-          <p className="flex items-center justify-end gap-1.5"><Globe size={12}/> dentalsmart.vn</p>
+          <p className="flex items-center justify-end gap-1.5"><Phone size={12}/> {clinic.phone}</p>
+          <p className="flex items-center justify-end gap-1.5"><MapPin size={12}/> {clinic.address}</p>
+          <p className="flex items-center justify-end gap-1.5"><Globe size={12}/> {clinic.website}</p>
         </div>
       </div>
 
@@ -227,14 +262,15 @@ export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, 
         <div className="w-1/2"></div>
         <div className="w-1/2">
           <p className="text-xs text-slate-500 italic mb-2">Ngày {format(new Date(), 'dd')} tháng {format(new Date(), 'MM')} năm {format(new Date(), 'yyyy')}</p>
-          <p className="font-bold text-slate-700 text-sm mb-20">Bác sĩ điều trị</p>
+          <p className="font-bold text-slate-700 text-sm mb-16">Bác sĩ điều trị</p>
+          <p className="font-bold text-teal-800 text-sm mb-1">{clinic.doctorName}</p>
           <p className="text-xs text-slate-500 italic">(Ký & ghi rõ họ tên)</p>
         </div>
       </div>
 
       {/* Footer */}
       <div className="absolute bottom-[15mm] left-[20mm] right-[20mm] text-center text-[10px] text-slate-400 border-t border-slate-200 pt-4 flex justify-between items-center">
-        <span>Bản in nội bộ từ hệ thống Dental Smart</span>
+        <span>Bản in nội bộ từ hệ thống {clinic.clinicName}</span>
         <span>Trang 1/1</span>
       </div>
     </div>
@@ -242,11 +278,12 @@ export const MedicalRecordTemplate = forwardRef<HTMLDivElement, { patient: any, 
 });
 
 
-export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false }, ref) => {
+export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, total?: number, paid?: number, newDebt?: number, oldDebt?: number, forPrint?: boolean, clinicProfile?: any }>(({ patient, total = 0, paid = 0, newDebt = 0, oldDebt = 0, forPrint = false, clinicProfile }, ref) => {
   const safeOldDebt = Number(oldDebt) || 0;
   const safeTotal = Number(total) || 0;
   const safePaid = Number(paid) || 0;
   const safeNewDebt = Number(newDebt) || 0;
+  const clinic = getClinicInfo(clinicProfile);
 
   return (
     <div 
@@ -261,10 +298,10 @@ export const K80ReceiptTemplate = forwardRef<HTMLDivElement, { patient: any, tot
     >
       {/* Header */}
       <div className="text-center mb-4 border-b border-black pb-2 border-dashed">
-        <h1 className="text-lg font-extrabold uppercase">DENTAL SMART</h1>
-        <p className="text-[10px] font-bold uppercase mt-0.5">Nha Khoa Thẩm Mỹ</p>
-        <p className="text-[10px] mt-1">123 Đường ABC, TP.HCM</p>
-        <p className="text-[10px]">Hotline: 1900 xxxx</p>
+        <h1 className="text-base font-extrabold uppercase">{clinic.clinicName}</h1>
+        <p className="text-[10px] font-bold uppercase mt-0.5">{clinic.slogan}</p>
+        <p className="text-[10px] mt-1">{clinic.address}</p>
+        <p className="text-[10px]">{clinic.phone}</p>
       </div>
 
       {/* Title */}

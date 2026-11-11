@@ -49,6 +49,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         endAt: appointments.endAt,
         status: appointments.status,
         source: appointments.source,
+        notes: appointments.notes,
         patientId: patients.id,
         patientName: patients.fullName,
         patientPhone: patients.phone,
@@ -66,6 +67,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         reviewComment: appointments.reviewComment,
         reviewTags: appointments.reviewTags,
         reviewedAt: appointments.reviewedAt,
+        isReviewHidden: appointments.isReviewHidden,
       })
       .from(appointments)
       .leftJoin(patients, eq(appointments.patientId, patients.id))
@@ -479,13 +481,13 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
 
     const currentStatus = existing[0].status;
 
-    // Bỏ qua nếu trạng thái không thay đổi
-    if (currentStatus === nextStatus) {
+    // Bỏ qua nếu trạng thái không thay đổi và không có dữ liệu đánh giá / lý do hủy
+    if (currentStatus === nextStatus && req.body.rating === undefined && !cancelReason) {
       return res.json({ success: true, data: existing[0] });
     }
 
-    // Validate State Machine
-    if (!isValidTransition(currentStatus, nextStatus)) {
+    // Validate State Machine nếu có thay đổi trạng thái
+    if (currentStatus !== nextStatus && !isValidTransition(currentStatus, nextStatus)) {
       throw new BadRequestError(`Không thể chuyển trạng thái từ ${currentStatus} sang ${nextStatus}`);
     }
 
@@ -564,6 +566,68 @@ appointmentRouter.post("/:id/review", requirePermission("appointment.update"), a
       success: true,
       data: updated[0],
       message: "Lưu đánh giá thành công"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// [M-Review] Ẩn hoặc Hiện đánh giá của bệnh nhân khỏi trang công khai
+appointmentRouter.patch("/:id/review/toggle-visibility", requirePermission("appointment.update"), async (req, res, next) => {
+  try {
+    const appointmentId = req.params.id;
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
+    const currentHidden = existing[0].isReviewHidden === true;
+    const nextHidden = req.body.isReviewHidden !== undefined ? Boolean(req.body.isReviewHidden) : !currentHidden;
+
+    const updated = await db.update(appointments)
+      .set({
+        isReviewHidden: nextHidden,
+        updatedAt: new Date()
+      })
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+
+    res.json({
+      success: true,
+      data: updated[0],
+      isReviewHidden: nextHidden,
+      message: nextHidden ? "Đã ẩn đánh giá khỏi trang công khai" : "Đã bật hiển thị đánh giá công khai"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// [M-Review] Xóa vĩnh viễn đánh giá của bệnh nhân
+appointmentRouter.delete("/:id/review", requirePermission("appointment.update"), async (req, res, next) => {
+  try {
+    const appointmentId = req.params.id;
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
+    const updated = await db.update(appointments)
+      .set({
+        rating: null,
+        reviewComment: null,
+        reviewTags: [],
+        reviewedAt: null,
+        isReviewHidden: false,
+        updatedAt: new Date()
+      })
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+
+    res.json({
+      success: true,
+      data: updated[0],
+      message: "Đã xóa đánh giá thành công"
     });
   } catch (error) {
     next(error);

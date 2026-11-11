@@ -16,7 +16,8 @@ import {
   ArrowRight,
   Send,
   Users,
-  Sparkles
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -72,6 +73,7 @@ export default function PatientForm() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [showAdvancedNotify, setShowAdvancedNotify] = useState(Boolean(patientDraft?.telegramId));
   const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'new' | 'existing_unverified' | 'verified'>('idle');
+  const [isNewProfile, setIsNewProfile] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -229,7 +231,11 @@ export default function PatientForm() {
 
   const handleBookingForChange = (mode: 'self' | 'relative') => {
     setBookingFor(mode);
-    setPatientDraft({ bookingFor: mode });
+    if (mode === 'relative') {
+      setIsNewProfile(true);
+      setPhoneStatus('new');
+    }
+    setPatientDraft({ bookingFor: mode, isNewProfile: mode === 'relative' || isNewProfile });
   };
 
   useEffect(() => {
@@ -324,6 +330,7 @@ export default function PatientForm() {
 
     setPatientDraft({
       bookingFor,
+      isNewProfile,
       fullName: formData.fullName.trim(),
       phone: cleanPhone,
       email: formData.email.trim(),
@@ -430,6 +437,15 @@ export default function PatientForm() {
             </button>
           </div>
 
+          {(isNewProfile || bookingFor === 'relative') && (
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-teal-50 border border-teal-200/70 text-xs text-teal-800 animate-in fade-in duration-200">
+              <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+              <span>
+                <strong>Chế độ đặt lịch hộ / hồ sơ mới:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+              </span>
+            </div>
+          )}
+
           {/* Contact Details */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold tracking-widest uppercase text-slate-800 border-b border-slate-100 pb-2">
@@ -525,7 +541,10 @@ export default function PatientForm() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setPhoneStatus('new')}
+                    onClick={() => {
+                      setPhoneStatus('new');
+                      setIsNewProfile(true);
+                    }}
                     className="text-xs text-blue-600 hover:underline font-medium inline-block"
                   >
                     Bỏ qua, tôi muốn điền hồ sơ mới

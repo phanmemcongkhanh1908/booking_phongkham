@@ -23,6 +23,7 @@ import BookingConfirmation from './components/BookingConfirmation';
 import BookingSummaryCard from './components/BookingSummaryCard';
 import MobileSummaryDrawer from './components/MobileSummaryDrawer';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import SimpleBookingForm from './components/SimpleBookingForm';
 
 const SuccessView = React.lazy(() => import('./components/SuccessView'));
@@ -414,6 +415,9 @@ export default function Booking() {
           Mọi thông tin cá nhân và bệnh án được mã hóa và bảo mật theo quy chế bảo vệ dữ liệu y tế. Cần hỗ trợ khẩn cấp, vui lòng liên hệ hotline phòng khám.
         </p>
       </footer>
+
+      {/* Floating PWA Install Prompt for Mobile */}
+      <PWAInstallBanner />
     </div>
   );
 }

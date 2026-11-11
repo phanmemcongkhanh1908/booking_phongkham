@@ -134,6 +134,8 @@ export default function BookingConfirmation() {
         customServiceName: customName,
         tenantId: useBookingStore.getState().tenantId || undefined,
         clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+        bookingFor: patientDraft.bookingFor,
+        isNewProfile: (patientDraft as any).isNewProfile,
       });
 
       if (res.data.success) {

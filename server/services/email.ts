@@ -196,8 +196,8 @@ export async function sendPatientAppointmentEmail(
   const transporter = createTransporter(config);
   if (!transporter) return false;
 
-  const clinicName = data.clinicName || "Phòng khám Nha Khoa Smart Dental";
-  const clinicPhone = data.clinicPhone || "1900 xxxx";
+  const clinicName = data.clinicName || "Phòng khám Chuyên Khoa";
+  const clinicPhone = data.clinicPhone || "Hotline phòng khám";
   const clinicAddress = data.clinicAddress || "Tại phòng khám";
   const formattedTime = safeFormatDate(data.startAt, "HH:mm - EEEE, 'ngày' dd/MM/yyyy");
 

@@ -311,50 +311,87 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         ? allPhonePatients.filter((p: any) => p.tenantId === targetTenantId)
         : allPhonePatients;
 
+      const incomingName = (data.fullName || '').trim();
+      const normalizedIncomingName = incomingName.toLowerCase().replace(/\s+/g, ' ');
+      const isBookingForOther = data.bookingFor === 'relative' || data.isNewProfile === true;
+
+      // Look for an existing patient with exact matching name under this phone number
+      let matchingPatient = null;
+      if (!isBookingForOther) {
+        for (const p of patientRecords) {
+          if (p.fullName && p.fullName.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedIncomingName) {
+            matchingPatient = p;
+            break;
+          }
+        }
+      }
+
       let patientId;
-      
+      let isProxyBooking = false;
       let patientNotes = data.notes;
       if (data.email) {
         patientNotes = data.notes ? (data.notes + ' | Email: ' + data.email) : ('Email: ' + data.email);
       }
-      
-      // Merge with existing JSON if it exists
-      if (patientRecords.length > 0 && patientRecords[0].notes) {
-        try {
-          const parsed = JSON.parse(patientRecords[0].notes);
-          if (patientNotes) {
-            parsed.text = (parsed.text ? parsed.text + '\n' : '') + patientNotes;
-          }
-          patientNotes = JSON.stringify(parsed);
-        } catch (e) {
-           // Not JSON, just append
-           patientNotes = patientRecords[0].notes + (patientNotes ? '\n' + patientNotes : '');
-        }
-      } else if (patientNotes) {
-         // Create new JSON format
-         patientNotes = JSON.stringify({ text: patientNotes, diagnosis: '', treatmentPlan: '', documents: [] });
-      }
 
-      if (patientRecords.length > 0) {
-        patientId = patientRecords[0].id;
-        // Update patient info if provided
+      if (matchingPatient) {
+        // EXACT MATCH found: Existing patient booking another appointment.
+        // DO NOT change their fullName! Keep existing patient profile intact.
+        patientId = matchingPatient.id;
+        
+        let mergedNotes = patientNotes;
+        if (matchingPatient.notes) {
+          try {
+            const parsed = JSON.parse(matchingPatient.notes);
+            if (mergedNotes) {
+              parsed.text = (parsed.text ? parsed.text + '\n' : '') + mergedNotes;
+            }
+            mergedNotes = JSON.stringify(parsed);
+          } catch (e) {
+            mergedNotes = matchingPatient.notes + (mergedNotes ? '\n' + mergedNotes : '');
+          }
+        } else if (mergedNotes) {
+          mergedNotes = JSON.stringify({ text: mergedNotes, diagnosis: '', treatmentPlan: '', documents: [] });
+        }
+
         await tx.update(patients).set({
-          fullName: data.fullName,
-          dob: data.dob || patientRecords[0].dob,
-          gender: data.gender || patientRecords[0].gender,
-          telegramId: data.telegramId || patientRecords[0].telegramId,
-          notes: patientNotes || patientRecords[0].notes,
-          tenantId: targetTenantId || patientRecords[0].tenantId,
+          dob: data.dob || matchingPatient.dob,
+          gender: data.gender || matchingPatient.gender,
+          telegramId: data.telegramId || matchingPatient.telegramId,
+          notes: mergedNotes || matchingPatient.notes,
+          tenantId: targetTenantId || matchingPatient.tenantId,
           updatedAt: new Date(),
         }).where(eq(patients.id, patientId));
       } else {
+        // NO MATCH OR USER EXPLICITLY REQUESTED NEW PROFILE / BOOKING FOR RELATIVE:
+        // CRITICAL: NEVER overwrite or rename any existing patient!
+        // We MUST create a new patient row so historical records remain completely untouched!
+        isProxyBooking = patientRecords.length > 0 || isBookingForOther;
+        
+        const proxyAnnotation = isProxyBooking
+          ? `[Đặt lịch hộ qua SĐT ${cleanPhone}${patientRecords.length > 0 ? ` - SĐT chính của: ${patientRecords[0].fullName}` : ''}]`
+          : '';
+
+        let initialNotesText = patientNotes || '';
+        if (proxyAnnotation) {
+          initialNotesText = initialNotesText ? `${proxyAnnotation}\n${initialNotesText}` : proxyAnnotation;
+        }
+
+        const newPatientNotesJson = JSON.stringify({ 
+          text: initialNotesText, 
+          diagnosis: '', 
+          treatmentPlan: '', 
+          documents: [],
+          isProxyBooking,
+          primaryContactPhone: cleanPhone
+        });
+
         const newPatient = await tx.insert(patients).values({
-          fullName: data.fullName,
+          fullName: incomingName,
           phone: cleanPhone,
           dob: data.dob,
           gender: data.gender,
           telegramId: data.telegramId || undefined,
-          notes: patientNotes,
+          notes: newPatientNotesJson,
           tenantId: targetTenantId || undefined,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -401,7 +438,9 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         startAt: aptStartAt,
         endAt: aptEndAt,
         status: finalStatus,
-        notes: data.notes,
+        notes: (isProxyBooking || isBookingForOther)
+          ? (`[Đặt lịch hộ cho: ${incomingName}]` + (data.notes ? ` - ${data.notes}` : ''))
+          : data.notes,
         source: "ONLINE",
         tenantId: targetTenantId || undefined,
       }).returning();
@@ -435,6 +474,7 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       const fullApt = await db
         .select({
           id: appointments.id,
+          tenantId: appointments.tenantId,
           status: appointments.status,
           startAt: appointments.startAt,
           endAt: appointments.endAt,
@@ -452,6 +492,9 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
 
       if (fullApt.length > 0) {
         const payload = fullApt[0] as any;
+        if (!payload.tenantId && (bookingResult.tenantId || (req.body as any).tenantId)) {
+          payload.tenantId = bookingResult.tenantId || (req.body as any).tenantId;
+        }
         if (bookingResult.customServiceName) {
           payload.serviceName = bookingResult.customServiceName;
         }
@@ -1079,6 +1122,7 @@ publicRouter.get("/reviews", async (req, res, next) => {
       reviewComment: appointments.reviewComment,
       reviewTags: appointments.reviewTags,
       reviewedAt: appointments.reviewedAt,
+      isReviewHidden: appointments.isReviewHidden,
       startAt: appointments.startAt,
       serviceName: services.name,
       providerName: providers.name,
@@ -1090,7 +1134,7 @@ publicRouter.get("/reviews", async (req, res, next) => {
     .leftJoin(patients, eq(appointments.patientId, patients.id));
 
     const realReviews = apts
-      .filter((a: any) => a.rating && a.rating > 0)
+      .filter((a: any) => a.rating && a.rating > 0 && a.isReviewHidden !== true)
       .map((a: any) => {
         // Mask patient name for privacy: "Nguyễn Văn An" -> "Nguyễn V. A."
         let maskedName = "Khách hàng thân thiết";

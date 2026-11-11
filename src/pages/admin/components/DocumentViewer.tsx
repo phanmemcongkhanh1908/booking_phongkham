@@ -20,6 +20,7 @@ interface DocumentViewerProps {
     oldDebt: number;
   };
   onSendSuccess?: (telegramId: string) => void;
+  clinicProfile?: any;
 }
 
 export default function DocumentViewer({
@@ -29,7 +30,8 @@ export default function DocumentViewer({
   patient,
   records = [],
   receiptData = { total: 0, paid: 0, newDebt: 0, oldDebt: 0 },
-  onSendSuccess
+  onSendSuccess,
+  clinicProfile,
 }: DocumentViewerProps) {
   const [isPrinting, setIsPrinting] = useState(false);
   const [showTelegramUi, setShowTelegramUi] = useState(false);
@@ -214,6 +216,7 @@ export default function DocumentViewer({
                       paid={safeReceiptData.paid}
                       newDebt={safeReceiptData.newDebt}
                       oldDebt={safeReceiptData.oldDebt}
+                      clinicProfile={clinicProfile}
                     />
                   ) : (
                     <div className="bg-white max-w-sm mx-auto">
@@ -224,6 +227,7 @@ export default function DocumentViewer({
                         paid={safeReceiptData.paid}
                         newDebt={safeReceiptData.newDebt}
                         oldDebt={safeReceiptData.oldDebt}
+                        clinicProfile={clinicProfile}
                       />
                     </div>
                   )
@@ -232,6 +236,7 @@ export default function DocumentViewer({
                     forPrint={true}
                     patient={patient}
                     records={records}
+                    clinicProfile={clinicProfile}
                   />
                 )}
               </div>
@@ -309,6 +314,7 @@ export default function DocumentViewer({
               paid={safeReceiptData.paid}
               newDebt={safeReceiptData.newDebt}
               oldDebt={safeReceiptData.oldDebt}
+              clinicProfile={clinicProfile}
             />
           ) : (
             <K80ReceiptTemplate 
@@ -318,6 +324,7 @@ export default function DocumentViewer({
               paid={safeReceiptData.paid}
               newDebt={safeReceiptData.newDebt}
               oldDebt={safeReceiptData.oldDebt}
+              clinicProfile={clinicProfile}
             />
           )
         ) : (
@@ -325,6 +332,7 @@ export default function DocumentViewer({
             ref={targetRef}
             patient={patient}
             records={records}
+            clinicProfile={clinicProfile}
           />
         )}
       </div>
@@ -341,6 +349,7 @@ export default function DocumentViewer({
                 paid={safeReceiptData.paid}
                 newDebt={safeReceiptData.newDebt}
                 oldDebt={safeReceiptData.oldDebt}
+                clinicProfile={clinicProfile}
               />
             ) : (
               <K80ReceiptTemplate 
@@ -350,6 +359,7 @@ export default function DocumentViewer({
                 paid={safeReceiptData.paid}
                 newDebt={safeReceiptData.newDebt}
                 oldDebt={safeReceiptData.oldDebt}
+                clinicProfile={clinicProfile}
               />
             )
           ) : (
@@ -357,6 +367,7 @@ export default function DocumentViewer({
               forPrint={true}
               patient={patient}
               records={records}
+              clinicProfile={clinicProfile}
             />
           )}
         </div>

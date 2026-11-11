@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface PatientDraft {
   bookingFor: 'self' | 'relative';
+  isNewProfile?: boolean;
   fullName: string;
   phone: string;
   email: string;

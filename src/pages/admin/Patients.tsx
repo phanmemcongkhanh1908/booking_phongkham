@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { uploadImageToDrive, syncPatientToSheet, findOrCreateFolder, findOrCreateClinicSpreadsheet } from '../../lib/googleWorkspace';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { useAuthStore } from '../../store/auth';
 
 
 // Document structure
@@ -38,16 +39,28 @@ export interface DocumentGroup {
   files: DocumentFile[];
 }
 
+export interface BeforeAfterCase {
+  id: string;
+  title: string;
+  category: string;
+  beforeImage: string;
+  afterImage: string;
+  completedDate: string;
+  doctorNote?: string;
+  treatmentDuration?: string;
+}
+
 export interface ParsedNotes {
   text: string;
   diagnosis?: string;
   treatmentPlan?: string;
   documents: DocumentGroup[];
+  beforeAfterCases: BeforeAfterCase[];
 }
 
 // Utility to parse notes field (supports JSON and legacy text)
 function parseNotes(rawNotes: string | null | undefined): ParsedNotes {
-  if (!rawNotes) return { text: '', diagnosis: '', treatmentPlan: '', documents: [] };
+  if (!rawNotes) return { text: '', diagnosis: '', treatmentPlan: '', documents: [], beforeAfterCases: [] };
   try {
     const parsed = JSON.parse(rawNotes);
     if (parsed && typeof parsed === 'object') {
@@ -59,17 +72,19 @@ function parseNotes(rawNotes: string | null | undefined): ParsedNotes {
         note: group.note || '',
         files: Array.isArray(group.files) ? group.files : []
       }));
+      const rawCases = Array.isArray(parsed.beforeAfterCases) ? parsed.beforeAfterCases : [];
       return {
         text: parsed.text || '',
         diagnosis: parsed.diagnosis || '',
         treatmentPlan: parsed.treatmentPlan || '',
-        documents: normalizedDocs
+        documents: normalizedDocs,
+        beforeAfterCases: rawCases
       };
     }
   } catch (e) {
     // Legacy plain text
   }
-  return { text: rawNotes, diagnosis: '', treatmentPlan: '', documents: [] };
+  return { text: rawNotes, diagnosis: '', treatmentPlan: '', documents: [], beforeAfterCases: [] };
 }
 
 // Read file as base64 data URL for local storage fallback
@@ -153,6 +168,52 @@ export default function Patients() {
   const [notesText, setNotesText] = useState<string>('');
   const [documents, setDocuments] = useState<DocumentGroup[]>([]);
   const [isSaved, setIsSaved] = useState(true);
+
+  const user = useAuthStore(s => s.user);
+  const [clinicProfile, setClinicProfile] = useState<any>(null);
+
+  // Before & After Gallery State
+  const [beforeAfterCases, setBeforeAfterCases] = useState<BeforeAfterCase[]>([]);
+  const [galleryCategory, setGalleryCategory] = useState<string>('Tất cả');
+  const [showAddCaseModal, setShowAddCaseModal] = useState(false);
+  const [editingCase, setEditingCase] = useState<BeforeAfterCase | null>(null);
+  const [selectedCaseDetail, setSelectedCaseDetail] = useState<BeforeAfterCase | null>(null);
+  const [caseFormData, setCaseFormData] = useState({
+    title: '',
+    category: 'Niềng răng - Chỉnh nha',
+    beforeImage: '',
+    afterImage: '',
+    completedDate: new Date().toISOString().split('T')[0],
+    treatmentDuration: '',
+    doctorNote: ''
+  });
+  const [savingCase, setSavingCase] = useState(false);
+
+  useEffect(() => {
+    const fetchClinic = async () => {
+      try {
+        const res = await api.get('/admin/settings');
+        if (res.data?.data?.clinicProfile) {
+          const profile = typeof res.data.data.clinicProfile === 'string'
+            ? JSON.parse(res.data.data.clinicProfile)
+            : res.data.data.clinicProfile;
+          setClinicProfile(profile);
+          localStorage.setItem('clinic_profile', JSON.stringify(profile));
+          return;
+        }
+      } catch (e) {}
+      if (user) {
+        setClinicProfile({
+          clinicName: user.clinicName,
+          doctorName: user.doctorName,
+          phone: user.phone,
+          address: user.address,
+          slug: user.slug,
+        });
+      }
+    };
+    fetchClinic();
+  }, [user]);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -292,6 +353,7 @@ export default function Patients() {
     setDiagnosis(parsed.diagnosis || '');
     setTreatmentPlan(parsed.treatmentPlan || '');
     setDocuments(parsed.documents);
+    setBeforeAfterCases(parsed.beforeAfterCases || []);
     
     setCurrentServiceCost(0);
     setPaidAmount(0);
@@ -336,7 +398,8 @@ export default function Patients() {
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: documents
+        documents: documents,
+        beforeAfterCases: beforeAfterCases
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -382,6 +445,178 @@ export default function Patients() {
       toast.error("Lỗi khi lưu hồ sơ");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenAddCase = () => {
+    setEditingCase(null);
+    setCaseFormData({
+      title: '',
+      category: 'Niềng răng - Chỉnh nha',
+      beforeImage: '',
+      afterImage: '',
+      completedDate: new Date().toISOString().split('T')[0],
+      treatmentDuration: '',
+      doctorNote: ''
+    });
+    setShowAddCaseModal(true);
+  };
+
+  const handleOpenEditCase = (c: BeforeAfterCase) => {
+    setEditingCase(c);
+    setCaseFormData({
+      title: c.title,
+      category: c.category || 'Niềng răng - Chỉnh nha',
+      beforeImage: c.beforeImage || '',
+      afterImage: c.afterImage || '',
+      completedDate: c.completedDate || new Date().toISOString().split('T')[0],
+      treatmentDuration: c.treatmentDuration || '',
+      doctorNote: c.doctorNote || ''
+    });
+    setShowAddCaseModal(true);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'before' | 'after') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Kích thước ảnh tối đa 8MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1200;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setCaseFormData(prev => ({
+            ...prev,
+            [type === 'before' ? 'beforeImage' : 'afterImage']: compressedDataUrl
+          }));
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveCaseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatient) return;
+    if (!caseFormData.title.trim()) {
+      toast.error('Vui lòng nhập tên ca điều trị');
+      return;
+    }
+
+    setSavingCase(true);
+    try {
+      let updatedCases: BeforeAfterCase[];
+      if (editingCase) {
+        updatedCases = beforeAfterCases.map(c => c.id === editingCase.id ? {
+          ...c,
+          title: caseFormData.title.trim(),
+          category: caseFormData.category,
+          beforeImage: caseFormData.beforeImage,
+          afterImage: caseFormData.afterImage,
+          completedDate: caseFormData.completedDate,
+          treatmentDuration: caseFormData.treatmentDuration,
+          doctorNote: caseFormData.doctorNote
+        } : c);
+      } else {
+        const newCase: BeforeAfterCase = {
+          id: `case-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          title: caseFormData.title.trim(),
+          category: caseFormData.category,
+          beforeImage: caseFormData.beforeImage,
+          afterImage: caseFormData.afterImage,
+          completedDate: caseFormData.completedDate,
+          treatmentDuration: caseFormData.treatmentDuration,
+          doctorNote: caseFormData.doctorNote
+        };
+        updatedCases = [newCase, ...beforeAfterCases];
+      }
+
+      setBeforeAfterCases(updatedCases);
+
+      const combinedNotes = JSON.stringify({
+        text: notesText,
+        diagnosis,
+        treatmentPlan,
+        documents,
+        beforeAfterCases: updatedCases
+      });
+
+      await api.put(`/patients/${selectedPatient.id}`, {
+        notes: combinedNotes
+      });
+
+      setSelectedPatient({
+        ...selectedPatient,
+        notes: combinedNotes
+      });
+      setPatients(prev => prev.map(p => p.id === selectedPatient.id ? { ...p, notes: combinedNotes } : p));
+
+      toast.success(editingCase ? 'Đã cập nhật ca điều trị!' : 'Đã thêm ca điều trị mới vào thư viện!');
+      setShowAddCaseModal(false);
+      setEditingCase(null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi khi lưu ca điều trị: ' + (err.message || 'Thử lại'));
+    } finally {
+      setSavingCase(false);
+    }
+  };
+
+  const handleDeleteCase = async (caseId: string) => {
+    if (!selectedPatient) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa ca điều trị này khỏi thư viện?')) return;
+
+    try {
+      const updatedCases = beforeAfterCases.filter(c => c.id !== caseId);
+      setBeforeAfterCases(updatedCases);
+
+      const combinedNotes = JSON.stringify({
+        text: notesText,
+        diagnosis,
+        treatmentPlan,
+        documents,
+        beforeAfterCases: updatedCases
+      });
+
+      await api.put(`/patients/${selectedPatient.id}`, {
+        notes: combinedNotes
+      });
+
+      setSelectedPatient({
+        ...selectedPatient,
+        notes: combinedNotes
+      });
+      setPatients(prev => prev.map(p => p.id === selectedPatient.id ? { ...p, notes: combinedNotes } : p));
+
+      if (selectedCaseDetail?.id === caseId) {
+        setSelectedCaseDetail(null);
+      }
+
+      toast.success('Đã xóa ca điều trị');
+    } catch (err: any) {
+      toast.error('Không thể xóa ca điều trị');
     }
   };
 
@@ -789,6 +1024,11 @@ export default function Patients() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-semibold text-text-main text-xs truncate">{p.fullName}</span>
+                    {p.notes && p.notes.includes('Đặt lịch hộ') && (
+                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                        Đặt hộ
+                      </span>
+                    )}
                     {pDebt > 0 && (
                       <span className="text-[10px] font-bold text-error bg-red-50 px-1.5 py-0.5 rounded shrink-0">
                         Nợ {(Number(pDebt) || 0).toLocaleString('vi-VN')} đ
@@ -847,6 +1087,11 @@ export default function Patients() {
                 <div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h2 className="text-xl font-bold text-text-main">{selectedPatient.fullName}</h2>
+                    {selectedPatient.notes && selectedPatient.notes.includes('Đặt lịch hộ') && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        Hồ sơ đặt lịch hộ
+                      </span>
+                    )}
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
                       debt > 0 
                         ? 'bg-red-50 text-error border border-red-200' 
@@ -937,10 +1182,10 @@ export default function Patients() {
             </div>
             
             {/* EMR NAVIGATION TABS WITH UNIFIED ILLUSTRATIVE ICONS */}
-            <div className="flex items-center border-b border-border-subtle px-4 lg:px-6 bg-bg-base/60 print:hidden overflow-x-auto whitespace-nowrap scrollbar-hide">
+            <div className="flex items-center border-b border-border-subtle px-4 lg:px-6 bg-bg-base/60 print:hidden overflow-x-auto whitespace-nowrap scrollbar-hide min-w-0">
               <button 
                 onClick={() => setActiveTab('overview')}
-                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
                   activeTab === 'overview' 
                     ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
                     : 'border-transparent text-text-muted hover:text-text-main'
@@ -952,7 +1197,7 @@ export default function Patients() {
 
               <button 
                 onClick={() => setActiveTab('documents')}
-                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
                   activeTab === 'documents' 
                     ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
                     : 'border-transparent text-text-muted hover:text-text-main'
@@ -969,7 +1214,7 @@ export default function Patients() {
 
               <button 
                 onClick={() => setActiveTab('finance')}
-                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
                   activeTab === 'finance' 
                     ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
                     : 'border-transparent text-text-muted hover:text-text-main'
@@ -986,7 +1231,7 @@ export default function Patients() {
 
               <button 
                 onClick={() => setActiveTab('appointments')}
-                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
                   activeTab === 'appointments' 
                     ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
                     : 'border-transparent text-text-muted hover:text-text-main'
@@ -1003,123 +1248,208 @@ export default function Patients() {
 
               <button 
                 onClick={() => setActiveTab('gallery')}
-                className={`py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
+                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
                   activeTab === 'gallery' 
                     ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
                     : 'border-transparent text-text-muted hover:text-text-main'
                 }`}
               >
                 <Sparkles className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                Thư viện Trước & Sau
+                <span>Thư viện Trước & Sau</span>
+                {beforeAfterCases.length > 0 && (
+                  <span className="ml-2 bg-teal-100 text-teal-800 font-bold text-[10px] py-0.5 px-1.5 rounded-full">
+                    {beforeAfterCases.length}
+                  </span>
+                )}
               </button>
             </div>
 
             {/* TAB CONTENTS */}
-            <div className="flex-1 overflow-y-auto bg-bg-base p-4 lg:p-6">
+            <div className="flex-1 overflow-y-auto bg-bg-base p-4 lg:p-6 pb-28">
 
               {/* ======================================================== */}
-              {/* TAB 5: GALLERY (BEFORE & AFTER) */}
+              {/* TAB 5: GALLERY (BEFORE & AFTER) - FULLY INTERACTIVE      */}
               {/* ======================================================== */}
               {activeTab === 'gallery' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
                     <div>
-                      <h3 className="font-bold text-slate-800 text-lg">Thư viện Trước & Sau</h3>
-                      <p className="text-sm text-slate-500">Quản lý và trình chiếu kết quả điều trị trực quan cho bệnh nhân.</p>
+                      <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-teal-600" />
+                        Thư viện Trước & Sau
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                        Quản lý và so sánh kết quả điều trị trực quan của bệnh nhân {selectedPatient.fullName}.
+                      </p>
                     </div>
-                    <button className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm">
+                    <button 
+                      type="button"
+                      onClick={handleOpenAddCase}
+                      className="inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold hover:bg-teal-700 transition-all shadow-sm cursor-pointer shrink-0"
+                    >
                       <Plus className="w-4 h-4" />
-                      Thêm ca mới
+                      <span>Thêm ca mới</span>
                     </button>
                   </div>
                   
                   {/* Category Filter */}
-                  <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                    {['Tất cả', 'Niềng răng - Chỉnh nha', 'Implant', 'Răng sứ thẩm mỹ', 'Tẩy trắng răng'].map((cat, i) => (
-                      <button key={i} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${i === 0 ? 'bg-teal-50 border-teal-200 text-teal-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {['Tất cả', 'Niềng răng - Chỉnh nha', 'Implant', 'Răng sứ thẩm mỹ', 'Tẩy trắng răng', 'Nhổ răng & Tiểu phẫu', 'Khác'].map((cat) => (
+                      <button 
+                        key={cat} 
+                        type="button"
+                        onClick={() => setGalleryCategory(cat)}
+                        className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                          galleryCategory === cat 
+                            ? 'bg-teal-600 border-teal-600 text-white shadow-xs' 
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
                         {cat}
                       </button>
                     ))}
                   </div>
 
                   {/* Gallery Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Item 1 */}
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center justify-between p-3.5 border-b border-slate-100 bg-slate-50">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 bg-teal-100 text-teal-800 text-[10px] font-black uppercase tracking-wider rounded-md">Niềng răng</span>
-                          <span className="text-xs font-semibold text-slate-600">Mắc cài sứ tự động (18 tháng)</span>
+                  {(() => {
+                    const displayedCases = galleryCategory === 'Tất cả' 
+                      ? beforeAfterCases 
+                      : beforeAfterCases.filter(c => c.category === galleryCategory);
+
+                    if (displayedCases.length === 0) {
+                      return (
+                        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center flex flex-col items-center justify-center">
+                          <div className="w-14 h-14 bg-teal-50 rounded-2xl text-teal-600 flex items-center justify-center mb-3.5 shadow-2xs">
+                            <Sparkles className="w-7 h-7" />
+                          </div>
+                          <h4 className="font-bold text-slate-800 text-base mb-1">
+                            {galleryCategory === 'Tất cả' ? 'Chưa có ca điều trị nào' : `Chưa có ca thuộc nhóm "${galleryCategory}"`}
+                          </h4>
+                          <p className="text-xs sm:text-sm text-slate-500 max-w-md mb-5 leading-relaxed">
+                            Lưu lại hình ảnh trước và sau khi điều trị để theo dõi tiến độ, tạo hồ sơ thẩm mỹ nụ cười và trình chiếu tư vấn cho bệnh nhân.
+                          </p>
+                          <button 
+                            type="button"
+                            onClick={handleOpenAddCase}
+                            className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold hover:bg-teal-700 transition-all shadow-sm cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Thêm ca điều trị đầu tiên</span>
+                          </button>
                         </div>
-                        <button className="text-slate-400 hover:text-slate-700 p-1"><MoreVertical className="w-4 h-4" /></button>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {displayedCases.map((c) => (
+                          <div 
+                            key={c.id} 
+                            className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col"
+                          >
+                            <div className="flex items-center justify-between p-3.5 border-b border-slate-100 bg-slate-50/80">
+                              <div className="flex items-center gap-2 min-w-0 pr-2">
+                                <span className="px-2.5 py-1 bg-teal-100 text-teal-800 text-[10px] font-black uppercase tracking-wider rounded-md shrink-0">
+                                  {c.category}
+                                </span>
+                                <h4 className="text-xs sm:text-sm font-bold text-slate-800 truncate" title={c.title}>
+                                  {c.title}
+                                </h4>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button 
+                                  type="button"
+                                  onClick={() => handleOpenEditCase(c)}
+                                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
+                                  title="Chỉnh sửa ca này"
+                                >
+                                  <Info className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => handleDeleteCase(c.id)}
+                                  className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                  title="Xóa ca này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Before & After Image Comparison */}
+                            <div className="grid grid-cols-2 divide-x divide-slate-100 bg-slate-900">
+                              {/* Before Image */}
+                              <div className="relative group aspect-4/3 flex items-center justify-center overflow-hidden bg-slate-100">
+                                {c.beforeImage ? (
+                                  <img 
+                                    src={c.beforeImage} 
+                                    alt="Trước điều trị" 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center p-4 text-slate-400">
+                                    <ImageIcon className="w-8 h-8 mb-1" />
+                                    <span className="text-[11px]">Chưa có ảnh</span>
+                                  </div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-2.5 flex items-center justify-between">
+                                  <span className="text-white text-[11px] font-extrabold uppercase tracking-widest drop-shadow-sm">
+                                    TRƯỚC
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* After Image */}
+                              <div className="relative group aspect-4/3 flex items-center justify-center overflow-hidden bg-teal-50">
+                                {c.afterImage ? (
+                                  <img 
+                                    src={c.afterImage} 
+                                    alt="Sau điều trị" 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center p-4 text-teal-400">
+                                    <ImageIcon className="w-8 h-8 mb-1" />
+                                    <span className="text-[11px]">Chưa có ảnh</span>
+                                  </div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-2.5 flex items-center justify-between">
+                                  <span className="text-white text-[11px] font-extrabold uppercase tracking-widest drop-shadow-sm">
+                                    SAU
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Footer */}
+                            <div className="p-3.5 text-xs text-slate-600 bg-white border-t border-slate-100 flex items-center justify-between mt-auto">
+                              <div className="space-y-0.5">
+                                {c.treatmentDuration && (
+                                  <p className="font-medium text-slate-700 flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-slate-400" />
+                                    <span>Thời gian: {c.treatmentDuration}</span>
+                                  </p>
+                                )}
+                                <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  <span>Hoàn thành: {c.completedDate ? new Date(c.completedDate).toLocaleDateString('vi-VN') : 'Mới'}</span>
+                                </p>
+                              </div>
+
+                              <button 
+                                type="button"
+                                onClick={() => setSelectedCaseDetail(c)}
+                                className="inline-flex items-center gap-1 text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Chi tiết</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="grid grid-cols-2 divide-x divide-slate-100">
-                        <div className="relative group">
-                          <div className="aspect-[4/3] bg-slate-100 flex items-center justify-center p-4">
-                            <ImageIcon className="w-8 h-8 text-slate-300" />
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Trước</span>
-                          </div>
-                        </div>
-                        <div className="relative group">
-                          <div className="aspect-[4/3] bg-teal-50 flex items-center justify-center p-4">
-                            <ImageIcon className="w-8 h-8 text-teal-200" />
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Sau</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 text-xs text-slate-500 bg-white border-t border-slate-100 flex items-center justify-between">
-                        <span>Hoàn thành: 12/08/2023</span>
-                        <button className="text-teal-600 font-semibold hover:underline">Chi tiết</button>
-                      </div>
-                    </div>
-                    
-                    {/* Item 2 */}
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center justify-between p-3.5 border-b border-slate-100 bg-slate-50">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase tracking-wider rounded-md">Răng sứ</span>
-                          <span className="text-xs font-semibold text-slate-600">Bọc 16 răng sứ Cercon HT</span>
-                        </div>
-                        <button className="text-slate-400 hover:text-slate-700 p-1"><MoreVertical className="w-4 h-4" /></button>
-                      </div>
-                      <div className="grid grid-cols-2 divide-x divide-slate-100">
-                        <div className="relative group">
-                          <div className="aspect-[4/3] bg-slate-100 flex items-center justify-center p-4">
-                            <ImageIcon className="w-8 h-8 text-slate-300" />
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Trước</span>
-                          </div>
-                        </div>
-                        <div className="relative group">
-                          <div className="aspect-[4/3] bg-indigo-50 flex items-center justify-center p-4">
-                            <ImageIcon className="w-8 h-8 text-indigo-200" />
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                            <span className="text-white text-xs font-bold uppercase tracking-widest drop-shadow-md">Sau</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 text-xs text-slate-500 bg-white border-t border-slate-100 flex items-center justify-between">
-                        <span>Hoàn thành: 05/01/2024</span>
-                        <button className="text-indigo-600 font-semibold hover:underline">Chi tiết</button>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Empty State / Call to Action */}
-                  <div className="mt-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center flex flex-col items-center justify-center">
-                    <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
-                      <Sparkles className="w-5 h-5 text-slate-400" />
-                    </div>
-                    <h4 className="font-bold text-slate-700 mb-1">Xây dựng thư viện nụ cười</h4>
-                    <p className="text-sm text-slate-500 max-w-sm mb-4">Lưu lại hành trình thay đổi của bệnh nhân để trình chiếu và tư vấn hiệu quả hơn cho các ca tương tự.</p>
-                    <button className="text-sm font-semibold text-teal-600 hover:text-teal-700 hover:underline">Tìm hiểu cách chụp ảnh chuẩn y khoa</button>
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1580,7 +1910,7 @@ export default function Patients() {
                     
                     {/* Printable Receipt Header */}
                     <div className="hidden print:block text-center mb-6 border-b border-slate-300 pb-4">
-                      <h1 className="text-xl font-bold uppercase">NHA KHOA DENTAL SMART</h1>
+                      <h1 className="text-xl font-bold uppercase">{clinicProfile?.clinicName || user?.clinicName || 'PHÒNG KHÁM NHA KHOA'}</h1>
                       <p className="text-xs text-text-muted mt-0.5">PHIẾU THU & BẢNG KÊ CÔNG NỢ BỆNH NHÂN</p>
                       <p className="text-xs mt-2">
                         Khách hàng: <b>{selectedPatient.fullName}</b> — SĐT: {selectedPatient.phone} — Ngày: {new Date().toLocaleDateString('vi-VN')}
@@ -2126,6 +2456,7 @@ export default function Patients() {
             newDebt: Math.max(0, (Number(debt) || 0) + (Number(currentServiceCost) || 0) - (Number(paidAmount) || 0)),
             oldDebt: Number(selectedPatient.debt) || 0
           }}
+          clinicProfile={clinicProfile}
           onClose={() => setDocumentViewerState({isOpen: false, type: null})}
           onSendSuccess={(telegramId) => {
             setSelectedPatient({...selectedPatient, telegramId});
@@ -2225,6 +2556,335 @@ export default function Patients() {
                 {aptSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Xác nhận đặt lịch
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Thêm / Chỉnh sửa ca Trước & Sau */}
+      {showAddCaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-teal-600" />
+                <h3 className="text-base font-bold text-slate-800">
+                  {editingCase ? 'Chỉnh sửa ca điều trị' : 'Thêm ca Trước & Sau mới'}
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => { setShowAddCaseModal(false); setEditingCase(null); }}
+                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCaseSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Tên / Nội dung ca điều trị <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="VD: Mắc cài sứ tự động (18 tháng)"
+                  value={caseFormData.title}
+                  onChange={e => setCaseFormData({ ...caseFormData, title: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Phân loại danh mục
+                  </label>
+                  <select 
+                    value={caseFormData.category}
+                    onChange={e => setCaseFormData({ ...caseFormData, category: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none focus:border-teal-600 transition-all"
+                  >
+                    <option value="Niềng răng - Chỉnh nha">Niềng răng - Chỉnh nha</option>
+                    <option value="Implant">Implant</option>
+                    <option value="Răng sứ thẩm mỹ">Răng sứ thẩm mỹ</option>
+                    <option value="Tẩy trắng răng">Tẩy trắng răng</option>
+                    <option value="Nhổ răng & Tiểu phẫu">Nhổ răng & Tiểu phẫu</option>
+                    <option value="Khác">Khác</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Thời gian điều trị
+                  </label>
+                  <input 
+                    type="text"
+                    placeholder="VD: 18 tháng, 2 tuần..."
+                    value={caseFormData.treatmentDuration}
+                    onChange={e => setCaseFormData({ ...caseFormData, treatmentDuration: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none focus:border-teal-600 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Ngày hoàn thành điều trị
+                </label>
+                <input 
+                  type="date"
+                  value={caseFormData.completedDate}
+                  onChange={e => setCaseFormData({ ...caseFormData, completedDate: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:outline-none focus:border-teal-600 transition-all"
+                />
+              </div>
+
+              {/* Photos: Before & After */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                {/* Before Image */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block flex items-center justify-between">
+                    <span>Ảnh TRƯỚC điều trị</span>
+                    {caseFormData.beforeImage && (
+                      <button 
+                        type="button" 
+                        onClick={() => setCaseFormData({ ...caseFormData, beforeImage: '' })}
+                        className="text-red-500 text-[11px] hover:underline"
+                      >
+                        Xóa ảnh
+                      </button>
+                    )}
+                  </label>
+                  <div className="relative aspect-4/3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 overflow-hidden flex flex-col items-center justify-center p-2 text-center group">
+                    {caseFormData.beforeImage ? (
+                      <img 
+                        src={caseFormData.beforeImage} 
+                        alt="Trước" 
+                        className="w-full h-full object-cover rounded-lg" 
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center text-slate-400 p-2">
+                        <UploadCloud className="w-8 h-8 mb-1 text-slate-400" />
+                        <span className="text-xs font-medium text-slate-600">Chọn hoặc kéo ảnh</span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">JPG, PNG tối đa 8MB</span>
+                      </div>
+                    )}
+                    <label className="absolute inset-0 cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 text-white font-bold text-xs transition-opacity rounded-xl">
+                      <span>Thay đổi ảnh</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={e => handleImageUpload(e, 'before')} 
+                        className="hidden" 
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* After Image */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-teal-800 block flex items-center justify-between">
+                    <span>Ảnh SAU điều trị</span>
+                    {caseFormData.afterImage && (
+                      <button 
+                        type="button" 
+                        onClick={() => setCaseFormData({ ...caseFormData, afterImage: '' })}
+                        className="text-red-500 text-[11px] hover:underline"
+                      >
+                        Xóa ảnh
+                      </button>
+                    )}
+                  </label>
+                  <div className="relative aspect-4/3 rounded-xl border-2 border-dashed border-teal-300 bg-teal-50/50 overflow-hidden flex flex-col items-center justify-center p-2 text-center group">
+                    {caseFormData.afterImage ? (
+                      <img 
+                        src={caseFormData.afterImage} 
+                        alt="Sau" 
+                        className="w-full h-full object-cover rounded-lg" 
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center text-teal-600 p-2">
+                        <UploadCloud className="w-8 h-8 mb-1 text-teal-500" />
+                        <span className="text-xs font-medium text-teal-800">Chọn hoặc kéo ảnh</span>
+                        <span className="text-[10px] text-teal-600 mt-0.5">JPG, PNG tối đa 8MB</span>
+                      </div>
+                    )}
+                    <label className="absolute inset-0 cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 text-white font-bold text-xs transition-opacity rounded-xl">
+                      <span>Thay đổi ảnh</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={e => handleImageUpload(e, 'after')} 
+                        className="hidden" 
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Ghi chú điều trị của bác sĩ
+                </label>
+                <textarea 
+                  rows={3}
+                  placeholder="Ghi chú chẩn đoán ban đầu, loại khí cụ/vật liệu sứ/trụ Implant sử dụng, kết quả lâm sàng..."
+                  value={caseFormData.doctorNote}
+                  onChange={e => setCaseFormData({ ...caseFormData, doctorNote: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:outline-none focus:border-teal-600 transition-all resize-none"
+                ></textarea>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddCaseModal(false); setEditingCase(null); }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCase}
+                  className="px-5 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingCase && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{editingCase ? 'Cập nhật ca' : 'Lưu vào thư viện'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Chi tiết & So sánh Trước - Sau */}
+      {selectedCaseDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                <span className="px-2.5 py-1 bg-teal-100 text-teal-800 text-[11px] font-black uppercase tracking-wider rounded-md shrink-0">
+                  {selectedCaseDetail.category}
+                </span>
+                <h3 className="text-base font-bold text-slate-800 truncate">
+                  {selectedCaseDetail.title}
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSelectedCaseDetail(null)}
+                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* High-Resolution Side-by-Side Comparison */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Before Photo */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-700">Trước điều trị</span>
+                  </div>
+                  <div className="aspect-4/3 rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex items-center justify-center shadow-inner">
+                    {selectedCaseDetail.beforeImage ? (
+                      <img 
+                        src={selectedCaseDetail.beforeImage} 
+                        alt="Trước điều trị" 
+                        className="w-full h-full object-contain" 
+                      />
+                    ) : (
+                      <div className="text-slate-500 text-xs text-center p-4">Chưa có ảnh trước</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* After Photo */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-teal-700">Sau điều trị</span>
+                  </div>
+                  <div className="aspect-4/3 rounded-xl overflow-hidden bg-slate-900 border border-teal-200 flex items-center justify-center shadow-inner">
+                    {selectedCaseDetail.afterImage ? (
+                      <img 
+                        src={selectedCaseDetail.afterImage} 
+                        alt="Sau điều trị" 
+                        className="w-full h-full object-contain" 
+                      />
+                    ) : (
+                      <div className="text-slate-500 text-xs text-center p-4">Chưa có ảnh sau</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Case Details Box */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
+                <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-200">
+                  <div>
+                    <span className="text-slate-500 font-medium block">Bệnh nhân:</span>
+                    <span className="font-bold text-slate-800 text-sm">{selectedPatient?.fullName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-medium block">Ngày hoàn thành:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedCaseDetail.completedDate ? new Date(selectedCaseDetail.completedDate).toLocaleDateString('vi-VN') : 'Chưa cập nhật'}
+                    </span>
+                  </div>
+                  {selectedCaseDetail.treatmentDuration && (
+                    <div className="col-span-2">
+                      <span className="text-slate-500 font-medium block">Thời gian thực hiện:</span>
+                      <span className="font-semibold text-slate-800">{selectedCaseDetail.treatmentDuration}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedCaseDetail.doctorNote ? (
+                  <div>
+                    <span className="text-slate-500 font-bold block mb-1">Ghi chú điều trị của bác sĩ:</span>
+                    <p className="text-slate-700 whitespace-pre-wrap leading-relaxed pl-2.5 border-l-2 border-teal-500 font-medium">
+                      {selectedCaseDetail.doctorNote}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-slate-400 italic">Chưa có ghi chú bác sĩ cho ca này.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDeleteCase(selectedCaseDetail.id)}
+                className="text-red-600 hover:text-red-700 text-xs font-semibold hover:bg-red-50 px-3 py-2 rounded-xl transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Xóa ca này</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const caseToEdit = selectedCaseDetail;
+                    setSelectedCaseDetail(null);
+                    handleOpenEditCase(caseToEdit);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-xl transition-colors"
+                >
+                  Chỉnh sửa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCaseDetail(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors shadow-2xs"
+                >
+                  Đóng
+                </button>
+              </div>
             </div>
           </div>
         </div>

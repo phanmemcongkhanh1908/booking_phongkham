@@ -38,10 +38,18 @@ export default function PrintMedicalDocument({
     'all': 'Toàn bộ thời gian tích lũy',
   };
 
-  const clinicName = clinicProfile?.clinicName || 'NHA KHOA THẨM MỸ DENTAL SMART';
-  const clinicAddress = clinicProfile?.address || 'Hệ thống phòng khám Nha khoa Thông minh';
-  const clinicPhone = clinicProfile?.phone || '1900 6868';
-  const reportCode = `BC-DS-${format(new Date(), 'yyyyMMdd-HHmm')}`;
+  const storedUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('admin_user') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+
+  const clinicName = clinicProfile?.clinicName || storedUser?.clinicName || storedUser?.name || 'Phòng Khám Chuyên Khoa';
+  const clinicAddress = clinicProfile?.address || storedUser?.address || 'Hệ thống phòng khám chuyên khoa';
+  const clinicPhone = clinicProfile?.phone || storedUser?.phone || 'Hotline phòng khám';
+  const reportCode = `BC-${format(new Date(), 'yyyyMMdd-HHmm')}`;
   const printDateStr = format(new Date(), 'HH:mm - dd/MM/yyyy');
 
   // Values from config or defaults

@@ -5,12 +5,13 @@ import { toast } from 'react-hot-toast';
 import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { 
-  Stethoscope, Calendar as CalendarIcon, Clock, User, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
+  Stethoscope, Calendar as CalendarIcon, Clock, User, Users, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
   ChevronLeft, ChevronRight, CalendarDays
 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
 import { getClinicBasePath } from '../../../services/clinicResolver';
+import { PWAInstallBanner } from './PWAInstallBanner';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -66,6 +67,8 @@ export default function SimpleBookingForm() {
   const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'new' | 'existing_unverified' | 'verified'>('idle');
   const [verifyName, setVerifyName] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isNewProfile, setIsNewProfile] = useState(false);
+  const [bookingFor, setBookingFor] = useState<'self' | 'relative'>('self');
   const [lastServiceId, setLastServiceId] = useState<string | null>(null);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -294,6 +297,8 @@ export default function SimpleBookingForm() {
         customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
         tenantId: useBookingStore.getState().tenantId || undefined,
         clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+        bookingFor: bookingFor,
+        isNewProfile: isNewProfile || bookingFor === 'relative',
       });
 
       if (res.data.success) {
@@ -682,6 +687,51 @@ export default function SimpleBookingForm() {
           </div>
           
           <div className="grid grid-cols-1 gap-4 sm:gap-5">
+            {/* Chế độ đặt: Cho chính tôi vs Đặt hộ */}
+            <div className="space-y-2">
+              <div className="bg-slate-100 p-1 rounded-xl flex relative max-w-[280px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingFor('self');
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold transition-all z-10 cursor-pointer ${
+                    bookingFor === 'self'
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  Cho chính tôi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingFor('relative');
+                    setIsNewProfile(true);
+                    setPhoneStatus('new');
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold transition-all z-10 cursor-pointer ${
+                    bookingFor === 'relative'
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Đặt hộ người thân
+                </button>
+              </div>
+
+              {(isNewProfile || bookingFor === 'relative') && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50 border border-teal-200/70 text-xs text-teal-800 animate-in fade-in duration-200">
+                  <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span>
+                    <strong>Chế độ đặt lịch hộ / hồ sơ mới:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* SĐT */}
             <div className="space-y-1.5 relative">
               <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
@@ -754,7 +804,10 @@ export default function SimpleBookingForm() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setPhoneStatus('new')}
+                  onClick={() => {
+                    setPhoneStatus('new');
+                    setIsNewProfile(true);
+                  }}
                   className="text-[11px] text-blue-600 hover:underline font-medium inline-block cursor-pointer"
                 >
                   Bỏ qua, tôi muốn điền hồ sơ mới
@@ -886,6 +939,9 @@ export default function SimpleBookingForm() {
           </div>
         </div>
       </form>
+
+      {/* Floating PWA Install Prompt for Mobile */}
+      <PWAInstallBanner />
     </div>
   );
 }

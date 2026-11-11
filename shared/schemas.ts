@@ -33,6 +33,8 @@ export const BookAppointmentSchema = z.object({
   customServiceName: z.string().optional(),
   clinicSlug: z.string().optional(),
   tenantId: z.string().optional(),
+  bookingFor: z.enum(["self", "relative"]).optional(),
+  isNewProfile: z.boolean().optional(),
 });
 
 export type BookAppointmentRequest = z.infer<typeof BookAppointmentSchema>;

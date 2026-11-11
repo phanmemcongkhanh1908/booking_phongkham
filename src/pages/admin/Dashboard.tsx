@@ -29,6 +29,7 @@ import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
 import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
+import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -63,6 +64,10 @@ export default function Dashboard() {
     reason: ''
   });
   const [completeReviewModalData, setCompleteReviewModalData] = useState<{isOpen: boolean, appointment: any | null}>({
+    isOpen: false,
+    appointment: null
+  });
+  const [manageReviewModalData, setManageReviewModalData] = useState<{isOpen: boolean, appointment: any | null}>({
     isOpen: false,
     appointment: null
   });
@@ -117,7 +122,7 @@ export default function Dashboard() {
   const [totalItems, setTotalItems] = useState(0);
 
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED' | 'REVIEWS'>('ALL');
   const [dateRange, setDateRange] = useState<{start: Date, end: Date} | null>(null);
 
   useEffect(() => {
@@ -413,6 +418,7 @@ export default function Dashboard() {
     pending: appointments.filter(a => a.status === 'REQUESTED' || a.status === 'PENDING').length,
     checkedIn: appointments.filter(a => a.status === 'CHECKED_IN').length,
     completed: appointments.filter(a => a.status === 'COMPLETED').length,
+    reviewsCount: appointments.filter(a => !!a.rating && a.rating > 0).length,
     newPatients: patients.filter(p => {
       if (!p.createdAt) return true; // Fallback: consider created in active period
       const d = new Date(p.createdAt);
@@ -434,6 +440,9 @@ export default function Dashboard() {
     }
     if (statusFilter === 'COMPLETED') {
       return apt.status === 'COMPLETED';
+    }
+    if (statusFilter === 'REVIEWS') {
+      return Boolean(apt.rating && apt.rating > 0);
     }
     return true;
   });
@@ -596,7 +605,7 @@ export default function Dashboard() {
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowUserMenu(false)}
                   ></div>
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                  <div className="absolute right-0 mt-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2 overflow-hidden">
                     
                     <div className="px-4 py-3 border-b border-slate-50">
                       <p className="text-sm font-bold text-slate-800 truncate">{user?.email}</p>
@@ -627,25 +636,49 @@ export default function Dashboard() {
 
                     <div className="p-2 border-t border-slate-50 flex flex-col gap-1">
                       {user?.tenantId && (
-                        <button 
-                          onClick={async () => {
-                            if (!isGoogleLinked) {
-                              try {
-                                await connectGoogleStore();
-                              } catch (err: any) {
-                                // User cancellation is already handled in store
+                        <div className="px-1">
+                          <button 
+                            type="button"
+                            onClick={async () => {
+                              if (!isGoogleLinked) {
+                                try {
+                                  await connectGoogleStore();
+                                } catch (err: any) {
+                                  // User cancellation is already handled in store
+                                }
                               }
-                            }
-                          }}
-                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors ${
-                            isGoogleLinked 
-                              ? 'text-emerald-700 bg-emerald-50 pointer-events-none' 
-                              : 'text-amber-700 bg-amber-50 hover:bg-amber-100'
-                          }`}
-                        >
-                          {isGoogleLinked ? <CheckCircle2 className="w-4 h-4 mr-3 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 mr-3 text-amber-500" />}
-                          {isGoogleLinked ? (googleUser?.email ? `Google: ${googleUser.email}` : 'Đã kết nối Google') : 'Kết nối Google Drive'}
-                        </button>
+                            }}
+                            className={`w-full flex items-start gap-2.5 p-2.5 text-xs font-medium rounded-xl transition-all border text-left ${
+                              isGoogleLinked 
+                                ? 'text-emerald-800 bg-emerald-50/90 border-emerald-200/80' 
+                                : 'text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-200 cursor-pointer'
+                            }`}
+                            title={isGoogleLinked ? `Tài khoản Google liên kết: ${googleUser?.email || ''}` : 'Bấm để kết nối Google Drive & Sheets'}
+                          >
+                            {isGoogleLinked ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                            )}
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <p className="text-[11px] font-bold text-slate-800 leading-tight">
+                                {isGoogleLinked ? 'Google Drive & Sheets' : 'Kết nối Google Drive'}
+                              </p>
+                              {isGoogleLinked && googleUser?.email ? (
+                                <p 
+                                  className="text-[11px] text-emerald-700 font-mono break-all line-clamp-2 leading-tight mt-0.5" 
+                                  title={googleUser.email}
+                                >
+                                  {googleUser.email}
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                  {isGoogleLinked ? 'Đã sao lưu tự động' : 'Chưa kích hoạt sao lưu'}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        </div>
                       )}
 
                       <button 
@@ -1039,6 +1072,18 @@ export default function Dashboard() {
                     >
                       Hoàn thành ({stats.completed})
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('REVIEWS')}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
+                        statusFilter === 'REVIEWS'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
+                      }`}
+                    >
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-500" />
+                      <span>Đánh giá ({stats.reviewsCount})</span>
+                    </button>
                   </div>
 
                   {/* Mobile Card View (visible on mobile < md) */}
@@ -1048,7 +1093,14 @@ export default function Dashboard() {
                       <div key={apt.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 transition-all">
                         <div className="flex items-start justify-between mb-3">
                           <div className="min-w-0 pr-2">
-                            <h4 className="font-bold text-slate-900 text-base truncate mb-1">{apt.patientName}</h4>
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              <h4 className="font-bold text-slate-900 text-base truncate">{apt.patientName}</h4>
+                              {apt.notes && apt.notes.includes('[Đặt lịch hộ') && (
+                                <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200">
+                                  Đặt lịch hộ
+                                </span>
+                              )}
+                            </div>
                             {apt.patientPhone && (
                               <a 
                                 href={`tel:${apt.patientPhone}`} 
@@ -1199,6 +1251,8 @@ export default function Dashboard() {
                             ? 'Không có lịch hẹn nào đang Check-in.'
                             : statusFilter === 'COMPLETED'
                             ? 'Chưa có lịch hẹn nào hoàn thành.'
+                            : statusFilter === 'REVIEWS'
+                            ? 'Chưa có lịch hẹn nào có đánh giá từ khách hàng.'
                             : 'Chưa có lịch hẹn nào trong danh sách.'}
                         </p>
                         {statusFilter !== 'ALL' && appointments.length > 0 && (
@@ -1237,7 +1291,14 @@ export default function Dashboard() {
                         {displayedAppointments.map((apt) => (
                           <tr key={apt.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-4 py-3.5">
-                              <div className="font-semibold text-text-main">{apt.patientName}</div>
+                              <div className="font-semibold text-text-main flex items-center gap-1.5 flex-wrap">
+                                <span>{apt.patientName}</span>
+                                {apt.notes && apt.notes.includes('[Đặt lịch hộ') && (
+                                  <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200">
+                                    Đặt lịch hộ
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-text-muted">{apt.patientPhone}</div>
                             </td>
                             <td className="px-4 py-3.5">
@@ -1362,6 +1423,8 @@ export default function Dashboard() {
                                     ? 'Không có lịch hẹn nào đang Check-in.'
                                     : statusFilter === 'COMPLETED'
                                     ? 'Chưa có lịch hẹn nào hoàn thành.'
+                                    : statusFilter === 'REVIEWS'
+                                    ? 'Chưa có lịch hẹn nào có đánh giá từ khách hàng.'
                                     : 'Chưa có lịch hẹn nào trong danh sách.'}
                                 </p>
                                 {statusFilter !== 'ALL' && appointments.length > 0 && (

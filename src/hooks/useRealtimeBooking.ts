@@ -52,6 +52,21 @@ export function useRealtimeBooking() {
             if (processedEvents.current.has(eventId)) return;
             processedEvents.current.add(eventId);
 
+            // Tenant isolation verification:
+            // If appointment is for a private clinic tenant, only alert if logged-in user matches that tenant!
+            const currentTenantId = user?.tenantId || null;
+            if (payload.tenantId) {
+              if (currentTenantId !== payload.tenantId) {
+                // Not for this tenant (or this is super admin): do not display alert or chime
+                return;
+              }
+            } else {
+              // Root level booking: only root admin gets it
+              if (currentTenantId) {
+                return;
+              }
+            }
+
             // 1. Toast UI notification
             const time = formatVietnameseTime(payload.startAt);
             const date = formatVietnameseDate(payload.startAt);
