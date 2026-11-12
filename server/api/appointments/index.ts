@@ -68,6 +68,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         reviewTags: appointments.reviewTags,
         reviewedAt: appointments.reviewedAt,
         isReviewHidden: appointments.isReviewHidden,
+        isRatingHidden: appointments.isRatingHidden,
       })
       .from(appointments)
       .leftJoin(patients, eq(appointments.patientId, patients.id))
@@ -584,9 +585,47 @@ appointmentRouter.patch("/:id/review/toggle-visibility", requirePermission("appo
     const currentHidden = existing[0].isReviewHidden === true;
     const nextHidden = req.body.isReviewHidden !== undefined ? Boolean(req.body.isReviewHidden) : !currentHidden;
 
+    const updatePayload: any = {
+      isReviewHidden: nextHidden,
+      updatedAt: new Date()
+    };
+
+    if (req.body.isRatingHidden !== undefined) {
+      updatePayload.isRatingHidden = Boolean(req.body.isRatingHidden);
+    }
+
+    const updated = await db.update(appointments)
+      .set(updatePayload)
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+
+    res.json({
+      success: true,
+      data: updated[0],
+      isReviewHidden: nextHidden,
+      isRatingHidden: updated[0].isRatingHidden === true,
+      message: nextHidden ? "Đã ẩn đánh giá khỏi trang công khai" : "Đã bật hiển thị đánh giá công khai"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// [M-Review] Ẩn hoặc Hiện điểm sao đánh giá của đợt điều trị
+appointmentRouter.patch("/:id/review/toggle-rating-visibility", requirePermission("appointment.update"), async (req, res, next) => {
+  try {
+    const appointmentId = req.params.id;
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
+    const currentRatingHidden = existing[0].isRatingHidden === true;
+    const nextRatingHidden = req.body.isRatingHidden !== undefined ? Boolean(req.body.isRatingHidden) : !currentRatingHidden;
+
     const updated = await db.update(appointments)
       .set({
-        isReviewHidden: nextHidden,
+        isRatingHidden: nextRatingHidden,
         updatedAt: new Date()
       })
       .where(eq(appointments.id, appointmentId))
@@ -595,8 +634,8 @@ appointmentRouter.patch("/:id/review/toggle-visibility", requirePermission("appo
     res.json({
       success: true,
       data: updated[0],
-      isReviewHidden: nextHidden,
-      message: nextHidden ? "Đã ẩn đánh giá khỏi trang công khai" : "Đã bật hiển thị đánh giá công khai"
+      isRatingHidden: nextRatingHidden,
+      message: nextRatingHidden ? "Đã ẩn điểm sao đánh giá của đợt điều trị" : "Đã bật hiển thị điểm sao đánh giá của đợt điều trị"
     });
   } catch (error) {
     next(error);
@@ -619,6 +658,7 @@ appointmentRouter.delete("/:id/review", requirePermission("appointment.update"),
         reviewTags: [],
         reviewedAt: null,
         isReviewHidden: false,
+        isRatingHidden: false,
         updatedAt: new Date()
       })
       .where(eq(appointments.id, appointmentId))

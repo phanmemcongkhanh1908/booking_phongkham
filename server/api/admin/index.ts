@@ -1124,4 +1124,19 @@ adminRouter.delete("/google-sync-accounts/:id", requireAuth, requirePermission("
   }
 });
 
+adminRouter.get("/pwa-installs", requireAuth, async (req, res, next) => {
+  try {
+    const record = await db.select().from(settings).where(eq(settings.id, "pwa_install_stats")).limit(1);
+    const stats = record[0]?.value || {
+      totalInstalls: 0,
+      platforms: { pc: 0, android: 0, ios: 0 },
+      displayModes: { standalone: 0, shortcut: 0 },
+      recentInstalls: []
+    };
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default adminRouter;

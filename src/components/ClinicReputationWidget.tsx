@@ -12,6 +12,8 @@ interface ReviewItem {
   patientName: string;
   date: string;
   verified: boolean;
+  hideRating?: boolean;
+  isRatingHidden?: boolean;
 }
 
 interface ReviewStats {
@@ -140,11 +142,18 @@ export default function ClinicReputationWidget({ variant = 'compact' }: { varian
           <div key={r.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex text-amber-400">
-                  {[1, 2, 3, 4, 5].map(s => (
-                    <Star key={s} className={`w-3.5 h-3.5 ${s <= r.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`} />
-                  ))}
-                </div>
+                {r.rating && !r.hideRating && !r.isRatingHidden ? (
+                  <div className="flex text-amber-400">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Star key={s} className={`w-3.5 h-3.5 ${s <= (r.rating || 0) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`} />
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-purple-700 font-semibold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                    Phản hồi từ bệnh nhân
+                  </span>
+                )}
                 <span className="text-[11px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">
                   ✓ Đã khám
                 </span>

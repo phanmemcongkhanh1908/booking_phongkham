@@ -39,6 +39,7 @@ export default function AdminReviewManageModal({
   if (!isOpen || !appointment) return null;
 
   const isHidden = Boolean(appointment.isReviewHidden);
+  const isRatingHidden = Boolean(appointment.isRatingHidden);
   const rating = Number(appointment.rating) || 5;
 
   const handleToggleVisibility = async () => {
@@ -54,6 +55,24 @@ export default function AdminReviewManageModal({
       }
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Không thể cập nhật trạng thái hiển thị đánh giá');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleToggleRatingVisibility = async () => {
+    setLoadingAction('toggle-rating');
+    try {
+      const res = await api.patch(`/appointments/${appointment.id}/review/toggle-rating-visibility`, {
+        isRatingHidden: !isRatingHidden
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || (isRatingHidden ? 'Đã bật hiển thị điểm sao điều trị' : 'Đã ẩn điểm sao của đợt điều trị này'));
+        onSuccess();
+        onClose();
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || 'Không thể cập nhật trạng thái hiển thị điểm sao');
     } finally {
       setLoadingAction(null);
     }
@@ -128,7 +147,7 @@ export default function AdminReviewManageModal({
 
           {/* Rating & Review Details */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/70 via-orange-50/40 to-amber-50/60 border border-amber-200/80 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/50 pb-2.5">
               <div className="flex items-center gap-2">
                 <div className="flex text-amber-400">
                   {[1, 2, 3, 4, 5].map((s) => (
@@ -141,18 +160,29 @@ export default function AdminReviewManageModal({
                 <span className="font-extrabold text-sm text-slate-800">
                   {rating}/5 Sao
                 </span>
+                {isRatingHidden ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                    <EyeOff className="w-3 h-3 text-purple-700" />
+                    Đã ẩn sao
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-500" />
+                    Hiện sao
+                  </span>
+                )}
               </div>
 
-              {/* Status pill */}
+              {/* Review status pill */}
               {isHidden ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
                   <EyeOff className="w-3.5 h-3.5 text-amber-700" />
-                  Đang ẨN
+                  Đang ẨN ĐÁNH GIÁ
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                  Đang HIỆN
+                  Đang HIỆN CÔNG KHAI
                 </span>
               )}
             </div>
@@ -185,28 +215,46 @@ export default function AdminReviewManageModal({
             )}
           </div>
 
-          {/* Visibility Info Banner */}
-          {isHidden ? (
-            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed">
-              <EyeOff className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Đánh giá này đang bị ẩn</p>
-                <p className="text-amber-700 mt-0.5">
-                  Đánh giá không xuất hiện trên trang đặt lịch công khai và danh sách phản hồi khách hàng. Bạn có thể bật hiển thị lại bất cứ lúc nào.
-                </p>
+          {/* Visibility Info Banners */}
+          <div className="space-y-2">
+            {isHidden ? (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed">
+                <EyeOff className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Đánh giá này đang bị ẩn toàn bộ</p>
+                  <p className="text-amber-700 mt-0.5">
+                    Đánh giá không xuất hiện trên trang đặt lịch công khai và danh sách phản hồi khách hàng.
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-900 leading-relaxed">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Đang hiển thị công khai</p>
-                <p className="text-emerald-700 mt-0.5">
-                  Đánh giá đang được hiển thị trên widget độ uy tín và trang công khai để tạo niềm tin cho bệnh nhân mới.
-                </p>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-900 leading-relaxed">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Nội dung đánh giá đang hiển thị công khai</p>
+                  <p className="text-emerald-700 mt-0.5">
+                    Đánh giá xuất hiện trên trang phòng khám và widget độ uy tín để tạo niềm tin cho bệnh nhân mới.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {isRatingHidden ? (
+              <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200 flex items-start gap-2 text-xs text-purple-900 leading-relaxed">
+                <EyeOff className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Điểm sao ({rating}★) đang bị ẨN:</span> Điểm này không xuất hiện công khai và không tính vào điểm sao trung bình của phòng khám.
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-2 text-xs text-slate-700 leading-relaxed">
+                <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Điểm sao ({rating}★) đang HIỆN:</span> Điểm sao được hiển thị và tính vào điểm trung bình uy tín của dịch vụ/phòng khám.
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Delete confirmation dialog */}
           {confirmDelete && (
@@ -248,43 +296,63 @@ export default function AdminReviewManageModal({
             type="button"
             disabled={loadingAction === 'delete'}
             onClick={() => setConfirmDelete(true)}
-            className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            className="w-full sm:w-auto px-3.5 py-2 text-xs font-bold rounded-xl text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
-            <span>Xóa đánh giá</span>
+            <span>Xóa</span>
           </button>
 
-          <div className="w-full sm:w-auto flex items-center justify-end gap-2.5">
+          <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => {
                 onEditReview(appointment);
                 onClose();
               }}
-              className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-xl text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 text-xs font-bold rounded-xl text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Edit3 className="w-4 h-4" />
-              <span>Sửa đánh giá</span>
+              <span>Sửa</span>
             </button>
 
+            {/* Nút Ẩn / Hiện Điểm Sao */}
+            <button
+              type="button"
+              disabled={loadingAction === 'toggle-rating'}
+              onClick={handleToggleRatingVisibility}
+              className={`px-3 py-2 text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                isRatingHidden
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                  : 'bg-white hover:bg-purple-50 text-purple-700 border border-purple-300'
+              }`}
+            >
+              {loadingAction === 'toggle-rating' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Star className={`w-3.5 h-3.5 ${isRatingHidden ? 'fill-white text-white' : 'text-purple-600'}`} />
+              )}
+              <span>{isRatingHidden ? 'Hiện điểm sao' : 'Ẩn điểm sao'}</span>
+            </button>
+
+            {/* Nút Ẩn / Hiện Toàn Bộ Đánh Giá */}
             <button
               type="button"
               disabled={loadingAction === 'toggle'}
               onClick={handleToggleVisibility}
-              className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer ${
                 isHidden
                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   : 'bg-amber-500 hover:bg-amber-600 text-white'
               }`}
             >
               {loadingAction === 'toggle' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : isHidden ? (
-                <Eye className="w-4 h-4" />
+                <Eye className="w-3.5 h-3.5" />
               ) : (
-                <EyeOff className="w-4 h-4" />
+                <EyeOff className="w-3.5 h-3.5" />
               )}
-              <span>{isHidden ? 'Hiện công khai' : 'Ẩn đánh giá'}</span>
+              <span>{isHidden ? 'Hiện đánh giá' : 'Ẩn đánh giá'}</span>
             </button>
           </div>
         </div>

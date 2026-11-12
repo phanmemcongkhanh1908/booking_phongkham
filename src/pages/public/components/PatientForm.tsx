@@ -233,9 +233,14 @@ export default function PatientForm() {
     setBookingFor(mode);
     if (mode === 'relative') {
       setIsNewProfile(true);
-      setPhoneStatus('new');
+    } else {
+      setIsNewProfile(false);
+      const rawClean = (formData.phone || '').replace(/\D/g, '');
+      if (!/^\d{10,11}$/.test(rawClean)) {
+        setPhoneStatus('idle');
+      }
     }
-    setPatientDraft({ bookingFor: mode, isNewProfile: mode === 'relative' || isNewProfile });
+    setPatientDraft({ bookingFor: mode, isNewProfile: mode === 'relative' });
   };
 
   useEffect(() => {
@@ -437,11 +442,20 @@ export default function PatientForm() {
             </button>
           </div>
 
-          {(isNewProfile || bookingFor === 'relative') && (
+          {bookingFor === 'relative' && (
             <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-teal-50 border border-teal-200/70 text-xs text-teal-800 animate-in fade-in duration-200">
               <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
               <span>
-                <strong>Chế độ đặt lịch hộ / hồ sơ mới:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+                <strong>Chế độ đặt lịch hộ:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+              </span>
+            </div>
+          )}
+
+          {bookingFor === 'self' && isNewProfile && (
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-200/70 text-xs text-blue-800 animate-in fade-in duration-200">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>
+                <strong>Chế độ hồ sơ mới:</strong> Bạn đang tạo hồ sơ mới cho số điện thoại này.
               </span>
             </div>
           )}
@@ -552,37 +566,35 @@ export default function PatientForm() {
                 </div>
               )}
 
-              {/* Các trường còn lại chỉ hiện khi là khách mới hoặc đã verify */}
-              {(phoneStatus === 'new' || phoneStatus === 'verified') && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700">
-                      Họ và tên người khám <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="VD: Nguyễn Văn An"
-                        value={formData.fullName || ''}
-                        onChange={e => {
-                          updateField('fullName', e.target.value);
-                          if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
-                        }}
-                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
-                          fieldErrors.fullName 
-                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
-                            : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
-                        }`}
-                      />
-                    </div>
-                    {fieldErrors.fullName && (
-                      <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.fullName}</p>
-                    )}
+              {/* Trường họ và tên người khám luôn sẵn sàng để điền */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Họ và tên người khám <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="VD: Nguyễn Văn An"
+                      value={formData.fullName || ''}
+                      onChange={e => {
+                        updateField('fullName', e.target.value);
+                        if (fieldErrors.fullName) setFieldErrors(prev => ({ ...prev, fullName: '' }));
+                      }}
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border bg-white text-base sm:text-[13px] text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all ${
+                        fieldErrors.fullName 
+                          ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' 
+                          : 'border-slate-200 focus:border-teal-600 focus:ring-teal-600/10'
+                      }`}
+                    />
                   </div>
+                  {fieldErrors.fullName && (
+                    <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.fullName}</p>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
 

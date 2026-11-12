@@ -4,7 +4,7 @@ import { calculateAvailableSlots } from "../../core/scheduling.js";
 import { parseISO, addMinutes, addDays, format, startOfToday } from "date-fns";
 import crypto from "crypto";
 import { db } from "../../db/index.js";
-import { appointmentHolds, appointments, patients, services, providers } from "../../db/schema.js";
+import { appointmentHolds, appointments, patients, services, providers, settings } from "../../db/schema.js";
 import { HoldSlotSchema, BookAppointmentSchema } from "../../../shared/schemas.js";
 import { eq, and, gte, lt, gt, sql, inArray, desc } from "drizzle-orm";
 import { ConflictError, BadRequestError, NotFoundError, ForbiddenError } from "../../core/errors.js";
@@ -1116,6 +1116,16 @@ publicRouter.post("/appointments/:id/review", async (req, res, next) => {
 // Lấy danh sách đánh giá công khai & thống kê độ uy tín nha khoa
 publicRouter.get("/reviews", async (req, res, next) => {
   try {
+    let targetTenantId = (req.query.tenantId || req.headers["x-tenant-id"]) as string | undefined;
+    const rawClinicSlug = (req.query.clinic || req.query.slug || "") as string;
+    if (!targetTenantId && rawClinicSlug) {
+      const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+      const matched = await findClinicBySlug(rawClinicSlug.trim());
+      if (matched?.tenantId) {
+        targetTenantId = matched.tenantId;
+      }
+    }
+
     const apts = await db.select({
       id: appointments.id,
       rating: appointments.rating,
@@ -1123,7 +1133,10 @@ publicRouter.get("/reviews", async (req, res, next) => {
       reviewTags: appointments.reviewTags,
       reviewedAt: appointments.reviewedAt,
       isReviewHidden: appointments.isReviewHidden,
+      isRatingHidden: appointments.isRatingHidden,
+      tenantId: appointments.tenantId,
       startAt: appointments.startAt,
+      serviceId: services.id,
       serviceName: services.name,
       providerName: providers.name,
       patientName: patients.fullName,
@@ -1134,7 +1147,13 @@ publicRouter.get("/reviews", async (req, res, next) => {
     .leftJoin(patients, eq(appointments.patientId, patients.id));
 
     const realReviews = apts
-      .filter((a: any) => a.rating && a.rating > 0 && a.isReviewHidden !== true)
+      .filter((a: any) => {
+        if (!a.rating || a.rating <= 0) return false;
+        if (a.isReviewHidden === true) return false;
+        if (targetTenantId && a.tenantId && a.tenantId !== targetTenantId) return false;
+        if (req.query.serviceId && a.serviceId !== req.query.serviceId) return false;
+        return true;
+      })
       .map((a: any) => {
         // Mask patient name for privacy: "Nguyễn Văn An" -> "Nguyễn V. A."
         let maskedName = "Khách hàng thân thiết";
@@ -1146,11 +1165,15 @@ publicRouter.get("/reviews", async (req, res, next) => {
             maskedName = parts[0];
           }
         }
+        const isRatingHidden = a.isRatingHidden === true;
         return {
           id: a.id,
-          rating: a.rating,
+          rating: isRatingHidden ? null : a.rating,
+          isRatingHidden,
+          hideRating: isRatingHidden,
           comment: a.reviewComment || "",
           tags: a.reviewTags || [],
+          serviceId: a.serviceId,
           serviceName: a.serviceName || "Dịch vụ nha khoa",
           providerName: a.providerName || "Bác sĩ chuyên khoa",
           patientName: maskedName,
@@ -1164,8 +1187,11 @@ publicRouter.get("/reviews", async (req, res, next) => {
       {
         id: "cr-1",
         rating: 5,
+        isRatingHidden: false,
+        hideRating: false,
         comment: "Bác sĩ làm việc rất nhẹ nhàng và tận tâm, lúc làm răng không hề đau như mình tưởng. Phòng khám cực kỳ sạch sẽ, chuẩn vô trùng!",
         tags: ["Bác sĩ tận tâm & êm ái", "Cơ sở vật chất hiện đại", "Không đau"],
+        serviceId: "srv-curated-1",
         serviceName: "Cạo vôi răng & Đánh bóng",
         providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
         patientName: "Trần T. H.",
@@ -1175,8 +1201,11 @@ publicRouter.get("/reviews", async (req, res, next) => {
       {
         id: "cr-2",
         rating: 5,
+        isRatingHidden: false,
+        hideRating: false,
         comment: "Trám răng thẩm mỹ màu tiệp với răng thật 100%, ăn nhai rất chắc chắn. Bác sĩ tư vấn kỹ và không hề vẽ thêm chi phí.",
         tags: ["Chi phí minh bạch, hợp lý", "Tư vấn tận tình, rõ ràng"],
+        serviceId: "srv-curated-2",
         serviceName: "Trám răng thẩm mỹ",
         providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
         patientName: "Nguyễn H. M.",
@@ -1186,8 +1215,11 @@ publicRouter.get("/reviews", async (req, res, next) => {
       {
         id: "cr-3",
         rating: 5,
+        isRatingHidden: false,
+        hideRating: false,
         comment: "Đặt lịch hẹn trước qua web đến nơi được tiếp đón ngay, không phải ngồi chờ. Nhân viên lễ tân và bác sĩ đều rất nhiệt tình.",
         tags: ["Đúng giờ, không chờ đợi", "Tiếp đón thân thiện, chu đáo"],
+        serviceId: "srv-curated-3",
         serviceName: "Khám tổng quát & Tư vấn",
         providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
         patientName: "Lê V. D.",
@@ -1198,14 +1230,15 @@ publicRouter.get("/reviews", async (req, res, next) => {
 
     const allReviews = [...realReviews, ...curatedReviews].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
-    // Calculate stats
+    // Calculate stats only on reviews where rating is not hidden
+    const ratedReviews = allReviews.filter((r: any) => typeof r.rating === 'number' && r.rating > 0);
     const totalCount = allReviews.length;
-    const avgRating = totalCount > 0 
-      ? Number((allReviews.reduce((sum, r) => sum + r.rating, 0) / totalCount).toFixed(1))
+    const avgRating = ratedReviews.length > 0 
+      ? Number((ratedReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / ratedReviews.length).toFixed(1))
       : 5.0;
 
-    const fiveStarCount = allReviews.filter(r => r.rating === 5).length;
-    const satisfactionRate = totalCount > 0 ? Math.round((fiveStarCount / totalCount) * 100) : 99;
+    const fiveStarCount = ratedReviews.filter((r: any) => r.rating === 5).length;
+    const satisfactionRate = ratedReviews.length > 0 ? Math.round((fiveStarCount / ratedReviews.length) * 100) : 99;
 
     res.json({
       success: true,
@@ -1216,11 +1249,11 @@ publicRouter.get("/reviews", async (req, res, next) => {
           verifiedReviewsCount: totalCount,
           satisfactionRate: `${satisfactionRate}%`,
           ratingDistribution: {
-            5: allReviews.filter(r => r.rating === 5).length,
-            4: allReviews.filter(r => r.rating === 4).length,
-            3: allReviews.filter(r => r.rating === 3).length,
-            2: allReviews.filter(r => r.rating === 2).length,
-            1: allReviews.filter(r => r.rating === 1).length,
+            5: ratedReviews.filter((r: any) => r.rating === 5).length,
+            4: ratedReviews.filter((r: any) => r.rating === 4).length,
+            3: ratedReviews.filter((r: any) => r.rating === 3).length,
+            2: ratedReviews.filter((r: any) => r.rating === 2).length,
+            1: ratedReviews.filter((r: any) => r.rating === 1).length,
           }
         },
         reviews: allReviews.slice(0, 10)
@@ -1231,5 +1264,52 @@ publicRouter.get("/reviews", async (req, res, next) => {
   }
 });
 
-// Endpoint giữ chỗ đặt lịch tạm thời
+// PWA Installation telemetry and metric tracking
+publicRouter.post("/pwa-install", async (req, res, next) => {
+  try {
+    const { platform = "pc", displayMode = "standalone", installedAt } = req.body || {};
+    const safePlatform = ['pc', 'android', 'ios'].includes(platform) ? platform : 'pc';
+    const safeDisplayMode = ['standalone', 'shortcut'].includes(displayMode) ? displayMode : 'standalone';
+
+    const record = await db.select().from(settings).where(eq(settings.id, "pwa_install_stats")).limit(1);
+    const existingStats = record[0]?.value || {
+      totalInstalls: 0,
+      platforms: { pc: 0, android: 0, ios: 0 },
+      displayModes: { standalone: 0, shortcut: 0 },
+      recentInstalls: []
+    };
+
+    const updatedStats = {
+      totalInstalls: (existingStats.totalInstalls || 0) + 1,
+      platforms: {
+        pc: (existingStats.platforms?.pc || 0) + (safePlatform === 'pc' ? 1 : 0),
+        android: (existingStats.platforms?.android || 0) + (safePlatform === 'android' ? 1 : 0),
+        ios: (existingStats.platforms?.ios || 0) + (safePlatform === 'ios' ? 1 : 0),
+      },
+      displayModes: {
+        standalone: (existingStats.displayModes?.standalone || 0) + (safeDisplayMode === 'standalone' ? 1 : 0),
+        shortcut: (existingStats.displayModes?.shortcut || 0) + (safeDisplayMode === 'shortcut' ? 1 : 0),
+      },
+      recentInstalls: [
+        {
+          platform: safePlatform,
+          displayMode: safeDisplayMode,
+          installedAt: installedAt || new Date().toISOString(),
+          userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 120) : undefined,
+        },
+        ...(Array.isArray(existingStats.recentInstalls) ? existingStats.recentInstalls.slice(0, 49) : [])
+      ]
+    };
+
+    await db.insert(settings)
+      .values({ id: "pwa_install_stats", value: updatedStats })
+      .onConflictDoUpdate({ target: settings.id, set: { value: updatedStats } });
+
+    res.json({ success: true, message: "Ghi nhận cài đặt PWA thành công" });
+  } catch (error) {
+    console.warn("[PWA Install Metric] Error saving metric:", error);
+    res.json({ success: false });
+  }
+});
+
 export default publicRouter;

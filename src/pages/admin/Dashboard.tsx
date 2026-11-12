@@ -123,6 +123,8 @@ export default function Dashboard() {
 
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'TODAY' | 'PENDING' | 'CHECKED_IN' | 'COMPLETED' | 'REVIEWS'>('ALL');
+  const [reviewServiceFilter, setReviewServiceFilter] = useState<string>('ALL');
+  const [reviewVisibilityFilter, setReviewVisibilityFilter] = useState<'ALL' | 'VISIBLE' | 'HIDDEN_REVIEW' | 'HIDDEN_RATING'>('ALL');
   const [dateRange, setDateRange] = useState<{start: Date, end: Date} | null>(null);
 
   useEffect(() => {
@@ -442,7 +444,29 @@ export default function Dashboard() {
       return apt.status === 'COMPLETED';
     }
     if (statusFilter === 'REVIEWS') {
-      return Boolean(apt.rating && apt.rating > 0);
+      const hasReview = Boolean(apt.rating && apt.rating > 0);
+      if (!hasReview) return false;
+
+      // Filter by service
+      if (reviewServiceFilter !== 'ALL') {
+        const matchesService = 
+          apt.serviceId === reviewServiceFilter || 
+          (Array.isArray(apt.serviceIds) && apt.serviceIds.includes(reviewServiceFilter)) ||
+          apt.serviceName === reviewServiceFilter ||
+          apt.customServiceName === reviewServiceFilter;
+        if (!matchesService) return false;
+      }
+
+      // Filter by review / rating visibility
+      if (reviewVisibilityFilter === 'VISIBLE') {
+        if (apt.isReviewHidden || apt.isRatingHidden) return false;
+      } else if (reviewVisibilityFilter === 'HIDDEN_REVIEW') {
+        if (!apt.isReviewHidden) return false;
+      } else if (reviewVisibilityFilter === 'HIDDEN_RATING') {
+        if (!apt.isRatingHidden) return false;
+      }
+
+      return true;
     }
     return true;
   });
@@ -1086,6 +1110,61 @@ export default function Dashboard() {
                     </button>
                   </div>
 
+                  {/* Secondary Toolbar for REVIEWS Filter: Service & Visibility */}
+                  {statusFilter === 'REVIEWS' && (
+                    <div className="p-3 bg-gradient-to-r from-amber-50/80 to-orange-50/50 border border-amber-200/80 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                          <Star className="w-4 h-4 fill-amber-400 text-amber-600" />
+                          <span>Quản lý Đánh giá:</span>
+                        </div>
+
+                        {/* Filter by Service */}
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-slate-600 font-medium">Dịch vụ:</label>
+                          <select
+                            value={reviewServiceFilter}
+                            onChange={(e) => setReviewServiceFilter(e.target.value)}
+                            className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          >
+                            <option value="ALL">Tất cả dịch vụ</option>
+                            {Array.from(
+                              new Set(
+                                appointments
+                                  .filter(a => a.rating && a.rating > 0)
+                                  .map(a => a.serviceName || a.customServiceName || 'Dịch vụ khám')
+                              )
+                            ).map(sName => (
+                              <option key={sName} value={sName}>{sName}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Filter by Visibility */}
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-slate-600 font-medium">Trạng thái:</label>
+                          <select
+                            value={reviewVisibilityFilter}
+                            onChange={(e) => setReviewVisibilityFilter(e.target.value as any)}
+                            className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          >
+                            <option value="ALL">Tất cả đánh giá</option>
+                            <option value="VISIBLE">Đang hiện công khai</option>
+                            <option value="HIDDEN_REVIEW">Đã ẩn đánh giá</option>
+                            <option value="HIDDEN_RATING">Đã ẩn điểm sao</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-slate-500 text-[11px]">
+                        <span>Tìm thấy <strong>{displayedAppointments.length}</strong> đánh giá</span>
+                        <span className="hidden sm:inline text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-lg font-medium">
+                          💡 Bấm vào điểm sao (★) để mở bảng ẩn/hiện hoặc xóa
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Mobile Card View (visible on mobile < md) */}
                   {/* Mobile Card View (visible on mobile < md) */}
                   <div className="block md:hidden p-3 space-y-3 bg-slate-50">
@@ -1173,10 +1252,21 @@ export default function Dashboard() {
                                 )}
                                 {apt.status === 'COMPLETED' && (
                                   apt.rating ? (
-                                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
-                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                                    <button 
+                                      type="button"
+                                      onClick={() => setManageReviewModalData({ isOpen: true, appointment: apt })}
+                                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100/90 border border-amber-300 text-amber-900 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                      title="Quản lý / Ẩn hiện đánh giá và điểm sao"
+                                    >
+                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500 shrink-0" />
                                       <span>{apt.rating}/5★</span>
-                                    </div>
+                                      {apt.isRatingHidden && (
+                                        <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold">Ẩn sao</span>
+                                      )}
+                                      {apt.isReviewHidden && (
+                                        <span className="text-[10px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded font-bold">Ẩn review</span>
+                                      )}
+                                    </button>
                                   ) : (
                                     <button 
                                       onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
@@ -1211,10 +1301,21 @@ export default function Dashboard() {
                                 )}
                                 {apt.status === 'COMPLETED' && (
                                   apt.rating ? (
-                                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
-                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+                                    <button 
+                                      type="button"
+                                      onClick={() => setManageReviewModalData({ isOpen: true, appointment: apt })}
+                                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100/90 border border-amber-300 text-amber-900 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                      title="Quản lý / Ẩn hiện đánh giá và điểm sao"
+                                    >
+                                      <Star className="w-4 h-4 fill-amber-400 text-amber-500 shrink-0" />
                                       <span>{apt.rating}/5★</span>
-                                    </div>
+                                      {apt.isRatingHidden && (
+                                        <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold">Ẩn sao</span>
+                                      )}
+                                      {apt.isReviewHidden && (
+                                        <span className="text-[10px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded font-bold">Ẩn review</span>
+                                      )}
+                                    </button>
                                   ) : (
                                     <button 
                                       onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
@@ -1343,10 +1444,21 @@ export default function Dashboard() {
                                     )}
                                     {apt.status === 'COMPLETED' && (
                                       apt.rating ? (
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setManageReviewModalData({ isOpen: true, appointment: apt })}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100/90 border border-amber-300 text-amber-900 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                          title="Quản lý / Ẩn hiện đánh giá và điểm sao"
+                                        >
                                           <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                                          {apt.rating}★
-                                        </span>
+                                          <span>{apt.rating}★</span>
+                                          {apt.isRatingHidden && (
+                                            <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold">Ẩn sao</span>
+                                          )}
+                                          {apt.isReviewHidden && (
+                                            <span className="text-[10px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded font-bold">Ẩn review</span>
+                                          )}
+                                        </button>
                                       ) : (
                                         <button 
                                           onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
@@ -1381,10 +1493,21 @@ export default function Dashboard() {
                                     )}
                                     {apt.status === 'COMPLETED' && (
                                       apt.rating ? (
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold" title={apt.reviewComment || 'Đánh giá từ bệnh nhân'}>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setManageReviewModalData({ isOpen: true, appointment: apt })}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 hover:bg-amber-100/90 border border-amber-300 text-amber-900 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                          title="Quản lý / Ẩn hiện đánh giá và điểm sao"
+                                        >
                                           <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                                          {apt.rating}★
-                                        </span>
+                                          <span>{apt.rating}★</span>
+                                          {apt.isRatingHidden && (
+                                            <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold">Ẩn sao</span>
+                                          )}
+                                          {apt.isReviewHidden && (
+                                            <span className="text-[10px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded font-bold">Ẩn review</span>
+                                          )}
+                                        </button>
                                       ) : (
                                         <button 
                                           onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
@@ -1604,6 +1727,15 @@ export default function Dashboard() {
             handleCompleteWithoutReview(completeReviewModalData.appointment.id);
           }
         }}
+      />
+
+      {/* Admin Review Management Modal */}
+      <AdminReviewManageModal
+        isOpen={manageReviewModalData.isOpen}
+        onClose={() => setManageReviewModalData({ isOpen: false, appointment: null })}
+        appointment={manageReviewModalData.appointment}
+        onSuccess={() => fetchAppointments()}
+        onEditReview={(apt) => setCompleteReviewModalData({ isOpen: true, appointment: apt })}
       />
 
       

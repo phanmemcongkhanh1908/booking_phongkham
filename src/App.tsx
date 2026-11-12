@@ -2,6 +2,7 @@ import React, { Component, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/auth';
 import NotificationManager from './components/NotificationManager';
+import { NetworkStatusNotification } from './components/NetworkStatusNotification';
 
 // Dynamic import with retry to protect against network hiccups or stale chunk cache
 function lazyWithRetry<T extends React.ComponentType<any>>(
@@ -113,6 +114,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <NetworkStatusNotification />
         <ScrollToTop />
         <NotificationManager />
         <React.Suspense

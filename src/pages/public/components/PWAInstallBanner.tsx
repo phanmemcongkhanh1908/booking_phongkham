@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { usePWAInstall } from '../../../hooks/usePWAInstall';
-import { Smartphone, Download, X, Share, PlusSquare, ArrowDown, CheckCircle2 } from 'lucide-react';
+import { Smartphone, Monitor, Download, X, Share, PlusSquare, ArrowDown, CheckCircle2, Laptop } from 'lucide-react';
 import { useBookingStore } from '../../../store/booking';
+import { toast } from 'react-hot-toast';
 
 export const PWAInstallBanner: React.FC = () => {
-  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+  const { isInstallable, isInstalled, isIOS, isAndroid, isPC, install, createDesktopShortcut } = usePWAInstall();
   const [isDismissed, setIsDismissed] = useState(true);
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pc' | 'android' | 'ios'>(isPC ? 'pc' : isIOS ? 'ios' : 'android');
   const clinicProfile = useBookingStore(s => s.clinicProfile);
 
   useEffect(() => {
@@ -19,7 +21,7 @@ export const PWAInstallBanner: React.FC = () => {
         return;
       }
     }
-    // Only show on non-installed mobile/tablet view
+    // Only show on non-installed view
     setIsDismissed(false);
   }, [isInstalled]);
 
@@ -37,9 +39,20 @@ export const PWAInstallBanner: React.FC = () => {
       const success = await install();
       if (success) {
         setIsDismissed(true);
+        toast.success('Ứng dụng đã được cài đặt thành công!');
+        return;
       }
-    } else {
-      setShowGuideModal(true);
+    }
+    setActiveTab(isPC ? 'pc' : isIOS ? 'ios' : 'android');
+    setShowGuideModal(true);
+  };
+
+  const handleCreateDesktop = () => {
+    const success = createDesktopShortcut(clinicProfile?.clinicName || 'Dat_Lich_Kham');
+    if (success) {
+      toast.success('Đã tải file Lối tắt Desktop (.url)! Kéo thả file ra Màn hình chính Desktop để mở nhanh.');
+      setIsDismissed(true);
+      setShowGuideModal(false);
     }
   };
 
@@ -47,24 +60,24 @@ export const PWAInstallBanner: React.FC = () => {
 
   return (
     <>
-      {/* Mobile Floating Install Bar / Banner */}
+      {/* Floating Install Bar / Banner */}
       <aside 
         aria-label="Cài đặt ứng dụng"
         className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-40 bg-white/95 backdrop-blur-md border border-teal-200/90 rounded-2xl shadow-xl p-3.5 animate-in slide-in-from-bottom-5 duration-300"
       >
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-            <Smartphone className="w-5 h-5 text-white" />
+            {isPC ? <Monitor className="w-5 h-5 text-white" /> : <Smartphone className="w-5 h-5 text-white" />}
           </div>
 
           <div className="flex-1 min-w-0 pr-1">
             <div className="flex items-center justify-between">
               <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                Cài đặt ứng dụng {appName}
+                {isPC ? `Cài nhanh ứng dụng ${appName}` : `Cài ứng dụng ${appName}`}
               </h4>
               <button 
                 onClick={handleDismiss}
-                className="text-slate-400 hover:text-slate-600 p-1 -mr-1 -mt-1 rounded-full transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1 -mr-1 -mt-1 rounded-full transition-colors cursor-pointer"
                 title="Đóng"
               >
                 <X className="w-4 h-4" />
@@ -72,7 +85,9 @@ export const PWAInstallBanner: React.FC = () => {
             </div>
             
             <p className="text-[11px] text-slate-600 leading-snug mt-0.5">
-              Thêm vào màn hình chính để mở đặt lịch nhanh các lần sau, không cần tìm quét mã QR!
+              {isPC 
+                ? 'Tạo lối tắt ra màn hình Desktop máy tính để mở nhanh bất cứ lúc nào!'
+                : 'Thêm vào màn hình chính điện thoại để mở đặt lịch nhanh các lần sau!'}
             </p>
 
             <div className="mt-2.5 flex items-center gap-2">
@@ -82,13 +97,13 @@ export const PWAInstallBanner: React.FC = () => {
                 className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Cài đặt vào điện thoại</span>
+                <span>{isPC ? 'Tạo lối tắt / Cài vào PC' : 'Cài đặt vào điện thoại'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleDismiss}
-                className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium rounded-xl hover:bg-slate-100 transition-colors"
+                className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Để sau
               </button>
@@ -97,7 +112,7 @@ export const PWAInstallBanner: React.FC = () => {
         </div>
       </aside>
 
-      {/* Step-by-Step Installation Guide Modal (for iOS Safari or Android Chrome Fallback) */}
+      {/* Step-by-Step Installation Guide Modal */}
       {showGuideModal && (
         <div 
           role="dialog"
@@ -105,24 +120,160 @@ export const PWAInstallBanner: React.FC = () => {
           aria-labelledby="pwa-guide-title"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
         >
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl relative border border-slate-100 animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 shadow-2xl relative border border-slate-100 animate-in zoom-in-95 duration-200">
             <button 
               onClick={() => setShowGuideModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center mb-4">
-              <Smartphone className="w-6 h-6" />
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                {activeTab === 'pc' ? <Monitor className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
+              </div>
+              <div>
+                <h3 id="pwa-guide-title" className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
+                  Cài đặt ứng dụng {appName}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Mở ứng dụng siêu tốc mọi lúc, không cần tìm hay quét mã QR
+                </p>
+              </div>
             </div>
 
-            <h3 id="pwa-guide-title" className="text-base sm:text-lg font-bold text-slate-900">
-              {isIOS ? 'Cài đặt trên iPhone / iPad (iOS)' : 'Cài đặt vào màn hình chính'}
-            </h3>
+            {/* Platform Selector Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActiveTab('pc')}
+                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'pc' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Laptop className="w-3.5 h-3.5" />
+                <span>Máy tính PC</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('android')}
+                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'android' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Android</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('ios')}
+                className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'ios' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <span>iPhone / iPad</span>
+              </button>
+            </div>
 
-            {isIOS ? (
-              <div className="mt-4 space-y-3.5 text-xs sm:text-sm text-slate-700">
+            {/* Content for PC */}
+            {activeTab === 'pc' && (
+              <div className="space-y-3.5 text-xs sm:text-sm text-slate-700">
+                <div className="bg-gradient-to-r from-teal-50 to-emerald-50 p-4 rounded-2xl border border-teal-200/80 space-y-2">
+                  <span className="font-bold text-teal-900 text-xs uppercase tracking-wide">Tự động tạo lối tắt (Khuyên dùng):</span>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Tải ngay file lối tắt để đặt trực tiếp ra Màn hình Desktop máy tính. Nhấp đúp vào là vào thẳng trang đặt lịch của phòng khám!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCreateDesktop}
+                    className="w-full mt-1 py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Tạo Lối tắt ra Màn hình Desktop (.url)</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="font-bold text-slate-800 text-xs uppercase tracking-wide">Cài đặt trực tiếp qua trình duyệt (Chrome / Cốc Cốc / Edge):</p>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
+                    <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                      1
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">Bấm biểu tượng cài đặt trên thanh địa chỉ</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Nhìn vào góc phải thanh địa chỉ trình duyệt, bấm vào biểu tượng <strong>[Cài đặt ứng dụng]</strong> (màn hình có mũi tên xuống).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
+                    <div className="w-6 h-6 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                      2
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">Hoặc mở Menu góc phải (⋮)</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Chọn <strong>"Lưu và chia sẻ"</strong> hoặc <strong>"Cài đặt ứng dụng..."</strong> ➔ Tạo lối tắt ra màn hình Desktop.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Content for Android */}
+            {activeTab === 'android' && (
+              <div className="space-y-3 text-xs sm:text-sm text-slate-700">
+                {isInstallable && (
+                  <div className="bg-teal-50 p-3.5 rounded-2xl border border-teal-200 space-y-2">
+                    <p className="text-xs text-teal-800 font-medium">Thiết bị của bạn hỗ trợ tạo ứng dụng tự động 1 chạm:</p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const accepted = await install();
+                        if (accepted) {
+                          toast.success('Đã thêm ứng dụng ra màn hình chính!');
+                          setShowGuideModal(false);
+                        }
+                      }}
+                      className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Tự động tạo ứng dụng ra Màn hình chính</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Mở Menu trình duyệt Chrome / Cốc Cốc</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Nhấn vào biểu tượng <strong>3 chấm dọc (⋮)</strong> ở góc trên bên phải màn hình điện thoại.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div className="w-6 h-6 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900">Chọn "Cài đặt ứng dụng" hoặc "Thêm vào MH chính"</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Hệ thống sẽ tạo biểu tượng ứng dụng độc lập trên màn hình chính của điện thoại.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Content for iOS */}
+            {activeTab === 'ios' && (
+              <div className="space-y-3.5 text-xs sm:text-sm text-slate-700">
                 <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
                   <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
                     1
@@ -159,40 +310,14 @@ export const PWAInstallBanner: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="mt-4 space-y-3.5 text-xs sm:text-sm text-slate-700">
-                <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
-                    1
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">Mở Menu trình duyệt</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Nhấn vào biểu tượng <strong>3 chấm dọc (⋮)</strong> ở góc trên bên phải trình duyệt Chrome/Cốc Cốc.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <div className="w-7 h-7 rounded-xl bg-teal-100 text-teal-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
-                    2
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">Chọn "Cài đặt ứng dụng"</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Hoặc chọn <strong>"Thêm vào Màn hình chính"</strong> để tạo biểu tượng ứng dụng.
-                    </p>
-                  </div>
-                </div>
-              </div>
             )}
 
             <button
               type="button"
               onClick={() => setShowGuideModal(false)}
-              className="mt-5 w-full rounded-2xl bg-slate-900 py-3 text-xs sm:text-sm font-bold text-white hover:bg-slate-800 transition-colors shadow-sm"
+              className="mt-5 w-full rounded-2xl bg-slate-900 py-3 text-xs sm:text-sm font-bold text-white hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
             >
-              Đã hiểu, tôi sẽ làm theo
+              Đã hiểu, đóng hướng dẫn
             </button>
           </div>
         </div>

@@ -32,7 +32,11 @@ import {
   ShieldCheck,
   Award,
   LayoutGrid,
-  Table as TableIcon
+  Table as TableIcon,
+  Smartphone,
+  Laptop,
+  DownloadCloud,
+  Monitor
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AnalyticsPrintModal, { PrintReportConfig } from './components/AnalyticsPrintModal';
@@ -153,6 +157,35 @@ export default function Analytics() {
       }
     }).catch(() => {});
   }, []);
+
+  // PWA Install Telemetry State
+  const [pwaStats, setPwaStats] = useState<{
+    totalInstalls: number;
+    platforms: { pc: number; android: number; ios: number };
+    displayModes: { standalone: number; shortcut: number };
+    recentInstalls: Array<{ platform: string; displayMode: string; installedAt: string; userAgent?: string }>;
+  } | null>(null);
+  const [loadingPwa, setLoadingPwa] = useState(false);
+
+  const fetchPwaStats = useCallback(async (showToast = false) => {
+    setLoadingPwa(true);
+    try {
+      const res = await api.get('/admin/pwa-installs');
+      if (res.data?.success && res.data?.data) {
+        setPwaStats(res.data.data);
+        if (showToast) toast.success('Đã cập nhật thống kê cài đặt PWA');
+      }
+    } catch (e) {
+      console.warn('Failed to load PWA stats:', e);
+      if (showToast) toast.error('Không thể tải thống kê PWA');
+    } finally {
+      setLoadingPwa(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPwaStats();
+  }, [fetchPwaStats]);
 
   const fetchAnalytics = useCallback(async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
@@ -1337,6 +1370,152 @@ export default function Analytics() {
               </table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* BÁO CÁO CÀI ĐẶT ỨNG DỤNG PWA */}
+      <Card className="shadow-xs border-slate-200/80">
+        <CardHeader className="pb-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 border border-teal-100 shadow-2xs">
+              <DownloadCloud className="w-5 h-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                Báo cáo Cài đặt Ứng dụng (PWA & Desktop Shortcuts)
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                  Thời gian thực
+                </span>
+              </CardTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Thống kê số lượng người dùng đã cài ứng dụng ra màn hình chính (Standalone Mode / Desktop Shortcut)
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => fetchPwaStats(true)}
+            disabled={loadingPwa}
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingPwa ? 'animate-spin' : ''}`} />
+            <span>Làm mới</span>
+          </button>
+        </CardHeader>
+
+        <CardContent className="pt-5 space-y-6">
+          {/* Key Metric Stat Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            {/* Total Installs */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-50/80 to-emerald-50/40 border border-teal-200/80 space-y-1">
+              <div className="flex items-center justify-between text-teal-800">
+                <span className="text-xs font-bold uppercase tracking-wider">Tổng Lượt Cài</span>
+                <DownloadCloud className="w-4 h-4" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-teal-950">
+                {pwaStats?.totalInstalls || 0}
+              </p>
+              <p className="text-[11px] text-teal-700/80 font-medium">Bệnh nhân & Nhân viên</p>
+            </div>
+
+            {/* PC Desktop */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/40 border border-blue-200/80 space-y-1">
+              <div className="flex items-center justify-between text-blue-800">
+                <span className="text-xs font-bold uppercase tracking-wider">Máy tính (PC)</span>
+                <Laptop className="w-4 h-4" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-blue-950">
+                {pwaStats?.platforms?.pc || 0}
+              </p>
+              <p className="text-[11px] text-blue-700/80 font-medium">Lối tắt Desktop (.url / Web App)</p>
+            </div>
+
+            {/* Android */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/40 border border-emerald-200/80 space-y-1">
+              <div className="flex items-center justify-between text-emerald-800">
+                <span className="text-xs font-bold uppercase tracking-wider">Android</span>
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-emerald-950">
+                {pwaStats?.platforms?.android || 0}
+              </p>
+              <p className="text-[11px] text-emerald-700/80 font-medium">Màn hình chính Android</p>
+            </div>
+
+            {/* iOS */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50/80 to-pink-50/40 border border-purple-200/80 space-y-1">
+              <div className="flex items-center justify-between text-purple-800">
+                <span className="text-xs font-bold uppercase tracking-wider">iOS (iPhone/iPad)</span>
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-purple-950">
+                {pwaStats?.platforms?.ios || 0}
+              </p>
+              <p className="text-[11px] text-purple-700/80 font-medium">Thêm vào MH chính Safari</p>
+            </div>
+          </div>
+
+          {/* Breakdown & Recent Activity */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+            {/* Display Modes breakdown */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Monitor className="w-4 h-4 text-teal-600" />
+                Hình thức người dùng kích hoạt
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/60 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="font-semibold text-slate-800">Ứng dụng độc lập (Standalone PWA)</span>
+                  </div>
+                  <span className="font-bold text-slate-900">{pwaStats?.displayModes?.standalone || 0} lượt</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/60 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    <span className="font-semibold text-slate-800">Lối tắt màn hình Desktop (.url)</span>
+                  </div>
+                  <span className="font-bold text-slate-900">{pwaStats?.displayModes?.shortcut || 0} lượt</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent installations */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-teal-600" />
+                Lịch sử cài đặt gần nhất
+              </h4>
+              {pwaStats?.recentInstalls && pwaStats.recentInstalls.length > 0 ? (
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                  {pwaStats.recentInstalls.slice(0, 5).map((inst, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-lg bg-white border border-slate-200/60 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        {inst.platform === 'pc' ? (
+                          <Laptop className="w-3.5 h-3.5 text-blue-600" />
+                        ) : (
+                          <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+                        )}
+                        <span className="font-bold text-slate-800 uppercase text-[11px]">
+                          {inst.platform === 'pc' ? 'Máy tính PC' : inst.platform === 'android' ? 'Android' : 'iOS Safari'}
+                        </span>
+                        <span className="text-[10px] text-slate-400">({inst.displayMode})</span>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        {inst.installedAt ? format(new Date(inst.installedAt), 'dd/MM HH:mm') : 'Vừa xong'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 py-3 text-center italic">
+                  Chưa ghi nhận lượt cài đặt mới nào trong phiên làm việc.
+                </p>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

@@ -694,6 +694,12 @@ export default function SimpleBookingForm() {
                   type="button"
                   onClick={() => {
                     setBookingFor('self');
+                    setIsNewProfile(false);
+                    // If phone is present and valid, re-check to see if existing customer
+                    const rawClean = (formData.phone || '').replace(/\D/g, '');
+                    if (!/^\d{10,11}$/.test(rawClean)) {
+                      setPhoneStatus('idle');
+                    }
                   }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold transition-all z-10 cursor-pointer ${
                     bookingFor === 'self'
@@ -709,7 +715,6 @@ export default function SimpleBookingForm() {
                   onClick={() => {
                     setBookingFor('relative');
                     setIsNewProfile(true);
-                    setPhoneStatus('new');
                   }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold transition-all z-10 cursor-pointer ${
                     bookingFor === 'relative'
@@ -722,11 +727,20 @@ export default function SimpleBookingForm() {
                 </button>
               </div>
 
-              {(isNewProfile || bookingFor === 'relative') && (
+              {bookingFor === 'relative' && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50 border border-teal-200/70 text-xs text-teal-800 animate-in fade-in duration-200">
                   <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
                   <span>
-                    <strong>Chế độ đặt lịch hộ / hồ sơ mới:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+                    <strong>Chế độ đặt lịch hộ:</strong> Hồ sơ cũ đã lưu trước đây với SĐT này được giữ nguyên 100%.
+                  </span>
+                </div>
+              )}
+
+              {bookingFor === 'self' && isNewProfile && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200/70 text-xs text-blue-800 animate-in fade-in duration-200">
+                  <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    <strong>Chế độ hồ sơ mới:</strong> Bạn đang tạo hồ sơ mới cho số điện thoại này.
                   </span>
                 </div>
               )}
@@ -815,9 +829,8 @@ export default function SimpleBookingForm() {
               </div>
             )}
 
-            {/* Các trường còn lại chỉ hiện khi là khách mới hoặc đã verify */}
-            {(phoneStatus === 'new' || phoneStatus === 'verified') && (
-              <div className="space-y-4 animate-in fade-in slide-in-from-top-3 duration-400">
+            {/* Các trường họ tên và thông tin liên hệ luôn sẵn sàng để điền */}
+            <div className="space-y-4 animate-in fade-in slide-in-from-top-3 duration-400">
                 <div className="space-y-1.5 relative">
                   <label className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5 ml-0.5">
                     Họ và tên <span className="text-red-500">*</span>
@@ -892,7 +905,6 @@ export default function SimpleBookingForm() {
                   )}
                 </div>
               </div>
-            )}
           </div>
         </div>
 
