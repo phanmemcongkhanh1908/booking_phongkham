@@ -130,7 +130,7 @@ export const UnauthorizedEmailModal: React.FC<UnauthorizedEmailModalProps> = ({
               Tại sao bạn thấy thông báo này?
             </h4>
             <p className="text-xs leading-relaxed text-slate-600">
-              Để bảo vệ tuyệt đối thông tin bệnh án và lịch hẹn của phòng khám, Dental Smart Booking chỉ cho phép những tài khoản Google đã được <strong>Admin Tổng phê duyệt trước</strong> trong danh sách <strong>Admin Whitelist</strong>.
+              Để bảo vệ tuyệt đối thông tin bệnh án và lịch hẹn của phòng khám, hệ thống chỉ cho phép những tài khoản Gmail đã được <strong>khai báo trước trong mục Cài đặt của chính phòng khám này</strong>. Tài khoản Google cá nhân chưa khai báo sẽ tự động bị từ chối.
             </p>
           </div>
 
@@ -138,7 +138,7 @@ export const UnauthorizedEmailModal: React.FC<UnauthorizedEmailModalProps> = ({
           <div className="space-y-2">
             <h4 className="font-bold text-slate-800 text-xs sm:text-sm flex items-center gap-1.5">
               <UserPlus className="w-4 h-4 text-teal-600" />
-              Cách kích hoạt tài khoản để đăng nhập:
+              Cách khai báo Gmail để được phép đăng nhập:
             </h4>
             <ol className="space-y-2 text-xs text-slate-600 pl-1">
               <li className="flex items-start gap-2">
@@ -146,7 +146,7 @@ export const UnauthorizedEmailModal: React.FC<UnauthorizedEmailModalProps> = ({
                   1
                 </span>
                 <span>
-                  <strong>Gửi email cho Quản trị viên:</strong> Nhấn nút <em>Sao chép</em> địa chỉ email ở trên và gửi cho Admin Tổng của phòng khám bạn.
+                  <strong>Gửi email cho Quản trị viên phòng khám:</strong> Nhấn nút <em>Sao chép</em> địa chỉ email ở trên để gửi cho chủ/quản trị phòng khám.
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -154,7 +154,7 @@ export const UnauthorizedEmailModal: React.FC<UnauthorizedEmailModalProps> = ({
                   2
                 </span>
                 <span>
-                  <strong>Admin thêm vào Whitelist:</strong> Quản trị viên chỉ cần vào mục <strong>Tài khoản &gt; Gmail phòng khám (Google Sync Accounts)</strong> để thêm email này vào danh sách được cấp phép.
+                  <strong>Khai báo trong Cài đặt:</strong> Quản trị viên đăng nhập bằng mật khẩu, vào mục <strong>Cài đặt &gt; Bảo mật Đăng nhập bằng Gmail (Google OAuth)</strong> (hoặc <strong>Tài khoản &gt; Gmail phòng khám</strong>), bật tùy chọn cho phép và thêm email này vào danh sách.
                 </span>
               </li>
             </ol>

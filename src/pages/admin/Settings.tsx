@@ -133,6 +133,19 @@ export default function Settings() {
   const [clinicError, setClinicError] = useState(false);
   const [clinicSaving, setClinicSaving] = useState(false);
 
+  // Cấu hình Bảo mật Đăng nhập bằng Gmail (theo từng phòng khám)
+  const [googleLoginConfig, setGoogleLoginConfig] = useState<{
+    enabled: boolean;
+    allowedEmails: string[];
+  }>({
+    enabled: false,
+    allowedEmails: [],
+  });
+  const [newAllowedGmail, setNewAllowedGmail] = useState('');
+  const [googleLoginMsg, setGoogleLoginMsg] = useState('');
+  const [googleLoginError, setGoogleLoginError] = useState(false);
+  const [googleLoginSaving, setGoogleLoginSaving] = useState(false);
+
   // Cấu hình Trang Hồ Sơ Tiếp Đón Chu Đáo
   const DEFAULT_TAGS = [
     'Đang đau nhức / Ê buốt',
@@ -345,12 +358,19 @@ export default function Settings() {
 
   useEffect(() => {
     api.get('/admin/settings').then(res => {
-      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner } = res.data.data || {};
+      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner, googleLoginConfig: dbGoogleLoginConfig } = res.data.data || {};
       if (telegramToken) setTelegramToken(prev => prev === telegramToken ? prev : telegramToken);
       if (telegramChatId) setTelegramChatId(prev => prev === telegramChatId ? prev : telegramChatId);
       if (telegramBotUsername) setTelegramBotUsername(prev => prev === telegramBotUsername ? prev : telegramBotUsername);
       if (clinicProfile) setClinicProfile(typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile);
       if (dbAnnouncementBanner) setAnnouncementBanner(typeof dbAnnouncementBanner === 'string' ? JSON.parse(dbAnnouncementBanner) : dbAnnouncementBanner);
+      if (dbGoogleLoginConfig) {
+        const parsedGl = typeof dbGoogleLoginConfig === 'string' ? JSON.parse(dbGoogleLoginConfig) : dbGoogleLoginConfig;
+        setGoogleLoginConfig({
+          enabled: Boolean(parsedGl?.enabled),
+          allowedEmails: Array.isArray(parsedGl?.allowedEmails) ? parsedGl.allowedEmails : [],
+        });
+      }
       if (dbBookingFormConfig) {
         const configParsed = typeof dbBookingFormConfig === 'string' ? JSON.parse(dbBookingFormConfig) : dbBookingFormConfig;
         setBookingFormConfig(prev => ({
@@ -627,6 +647,75 @@ export default function Settings() {
 
     await trySave();
     setClinicSaving(false);
+  };
+
+  const handleAddAllowedGmail = () => {
+    const cleaned = newAllowedGmail.trim().toLowerCase();
+    if (!cleaned || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
+      setGoogleLoginError(true);
+      setGoogleLoginMsg('Vui lòng nhập đúng định dạng địa chỉ Gmail (VD: phongkham@gmail.com).');
+      return;
+    }
+    if (googleLoginConfig.allowedEmails.includes(cleaned)) {
+      setNewAllowedGmail('');
+      return;
+    }
+    setGoogleLoginError(false);
+    setGoogleLoginMsg('');
+    setGoogleLoginConfig(prev => ({
+      ...prev,
+      allowedEmails: [...prev.allowedEmails, cleaned],
+    }));
+    setNewAllowedGmail('');
+  };
+
+  const handleRemoveAllowedGmail = (emailToRemove: string) => {
+    setGoogleLoginConfig(prev => ({
+      ...prev,
+      allowedEmails: prev.allowedEmails.filter(e => e !== emailToRemove),
+    }));
+  };
+
+  const handleSaveGoogleLoginConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGoogleLoginSaving(true);
+    setGoogleLoginMsg('');
+    setGoogleLoginError(false);
+
+    let nextEmails = [...googleLoginConfig.allowedEmails];
+    const pendingInput = newAllowedGmail.trim().toLowerCase();
+    if (pendingInput && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pendingInput) && !nextEmails.includes(pendingInput)) {
+      nextEmails.push(pendingInput);
+      setNewAllowedGmail('');
+    }
+
+    const payload = {
+      enabled: googleLoginConfig.enabled,
+      allowedEmails: nextEmails,
+    };
+    setGoogleLoginConfig(payload);
+
+    try {
+      await api.post('/admin/settings', { googleLoginConfig: payload });
+      setGoogleLoginError(false);
+      setGoogleLoginMsg(
+        payload.enabled
+          ? payload.allowedEmails.length > 0
+            ? `Đã lưu! Chỉ ${payload.allowedEmails.length} Gmail đã khai báo mới được đăng nhập bằng Google.`
+            : 'Đã lưu trạng thái BẬT, nhưng cần thêm ít nhất 1 Gmail hợp lệ để mở khóa nút đăng nhập Google.'
+          : 'Đã TẮT tùy chọn đăng nhập bằng Gmail. Hệ thống chỉ cho phép đăng nhập bằng Tên tài khoản & Mật khẩu.'
+      );
+      setTimeout(() => setGoogleLoginMsg(''), 5000);
+    } catch (err: any) {
+      setGoogleLoginError(true);
+      setGoogleLoginMsg(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Không thể lưu cấu hình đăng nhập Gmail.'
+      );
+    } finally {
+      setGoogleLoginSaving(false);
+    }
   };
 
   return (
@@ -989,6 +1078,135 @@ export default function Settings() {
             </p>
             <Button type="submit" disabled={clinicSaving} className="w-full font-semibold">
               {clinicSaving ? 'Đang lưu thông tin...' : 'Lưu thông tin phòng khám'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Bảo mật Đăng nhập bằng Gmail (Google OAuth) */}
+      <Card className="col-span-1 border-indigo-200/80 shadow-xs">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0" />
+            <span>Bảo mật Đăng nhập bằng Gmail (Google OAuth)</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSaveGoogleLoginConfig} className="space-y-4">
+            {googleLoginMsg && (
+              <div
+                className={`text-xs p-3 rounded-xl flex items-start gap-2 border ${
+                  googleLoginError
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                }`}
+              >
+                <span className="shrink-0">{googleLoginError ? '⚠️' : '✅'}</span>
+                <span className="font-medium leading-relaxed">{googleLoginMsg}</span>
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="googleLoginEnabledToggle"
+                checked={googleLoginConfig.enabled}
+                onChange={(e) =>
+                  setGoogleLoginConfig(prev => ({ ...prev, enabled: e.target.checked }))
+                }
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 h-4 w-4 cursor-pointer"
+              />
+              <label htmlFor="googleLoginEnabledToggle" className="cursor-pointer select-none space-y-0.5">
+                <div className="text-xs sm:text-sm font-bold text-slate-900">
+                  Cho phép đăng nhập cổng quản trị bằng Gmail
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Chỉ khi tùy chọn này được bật <strong>VÀ</strong> có ít nhất 1 Gmail được khai báo bên dưới, nút đăng nhập bằng Google tại trang quản trị mới hoạt động. Người lạ sử dụng Gmail khác sẽ bị chặn tuyệt đối.
+                </p>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted block">
+                Danh sách Gmail quản trị được phép đăng nhập ({googleLoginConfig.allowedEmails.length})
+              </label>
+
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="VD: bacsiphuong.dental@gmail.com"
+                  value={newAllowedGmail}
+                  onChange={(e) => setNewAllowedGmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddAllowedGmail();
+                    }
+                  }}
+                  className="text-xs font-mono flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddAllowedGmail}
+                  className="shrink-0 text-xs px-3 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Thêm Gmail
+                </Button>
+              </div>
+
+              {googleUser?.email && !googleLoginConfig.allowedEmails.includes(googleUser.email.toLowerCase()) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGoogleLoginConfig(prev => ({
+                      ...prev,
+                      allowedEmails: Array.from(new Set([...prev.allowedEmails, googleUser.email.toLowerCase()])),
+                    }))
+                  }
+                  className="text-[11px] text-indigo-700 hover:text-indigo-900 font-semibold inline-flex items-center gap-1 hover:underline cursor-pointer"
+                >
+                  <Mail className="w-3 h-3" />
+                  <span>+ Thêm nhanh Gmail đang kết nối ({googleUser.email})</span>
+                </button>
+              )}
+
+              {googleLoginConfig.allowedEmails.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {googleLoginConfig.allowedEmails.map((em) => (
+                    <span
+                      key={em}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-mono font-medium"
+                    >
+                      <span>{em}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAllowedGmail(em)}
+                        className="text-indigo-400 hover:text-red-600 transition-colors cursor-pointer"
+                        title="Xóa Gmail khỏi danh sách được phép"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200/80 rounded-xl px-3 py-2 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Chưa khai báo Gmail nào. Chức năng đăng nhập bằng Google hiện đang được khóa an toàn.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={googleLoginSaving}
+              className="w-full font-semibold bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {googleLoginSaving ? 'Đang lưu cấu hình bảo mật...' : 'Lưu cài đặt đăng nhập Gmail'}
             </Button>
           </form>
         </CardContent>

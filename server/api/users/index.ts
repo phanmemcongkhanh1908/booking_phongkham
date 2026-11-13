@@ -191,13 +191,11 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
     
     console.log("[Users API] User inserted successfully. User ID:", newUser[0]?.id);
     
-    // Synchronize clinic document and user credentials to Firestore
+    // Synchronize clinic document and user credentials to Firestore via Admin SDK
     try {
-      const { serverDb } = await import('../../lib/firebase-server.js');
-      if (serverDb) {
-        const { doc, setDoc } = await import('firebase/firestore');
-        const userDocRef = doc(serverDb, "users", newUser[0]?.id || identifier);
-        await setDoc(userDocRef, {
+      const { adminDb } = await import('../../lib/firebase-admin.js');
+      if (adminDb && typeof adminDb.collection === 'function') {
+        await adminDb.collection("users").doc(newUser[0]?.id || identifier).set({
           id: newUser[0]?.id || identifier,
           email: identifier,
           username: rawIdentifier,
@@ -214,9 +212,9 @@ usersRouter.post("/", requirePermission("user.create"), async (req, res, next) =
           phone: hotline || "",
           hotline: hotline || "",
           updatedAt: new Date().toISOString(),
-        }, { merge: true }).catch((fErr) => console.warn("[Firestore] User sync warn:", fErr));
+        }, { merge: true }).catch(() => {});
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -394,12 +392,10 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
       }
     }
 
-    // Sync user updates to Firestore
+    // Sync user updates to Firestore via Admin SDK
     try {
-      const { serverDb } = await import('../../lib/firebase-server.js');
-      if (serverDb) {
-        const { doc, setDoc } = await import('firebase/firestore');
-        const userDocRef = doc(serverDb, "users", userId);
+      const { adminDb } = await import('../../lib/firebase-admin.js');
+      if (adminDb && typeof adminDb.collection === 'function') {
         const firestoreUpdate: any = {
           id: userId,
           updatedAt: new Date().toISOString(),
@@ -411,9 +407,9 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
         if (updateData.doctorName !== undefined) firestoreUpdate.doctorName = updateData.doctorName;
         if (updateData.phone !== undefined) firestoreUpdate.phone = updateData.phone;
         if (updateData.tenantId !== undefined) firestoreUpdate.tenantId = updateData.tenantId;
-        await setDoc(userDocRef, firestoreUpdate, { merge: true }).catch(() => {});
+        await adminDb.collection("users").doc(userId).set(firestoreUpdate, { merge: true }).catch(() => {});
       }
-    } catch (e) {}
+    } catch {}
 
     res.json({ success: true, data: updated[0] });
   } catch (error) {

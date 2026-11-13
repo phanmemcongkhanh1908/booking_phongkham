@@ -105,15 +105,15 @@ export default function UsersManagement() {
     }
 
     const currentOrigin = window.location.origin;
-    const directInternal = `${currentOrigin}/b/${cleanSlug}`;
-    const fullLink = `${currentOrigin}/booking/${cleanSlug}`;
+    const directInternal = `${currentOrigin}/b/${cleanSlug}?mode=customer`;
+    const fullLink = `${currentOrigin}/booking/${cleanSlug}?mode=customer`;
 
-    // Cung cấp ngay các tùy chọn an toàn tại chỗ trong lúc chờ kết nối mạng
+    // Cung cấp ngay các tùy chọn chế độ Khách hàng tại chỗ trong lúc chờ kết nối mạng
     const initialOptions: ShortLinkOption[] = [
       {
         id: 'internal',
         name: 'Link phòng khám (Khuyên dùng)',
-        tagline: 'Tên miền chính chủ • 100% Không quảng cáo • Nhận diện thương hiệu',
+        tagline: 'Chế độ Khách hàng đặt lịch • 100% Không quảng cáo • Ẩn cổng Admin',
         url: directInternal,
         isAdFree: true,
         isDirectRedirect: true,
@@ -121,8 +121,8 @@ export default function UsersManagement() {
       },
       {
         id: 'full',
-        name: 'Đường dẫn chuẩn (Gốc)',
-        tagline: 'Link đầy đủ chuẩn SEO • Phù hợp đăng Website / Fanpage',
+        name: 'Đường dẫn trực tiếp (Chuẩn SEO)',
+        tagline: 'Link đầy đủ chế độ Khách hàng • Phù hợp đăng Website / Fanpage',
         url: fullLink,
         isAdFree: true,
         isDirectRedirect: true,
@@ -165,13 +165,13 @@ export default function UsersManagement() {
   const activeLinkItem = linkOptions.find(opt => opt.id === selectedOptionId) || linkOptions[0] || {
     id: 'internal',
     name: 'Link phòng khám (Khuyên dùng)',
-    tagline: 'Tên miền chính chủ • 100% Không quảng cáo',
-    url: slug ? `${window.location.origin}/b/${slug}` : '',
+    tagline: 'Chế độ Khách hàng đặt lịch • 100% Không quảng cáo • Ẩn cổng Admin',
+    url: slug ? `${window.location.origin}/b/${slug}?mode=customer` : '',
     isAdFree: true,
     isDirectRedirect: true,
     type: 'brand',
   };
-  const currentActiveUrl = activeLinkItem?.url || (slug ? `${window.location.origin}/b/${slug}` : '');
+  const currentActiveUrl = activeLinkItem?.url || (slug ? `${window.location.origin}/b/${slug}?mode=customer` : '');
 
   const fetchUsers = async () => {
     try {
@@ -301,7 +301,7 @@ export default function UsersManagement() {
         ctx.lineWidth = 1.5;
         ctx.strokeRect(40, 520, 560, 68);
 
-        const activeTarget = currentActiveUrl || `${window.location.origin}/b/${slug || 'booking'}`;
+        const activeTarget = (currentActiveUrl || `${window.location.origin}/b/${slug || 'booking'}?mode=customer`).replace(/\?mode=customer$/, '');
 
         ctx.fillStyle = '#0F766E';
         ctx.font = activeTarget.length > 40 ? 'bold 14px monospace' : 'bold 16px monospace';
@@ -540,18 +540,18 @@ export default function UsersManagement() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => handleCopyLink(`${window.location.origin}/b/${u.slug}`)}
+                                onClick={() => handleCopyLink(`${window.location.origin}/b/${u.slug}?mode=customer`)}
                                 className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors cursor-pointer"
-                                title="Sao chép link đặt hẹn cho khách hàng"
+                                title="Sao chép link đặt hẹn dành cho khách hàng"
                               >
                                 <Copy className="w-3.5 h-3.5" />
                               </button>
                               <a
-                                href={`${window.location.origin}/b/${u.slug}`}
+                                href={`${window.location.origin}/b/${u.slug}?mode=customer`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="p-1 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded transition-colors cursor-pointer"
-                                title="Mở trang đặt hẹn phòng khám"
+                                title="Mở trang đặt hẹn phòng khám (Chế độ khách hàng)"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                               </a>
@@ -884,7 +884,7 @@ export default function UsersManagement() {
                           <div className="p-2 bg-slate-50 rounded-xl border border-slate-100 inline-flex items-center justify-center">
                             <QRCodeSVG 
                               id="qr-code-canvas"
-                              value={currentActiveUrl || `${window.location.origin}/b/${slug}`} 
+                              value={currentActiveUrl || `${window.location.origin}/b/${slug}?mode=customer`} 
                               size={130} 
                               level="M"
                               includeMargin={false}
@@ -892,12 +892,12 @@ export default function UsersManagement() {
                             />
                           </div>
                           
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             <span className="inline-block text-[11px] font-semibold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200/70">
-                              Mã QR tự động cập nhật
+                              Chế độ Khách hàng Đặt lịch
                             </span>
-                            <p className="text-[11px] text-slate-500 max-w-[200px]">
-                              Quét bằng Camera điện thoại hoặc Zalo để mở trang đặt lịch.
+                            <p className="text-[11px] text-slate-500 max-w-[210px] leading-snug">
+                              Quét bằng Camera hoặc Zalo sẽ mở thẳng trang đặt lịch (tuyệt đối không hiển thị cổng Admin).
                             </p>
                           </div>
 
@@ -1098,7 +1098,7 @@ export default function UsersManagement() {
                                 <div className="flex items-center gap-2 min-w-0">
                                   <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
                                   <div className="min-w-0">
-                                    <span className="font-semibold text-slate-800 block text-[11px]">Link Cổng Quản Trị Chi Nhánh (Bác sĩ &amp; Nhân viên):</span>
+                                    <span className="font-semibold text-slate-800 block text-[11px]">Link nội bộ Quản trị Chi nhánh (Chỉ dành cho Bác sĩ &amp; Admin — Không chia sẻ cho khách):</span>
                                     <span className="font-mono text-indigo-900 text-[11px] truncate block select-all">
                                       {`${window.location.origin}/b/${slug}/login`}
                                     </span>

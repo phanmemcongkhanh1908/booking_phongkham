@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/auth';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
-import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, MapPin, Phone } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, Lock, RefreshCw } from 'lucide-react';
 import UnauthorizedEmailModal, { UnauthorizedModalData } from './components/UnauthorizedEmailModal';
 import { GoogleOriginHelpModal } from './components/GoogleOriginHelpModal';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
@@ -26,6 +26,51 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Kiểm tra phòng khám đã bật tùy chọn đăng nhập Gmail & đã khai báo Gmail trong Cài đặt chưa
+  const [googleStatus, setGoogleStatus] = useState<{
+    loading: boolean;
+    clinicFound: boolean;
+    googleLoginEnabled: boolean;
+    hasDeclaredEmails: boolean;
+    declaredCount: number;
+    isReady: boolean;
+  }>({
+    loading: true,
+    clinicFound: true,
+    googleLoginEnabled: false,
+    hasDeclaredEmails: false,
+    declaredCount: 0,
+    isReady: false,
+  });
+
+  const fetchGoogleLoginStatus = async () => {
+    setGoogleStatus(prev => ({ ...prev, loading: true }));
+    try {
+      const res = await api.get('/auth/google-login-status', {
+        params: effectiveSlug ? { clinicSlug: effectiveSlug } : undefined,
+      });
+      const d = res.data?.data || {};
+      setGoogleStatus({
+        loading: false,
+        clinicFound: d.clinicFound !== false,
+        googleLoginEnabled: Boolean(d.googleLoginEnabled),
+        hasDeclaredEmails: Boolean(d.hasDeclaredEmails),
+        declaredCount: Number(d.declaredCount || 0),
+        isReady: Boolean(d.isReady),
+      });
+    } catch {
+      // Fail-closed: khóa đăng nhập Google nếu không xác minh được cấu hình từ Cài đặt
+      setGoogleStatus({
+        loading: false,
+        clinicFound: true,
+        googleLoginEnabled: false,
+        hasDeclaredEmails: false,
+        declaredCount: 0,
+        isReady: false,
+      });
+    }
+  };
 
   // Suggest effectiveSlug in username field if empty
   useEffect(() => {
@@ -60,10 +105,11 @@ export default function Login() {
     }
   }, [effectiveSlug]);
 
-  // Tự động gửi request ping đánh thức máy chủ khi người dùng vừa mở trang login
+  // Tự động gửi request ping đánh thức máy chủ và kiểm tra cấu hình đăng nhập Gmail của phòng khám
   useEffect(() => {
     fetch('/api/health').catch(() => {});
-  }, []);
+    fetchGoogleLoginStatus();
+  }, [effectiveSlug]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,11 +170,22 @@ export default function Login() {
    * và mở popup thân thiện giải thích về Admin Whitelist nếu email chưa được cấp phép.
    */
   const handleGoogleSignIn = async (promptMode: 'consent' | 'select_account' = 'select_account') => {
+    if (!googleStatus.isReady) {
+      setError(
+        !googleStatus.clinicFound
+          ? `Không tìm thấy phòng khám "${effectiveSlug}" trong hệ thống.`
+          : !googleStatus.googleLoginEnabled
+          ? 'Phòng khám chưa bật tùy chọn đăng nhập bằng Gmail trong mục Cài đặt. Vui lòng đăng nhập bằng Tên đăng nhập & Mật khẩu.'
+          : 'Phòng khám chưa khai báo Gmail quản trị nào trong mục Cài đặt. Hệ thống tạm khóa đăng nhập Google để bảo mật.'
+      );
+      return;
+    }
+
     setGoogleLoading(true);
     setError('');
 
     try {
-      console.log('[Login] Đang kích hoạt Google OAuth sign-in...', { promptMode, timestamp: new Date().toISOString() });
+      console.log('[Login] Đang kích hoạt Google OAuth sign-in...', { promptMode, clinicSlug: effectiveSlug || 'root', timestamp: new Date().toISOString() });
       const googleResult = await connectGoogle({ prompt: promptMode });
 
       if (!googleResult?.accessToken) {
@@ -136,19 +193,22 @@ export default function Login() {
       }
 
       const googleEmail = googleResult.user?.email || '';
-      console.log('[Login] Google OAuth thành công. Đang đối soát với Admin Whitelist cho email:', googleEmail);
+      console.log('[Login] Google OAuth thành công. Đang đối soát với Cài đặt phòng khám cho email:', googleEmail);
 
-      // Gửi token và email lên máy chủ để đối soát với bảng users và Admin Whitelist
+      // Gửi token và clinicSlug lên máy chủ để xác thực Google userinfo và đối soát với Gmail đã khai báo trong Cài đặt
       try {
         const res = await api.post('/auth/google', {
           accessToken: googleResult.accessToken,
-          email: googleEmail,
+          clinicSlug: effectiveSlug || undefined,
         });
 
         if (res.data?.success && res.data?.data?.token) {
           console.log('[Login] Đăng nhập Google được phê duyệt thành công:', res.data.data.user);
           setAuth(res.data.data.token, res.data.data.user);
           if (googleEmail) localStorage.setItem('lastEmail', googleEmail);
+          if (res.data.data.user?.slug || effectiveSlug) {
+            localStorage.setItem('last_clinic_slug', res.data.data.user?.slug || effectiveSlug);
+          }
           navigate('/admin/dashboard');
         } else {
           throw new Error('Phản hồi từ máy chủ không hợp lệ.');
@@ -156,24 +216,31 @@ export default function Login() {
       } catch (serverErr: any) {
         const errResponse = serverErr.response?.data;
         const statusCode = serverErr.response?.status;
+        const errCode = errResponse?.error?.code;
 
-        // Bắt lỗi 403 UNAUTHORIZED_EMAIL từ Admin Whitelist
-        if (statusCode === 403 || errResponse?.error?.code === 'UNAUTHORIZED_EMAIL' || errResponse?.data?.errorCode === 'access_denied') {
-          console.error('[Login][ACCESS_DENIED] Tài khoản Google bị từ chối truy cập (Chưa thuộc Admin Whitelist):', {
+        if (errCode === 'GOOGLE_LOGIN_DISABLED' || errCode === 'NO_DECLARED_GMAIL' || errCode === 'CLINIC_NOT_FOUND') {
+          await fetchGoogleLoginStatus();
+          setError(errResponse?.error?.message || 'Chức năng đăng nhập bằng Gmail chưa được cấu hình trong mục Cài đặt.');
+          return;
+        }
+
+        // Bắt lỗi 403 UNAUTHORIZED_EMAIL khi Gmail không nằm trong danh sách đã khai báo trong Cài đặt
+        if (statusCode === 403 || errCode === 'UNAUTHORIZED_EMAIL' || errResponse?.data?.errorCode === 'access_denied') {
+          console.error('[Login][ACCESS_DENIED] Tài khoản Google bị từ chối truy cập (Chưa được khai báo trong Cài đặt):', {
             error: 'access_denied',
-            errorCode: errResponse?.error?.code || 'UNAUTHORIZED_EMAIL',
+            errorCode: errCode || 'UNAUTHORIZED_EMAIL',
             attemptedEmail: googleEmail || errResponse?.data?.email,
+            clinicSlug: effectiveSlug || 'root',
             statusCode,
             serverMessage: errResponse?.error?.message,
             timestamp: new Date().toISOString(),
-            solution: 'Quản trị viên cần thêm email này vào danh sách Admin Whitelist (Gmail phòng khám) trong Quản lý tài khoản.'
           });
 
           setUnauthorizedModalData({
             isOpen: true,
             email: googleEmail || errResponse?.data?.email || '',
-            reason: 'access_denied',
-            details: errResponse?.error?.message || 'Email này chưa được cấp phép trong danh sách Admin Whitelist của phòng khám.',
+            reason: errCode || 'UNAUTHORIZED_EMAIL',
+            details: errResponse?.error?.message || 'Gmail này chưa được khai báo trong mục Cài đặt của phòng khám.',
             timestamp: new Date().toLocaleString('vi-VN')
           });
           return;
@@ -245,7 +312,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-base p-4 relative">
       <Link 
-        to={effectiveSlug ? `/b/${effectiveSlug}` : (localStorage.getItem('last_clinic_slug') ? `/b/${localStorage.getItem('last_clinic_slug')}` : "/book")} 
+        to={effectiveSlug ? `/b/${effectiveSlug}?mode=customer` : (localStorage.getItem('last_clinic_slug') ? `/b/${localStorage.getItem('last_clinic_slug')}?mode=customer` : "/book?mode=customer")} 
         className="absolute top-6 left-6 flex items-center text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white px-3.5 py-2 rounded-2xl shadow-sm border border-slate-200 transition-all hover:bg-slate-50"
       >
         <ArrowLeft className="w-4 h-4 mr-2 text-teal-600" />
@@ -295,41 +362,84 @@ export default function Login() {
               </div>
             )}
 
-            {/* Nút Đăng nhập bằng Google */}
-            <button
-              type="button"
-              onClick={() => handleGoogleSignIn('select_account')}
-              disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-2xl border border-slate-300/90 shadow-2xs hover:shadow-xs transition-all disabled:opacity-60 cursor-pointer text-sm active:scale-[0.99]"
-            >
-              {googleLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
-                  <span>Đang kết nối Google...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>Đăng nhập bằng Google</span>
-                </>
-              )}
-            </button>
-
-            {/* Helper link for Google OAuth 400 origin_mismatch */}
-            <div className="flex justify-center -mt-1">
-              <button
-                type="button"
-                onClick={() => setIsOriginHelpOpen(true)}
-                className="text-[11px] text-slate-500 hover:text-teal-700 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
-              >
-                <span>❓ Hướng dẫn kết nối Google OAuth (Khắc phục lỗi 400 nếu có)</span>
-              </button>
-            </div>
+            {/* Khu vực Đăng nhập bằng Google - Kiểm tra cấu hình từ Cài đặt */}
+            {googleStatus.loading ? (
+              <div className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-50 text-slate-500 font-medium rounded-2xl border border-slate-200 text-xs">
+                <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                <span>Đang kiểm tra cấu hình đăng nhập Gmail...</span>
+              </div>
+            ) : googleStatus.isReady ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleGoogleSignIn('select_account')}
+                  disabled={googleLoading || loading}
+                  className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-2xl border border-slate-300/90 shadow-2xs hover:shadow-xs transition-all disabled:opacity-60 cursor-pointer text-sm active:scale-[0.99]"
+                >
+                  {googleLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                      <span>Đang kết nối &amp; đối soát Gmail...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                      </svg>
+                      <span>Đăng nhập bằng Google</span>
+                    </>
+                  )}
+                </button>
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>Chỉ chấp nhận Gmail đã khai báo trong Cài đặt phòng khám</span>
+                </div>
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsOriginHelpOpen(true)}
+                    className="text-[11px] text-slate-500 hover:text-teal-700 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>❓ Hướng dẫn kết nối Google OAuth (Khắc phục lỗi 400 nếu có)</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 space-y-2 text-xs">
+                <div className="flex items-start gap-2.5">
+                  <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <p className="font-bold text-amber-900">
+                      {!googleStatus.clinicFound
+                        ? 'Không tìm thấy phòng khám'
+                        : !googleStatus.googleLoginEnabled
+                        ? 'Đăng nhập bằng Gmail đang TẮT'
+                        : 'Chưa khai báo Gmail quản trị trong Cài đặt'}
+                    </p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      {!googleStatus.clinicFound
+                        ? `Mã phòng khám "${effectiveSlug}" chưa tồn tại.`
+                        : !googleStatus.googleLoginEnabled
+                        ? 'Để ngăn người lạ đăng nhập trái phép bằng Gmail cá nhân, cổng đăng nhập Google chỉ mở khi quản trị viên bật tùy chọn và khai báo Gmail trong mục Cài đặt > Bảo mật Đăng nhập bằng Gmail.'
+                        : 'Phòng khám chưa khai báo địa chỉ Gmail được phép đăng nhập trong mục Cài đặt. Vui lòng dùng Tài khoản & Mật khẩu bên dưới.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={fetchGoogleLoginStatus}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Kiểm tra lại trạng thái Cài đặt</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Đường phân cách hoặc */}
             <div className="relative my-2">

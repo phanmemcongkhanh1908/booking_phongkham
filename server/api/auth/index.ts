@@ -89,15 +89,12 @@ authRouter.post("/login", async (req, res, next) => {
       user = userRecords.find((u: any) => isUserMatch(u, identifier));
     }
 
-    // 3. Fallback Firestore: nếu server trên Render vừa khởi động lại làm mất file cục bộ
+    // 3. Fallback Firestore (Admin SDK): nếu server vừa khởi động lại làm mất file cục bộ
     if (!user) {
       try {
-        const { serverDb } = await import("../../lib/firebase-server.js");
-        if (serverDb) {
-          const { collection, getDocs, query, where } = await import("firebase/firestore");
-          // Tìm theo slug hoặc email trong Firestore
-          const usersRef = collection(serverDb, "users");
-          const qSnap = await getDocs(usersRef);
+        const { adminDb } = await import("../../lib/firebase-admin.js");
+        if (adminDb && typeof adminDb.collection === "function") {
+          const qSnap = await adminDb.collection("users").get();
           qSnap.forEach((docSnap) => {
             const data = docSnap.data();
             if (isUserMatch(data, identifier) || (clinicSlug && (data.slug === clinicSlug || data.tenantId === `tenant_${clinicSlug}`))) {
@@ -105,8 +102,8 @@ authRouter.post("/login", async (req, res, next) => {
             }
           });
         }
-      } catch (fErr) {
-        // bỏ qua nếu Firestore không có
+      } catch {
+        // bỏ qua nếu Firestore Admin SDK chưa có quyền hoặc không khả dụng
       }
     }
 
@@ -164,44 +161,22 @@ authRouter.post("/login", async (req, res, next) => {
 });
 
 /**
- * POST /google
- * Đăng nhập qua tài khoản Google kèm kiểm tra Admin Whitelist nghiêm ngặt.
- * Nếu email chưa nằm trong danh sách Admin Whitelist (google_sync_accounts) hoặc users:
- * Trả về mã lỗi 403 UNAUTHORIZED_EMAIL và ghi log chi tiết access_denied.
+ * Helper: Resolve scoped clinic / root Google Login configuration & declared emails
+ * NEVER leaks emails to public endpoints; purely evaluates authorization on server.
  */
-authRouter.post("/google", async (req, res, next) => {
-  try {
-    const { accessToken, email: providedEmail } = req.body;
-    let verifiedEmail = (providedEmail || "").trim().toLowerCase();
+async function resolveScopedGoogleLoginPolicy(rawClinicSlug?: string) {
+  const cleanSlug = (rawClinicSlug || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const { appContext } = await import("../../core/context.js");
 
-    // Nếu có Google accessToken, truy vấn Google userinfo để đối soát email
-    if (accessToken) {
-      try {
-        const gRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (gRes.ok) {
-          const gInfo: any = await gRes.json();
-          if (gInfo.email) {
-            verifiedEmail = gInfo.email.trim().toLowerCase();
-          }
-        }
-      } catch (tokenErr) {
-        console.warn("[Auth API] Could not verify Google userinfo with accessToken:", tokenErr);
-      }
-    }
+  let allUsers: any[] = [];
+  let allSettings: any[] = [];
 
-    if (!verifiedEmail) {
-      throw new BadRequestError("Không tìm thấy thông tin email từ tài khoản Google.");
-    }
-
-    console.log(`[Auth API] Verifying Google Login for email: ${verifiedEmail}`);
-
-    // 1. Kiểm tra tài khoản trong bảng users
-    const userRecords = await db
+  await appContext.run({ isFullAdmin: true }, async () => {
+    allUsers = await db
       .select({
         id: users.id,
         email: users.email,
+        username: users.username,
         isActive: users.isActive,
         roleName: roles.name,
         rolePermissions: roles.permissions,
@@ -209,122 +184,333 @@ authRouter.post("/google", async (req, res, next) => {
         tenantId: users.tenantId,
         uiMode: users.uiMode,
         slug: users.slug,
+        clinicName: users.clinicName,
+        doctorName: users.doctorName,
+        address: users.address,
+        phone: users.phone,
+        hotline: users.hotline,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id));
 
-    const matchedUser = userRecords.find(
-      (u: any) => (u.email || "").trim().toLowerCase() === verifiedEmail
-    );
+    allSettings = await db.select().from(settings);
+  });
 
-    // 2. Kiểm tra danh sách Admin Whitelist (settings.google_sync_accounts)
-    const whitelistRecord = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.id, "google_sync_accounts"))
-      .limit(1);
+  // Resolve clinic users if clinicSlug is specified
+  let clinicFound = !cleanSlug;
+  let targetTenantId: string | null = null;
+  let scopedUsers: any[] = [];
 
-    const syncAccounts: any[] = Array.isArray(whitelistRecord[0]?.value)
-      ? whitelistRecord[0].value
-      : [];
+  if (cleanSlug) {
+    scopedUsers = allUsers.filter((u: any) => {
+      const uSlug = (u.slug || "").trim().toLowerCase();
+      const uTenant = (u.tenantId || "").trim().toLowerCase();
+      return uSlug === cleanSlug || uTenant === `tenant_${cleanSlug}`;
+    });
 
-    const whitelistedAccount = syncAccounts.find(
-      (a: any) => (a.email || "").trim().toLowerCase() === verifiedEmail && a.status !== "disabled"
-    );
+    if (scopedUsers.length > 0) {
+      clinicFound = true;
+      targetTenantId = scopedUsers[0].tenantId || `tenant_${cleanSlug}`;
+    } else {
+      // Check Firestore fallback if clinic exists there
+      try {
+        const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+        const lookup = await findClinicBySlug(cleanSlug);
+        if (lookup?.tenantId || lookup?.clinicName) {
+          clinicFound = true;
+          targetTenantId = lookup.tenantId || `tenant_${cleanSlug}`;
+        }
+      } catch {
+        // ignore lookup failure
+      }
+    }
+  } else {
+    // Root login scope: only root users (no tenantId)
+    scopedUsers = allUsers.filter((u: any) => !u.tenantId);
+  }
 
-    // 3. Nếu email KHÔNG nằm trong users VÀ KHÔNG nằm trong Admin Whitelist:
-    if (!matchedUser && !whitelistedAccount) {
+  // Load scoped googleLoginConfig from settings (STRICT tenant isolation; no fallback inheritance)
+  const configSetting = allSettings.find((s: any) => {
+    const isGoogleCfg = s.id === "googleLoginConfig" || s.key === "googleLoginConfig";
+    if (!isGoogleCfg) return false;
+    if (cleanSlug) {
+      return Boolean(targetTenantId && s.tenantId === targetTenantId);
+    }
+    return !s.tenantId;
+  });
+
+  const configValue = (configSetting?.value && typeof configSetting.value === "object")
+    ? configSetting.value
+    : {};
+
+  const googleLoginEnabled = Boolean(configValue.enabled);
+
+  // Declared emails explicitly saved in Cài đặt > Đăng nhập bằng Gmail
+  const explicitAllowedEmails: string[] = Array.isArray(configValue.allowedEmails)
+    ? Array.from(
+        new Set(
+          configValue.allowedEmails
+            .map((e: any) => String(e || "").trim().toLowerCase())
+            .filter((e: string) => e.includes("@") && e.includes("."))
+        )
+      )
+    : [];
+
+  // Also check scoped google_sync_accounts tagged to this exact clinic/tenant
+  const syncSetting = allSettings.find((s: any) => s.id === "google_sync_accounts" && !s.tenantId);
+  const tenantSyncSetting = targetTenantId
+    ? allSettings.find((s: any) => s.id === "google_sync_accounts" && s.tenantId === targetTenantId)
+    : null;
+
+  const allSyncEntries: any[] = [
+    ...(Array.isArray(syncSetting?.value) ? syncSetting.value : []),
+    ...(Array.isArray(tenantSyncSetting?.value) ? tenantSyncSetting.value : []),
+  ];
+
+  const scopedSyncAccounts = allSyncEntries.filter((a: any) => {
+    if (!a || a.status === "disabled" || !a.email) return false;
+    if (cleanSlug) {
+      const aSlug = (a.clinicSlug || "").trim().toLowerCase();
+      const aTenant = (a.tenantId || "").trim().toLowerCase();
+      return (aSlug && aSlug === cleanSlug) || (targetTenantId && aTenant === targetTenantId.toLowerCase());
+    }
+    // Root admin sync accounts must not be scoped to a tenant clinic
+    return !a.clinicSlug && !a.tenantId;
+  });
+
+  const declaredEmails = Array.from(
+    new Set([
+      ...explicitAllowedEmails,
+      ...scopedSyncAccounts.map((a: any) => String(a.email || "").trim().toLowerCase()).filter(Boolean),
+    ])
+  );
+
+  return {
+    cleanSlug,
+    clinicFound,
+    targetTenantId,
+    scopedUsers,
+    googleLoginEnabled,
+    declaredEmails,
+    scopedSyncAccounts,
+  };
+}
+
+/**
+ * GET /google-login-status
+ * Kiểm tra phòng khám đã bật tùy chọn đăng nhập Gmail và đã khai báo Gmail trong Cài đặt chưa.
+ * Bảo mật: Tuyệt đối KHÔNG trả về danh sách địa chỉ Gmail ra ngoài public API.
+ */
+authRouter.get("/google-login-status", async (req, res, next) => {
+  try {
+    const clinicSlug = (req.query.clinicSlug || req.query.clinic || req.query.slug || "")
+      .toString()
+      .trim()
+      .toLowerCase();
+
+    const policy = await resolveScopedGoogleLoginPolicy(clinicSlug);
+
+    return res.json({
+      success: true,
+      data: {
+        clinicFound: policy.clinicFound,
+        googleLoginEnabled: policy.googleLoginEnabled,
+        hasDeclaredEmails: policy.declaredEmails.length > 0,
+        declaredCount: policy.declaredEmails.length,
+        isReady: policy.clinicFound && policy.googleLoginEnabled && policy.declaredEmails.length > 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /google
+ * Đăng nhập qua tài khoản Google với xác thực Token từ Google và đối soát nghiêm ngặt
+ * với tùy chọn + danh sách Gmail đã khai báo trong mục Cài đặt của chính phòng khám đó.
+ */
+authRouter.post("/google", async (req, res, next) => {
+  try {
+    const { accessToken } = req.body;
+    const clinicSlug = (req.body.clinicSlug || req.body.slug || req.query.clinic || req.query.slug || "")
+      .toString()
+      .trim()
+      .toLowerCase();
+
+    if (!accessToken || typeof accessToken !== "string") {
+      throw new UnauthorizedError("Thiếu Google Access Token hợp lệ để xác thực tài khoản.");
+    }
+
+    // 1. BẮT BUỘC xác thực trực tiếp với Google userinfo — tuyệt đối KHÔNG tin req.body.email
+    let verifiedEmail = "";
+    try {
+      const gRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!gRes.ok) {
+        throw new UnauthorizedError("Google Access Token không hợp lệ hoặc đã hết hạn.");
+      }
+      const gInfo: any = await gRes.json();
+      if (!gInfo?.email || gInfo.email_verified === false) {
+        throw new UnauthorizedError("Tài khoản Google chưa xác minh địa chỉ email.");
+      }
+      verifiedEmail = String(gInfo.email).trim().toLowerCase();
+    } catch (tokenErr: any) {
+      if (tokenErr instanceof UnauthorizedError) throw tokenErr;
+      console.error("[Auth API] Failed to verify Google token:", tokenErr);
+      throw new UnauthorizedError("Không thể xác thực tài khoản Google với máy chủ Google.");
+    }
+
+    console.log(`[Auth API] Verifying Google Login for verified email: ${verifiedEmail} (clinicSlug: ${clinicSlug || "root"})`);
+
+    // 2. Lấy chính sách & danh sách Gmail đã khai báo đúng phạm vi phòng khám
+    const policy = await resolveScopedGoogleLoginPolicy(clinicSlug);
+
+    if (clinicSlug && !policy.clinicFound) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "CLINIC_NOT_FOUND",
+          message: `Không tìm thấy phòng khám "${clinicSlug}" trong hệ thống.`,
+        },
+      });
+    }
+
+    // 3. Kiểm tra tùy chọn đăng nhập bằng Gmail trong Cài đặt đã được BẬT chưa
+    if (!policy.googleLoginEnabled) {
+      console.warn(`[Auth API][ACCESS_DENIED] Google login is disabled in Settings for ${clinicSlug || "root"} (attempted: ${verifiedEmail})`);
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "GOOGLE_LOGIN_DISABLED",
+          message: "Phòng khám chưa bật tùy chọn cho phép đăng nhập bằng Gmail trong mục Cài đặt. Vui lòng đăng nhập bằng Tài khoản & Mật khẩu.",
+        },
+        data: {
+          email: verifiedEmail,
+          isWhitelisted: false,
+          errorCode: "google_login_disabled",
+        },
+      });
+    }
+
+    // 4. Kiểm tra phòng khám đã KHAI BÁO danh sách Gmail quản trị trong Cài đặt chưa
+    if (policy.declaredEmails.length === 0) {
+      console.warn(`[Auth API][ACCESS_DENIED] No Gmail declared in Settings for ${clinicSlug || "root"} (attempted: ${verifiedEmail})`);
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "NO_DECLARED_GMAIL",
+          message: "Phòng khám chưa khai báo Gmail quản trị nào trong mục Cài đặt. Không thể đăng nhập bằng Gmail.",
+        },
+        data: {
+          email: verifiedEmail,
+          isWhitelisted: false,
+          errorCode: "no_declared_gmail",
+        },
+      });
+    }
+
+    // 5. Đối chiếu Gmail đã xác thực với danh sách Gmail đã khai báo của chính phòng khám này
+    if (!policy.declaredEmails.includes(verifiedEmail)) {
       console.error("[Auth API][ACCESS_DENIED] Unauthorized Google login attempt:", {
         error: "access_denied",
         errorCode: "UNAUTHORIZED_EMAIL",
         attemptedEmail: verifiedEmail,
+        clinicSlug: clinicSlug || "root",
         timestamp: new Date().toISOString(),
-        totalWhitelistedAccounts: syncAccounts.length,
-        reason: "Email is not authorized in Admin Whitelist (google_sync_accounts) or users database",
-        actionRequired: "The email must be added to Admin Whitelist in User Management or Test Users on Google Cloud Console."
+        reason: "Verified Google email is NOT in the clinic's declared Gmail list in Settings.",
       });
 
       return res.status(403).json({
         success: false,
         error: {
           code: "UNAUTHORIZED_EMAIL",
-          message: `Email "${verifiedEmail}" chưa được cấp quyền trong danh sách Admin Whitelist. Vui lòng liên hệ Quản trị viên để được thêm vào hệ thống.`,
+          message: `Gmail "${verifiedEmail}" chưa được khai báo trong mục Cài đặt của phòng khám này. Truy cập bị từ chối để bảo vệ dữ liệu.`,
         },
         data: {
           email: verifiedEmail,
           isWhitelisted: false,
-          errorCode: "access_denied"
+          errorCode: "access_denied",
         },
       });
     }
 
-    // 4. Nếu tài khoản có trong users nhưng bị vô hiệu hoá
-    if (matchedUser && !matchedUser.isActive) {
-      console.warn("[Auth API] User account is disabled:", verifiedEmail);
-      throw new UnauthorizedError("Tài khoản này đã bị tạm khóa bởi Quản trị viên");
+    // 6. Khớp với tài khoản quản trị trong đúng phạm vi phòng khám (hoặc root nếu không có clinicSlug)
+    let targetUser = policy.scopedUsers.find(
+      (u: any) => (u.email || "").trim().toLowerCase() === verifiedEmail
+    );
+
+    // Nếu tài khoản phòng khám đăng nhập bằng username slug (VD: "lephuong") và đã khai báo Gmail trong Cài đặt,
+    // ánh xạ về tài khoản quản trị đang hoạt động của chính phòng khám đó (tuyệt đối giữ nguyên tenantId).
+    if (!targetUser && clinicSlug) {
+      targetUser =
+        policy.scopedUsers.find((u: any) => u.isActive !== false && ((u.permissions || []).includes("*") || u.roleName === "admin")) ||
+        policy.scopedUsers.find((u: any) => u.isActive !== false) ||
+        policy.scopedUsers[0];
     }
 
-    // 5. Nếu email có trong Admin Whitelist nhưng chưa có bản ghi trong users
-    if (!matchedUser && whitelistedAccount) {
-      console.log(`[Auth API] Whitelisted clinic account authenticated: ${verifiedEmail} (${whitelistedAccount.clinicName})`);
-      const permissions = [
-        "patient.view", "patient.create", "patient.edit",
-        "appointment.view", "appointment.create", "appointment.edit",
-        "setting.view"
-      ];
-      const token = generateToken({
-        userId: whitelistedAccount.id || `google_${Date.now()}`,
-        role: "clinic_staff",
-        permissions,
-        tenantId: whitelistedAccount.id || "clinic_google",
-      });
+    if (!targetUser && !clinicSlug) {
+      targetUser = policy.scopedUsers.find((u: any) => u.email === "admin@dentalsmartbooking.com") || policy.scopedUsers[0];
+    }
 
-      return res.json({
-        success: true,
+    if (targetUser && targetUser.isActive === false) {
+      console.warn("[Auth API] Clinic account is disabled:", verifiedEmail);
+      throw new UnauthorizedError("Tài khoản phòng khám này đã bị tạm khóa bởi Quản trị viên");
+    }
+
+    if (!targetUser) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "UNAUTHORIZED_EMAIL",
+          message: `Không tìm thấy tài khoản quản trị đang hoạt động cho phòng khám để liên kết với Gmail "${verifiedEmail}".`,
+        },
         data: {
-          token,
-          user: {
-            id: whitelistedAccount.id || `google_${Date.now()}`,
-            email: verifiedEmail,
-            role: "clinic_staff",
-            permissions,
-            tenantId: whitelistedAccount.id || "clinic_google",
-            clinicName: whitelistedAccount.clinicName,
-            doctorName: whitelistedAccount.doctorName,
-          },
+          email: verifiedEmail,
+          isWhitelisted: false,
+          errorCode: "access_denied",
         },
       });
     }
 
-    // 6. Tài khoản hợp lệ trong bảng users
     const mergedPermissions = Array.from(
       new Set([
-        ...(matchedUser!.rolePermissions || []),
-        ...(matchedUser!.userPermissions || []),
+        ...(targetUser.rolePermissions || []),
+        ...(targetUser.userPermissions || []),
       ])
     );
 
+    const effectiveTenantId = clinicSlug
+      ? (targetUser.tenantId || policy.targetTenantId || `tenant_${clinicSlug}`)
+      : targetUser.tenantId;
+
     const token = generateToken({
-      userId: matchedUser!.id,
-      role: matchedUser!.roleName || "staff",
+      userId: targetUser.id,
+      role: targetUser.roleName || (mergedPermissions.includes("*") ? "admin" : "staff"),
       permissions: mergedPermissions,
-      tenantId: matchedUser!.tenantId,
+      tenantId: effectiveTenantId,
     });
 
-    console.log(`[Auth API] Google Login successful for registered user: ${verifiedEmail} (Role: ${matchedUser!.roleName})`);
+    console.log(`[Auth API] Google Login verified via clinic Settings whitelist: ${verifiedEmail} -> scope: ${clinicSlug || "root"}`);
 
     return res.json({
       success: true,
       data: {
         token,
         user: {
-          id: matchedUser!.id,
-          email: matchedUser!.email,
-          role: matchedUser!.roleName,
+          id: targetUser.id,
+          email: verifiedEmail,
+          username: targetUser.username || targetUser.email,
+          role: targetUser.roleName || (mergedPermissions.includes("*") ? "admin" : "staff"),
           permissions: mergedPermissions,
-          tenantId: matchedUser!.tenantId,
-          uiMode: matchedUser!.uiMode,
-          slug: matchedUser!.slug,
+          tenantId: effectiveTenantId,
+          uiMode: targetUser.uiMode,
+          slug: targetUser.slug || clinicSlug || undefined,
+          clinicName: targetUser.clinicName,
+          doctorName: targetUser.doctorName,
+          address: targetUser.address,
+          phone: targetUser.phone || targetUser.hotline,
         },
       },
     });

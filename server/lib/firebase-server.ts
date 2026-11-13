@@ -1,5 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  limit,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json' with { type: 'json' };
 
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -15,3 +26,14 @@ try {
 }
 
 export const serverDb = firestoreInstance;
+export const firestoreFns = {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  limit,
+};
+

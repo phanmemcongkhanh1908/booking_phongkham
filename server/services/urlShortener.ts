@@ -52,11 +52,11 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
   }
 
   const cleanSlug = (slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-  const internalShortUrl = cleanSlug && detectedOrigin ? `${detectedOrigin}/b/${cleanSlug}` : longUrl;
-  const fullBookingUrl = cleanSlug && detectedOrigin ? `${detectedOrigin}/booking/${cleanSlug}` : longUrl;
+  const internalShortUrl = cleanSlug && detectedOrigin ? `${detectedOrigin}/b/${cleanSlug}?mode=customer` : longUrl;
+  const fullBookingUrl = cleanSlug && detectedOrigin ? `${detectedOrigin}/booking/${cleanSlug}?mode=customer` : longUrl;
 
   // Check cache
-  const cacheKey = `${longUrl}_${cleanSlug}`;
+  const cacheKey = `v2_customer_${longUrl}_${cleanSlug}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return {
@@ -141,7 +141,7 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
     {
       id: 'internal',
       name: 'Link phòng khám (Khuyên dùng)',
-      tagline: 'Tên miền chính chủ • 100% Không quảng cáo • Nhận diện thương hiệu',
+      tagline: 'Chế độ Khách hàng đặt lịch • 100% Không quảng cáo • Ẩn cổng Admin',
       url: internalShortUrl,
       isAdFree: true,
       isDirectRedirect: true,
@@ -150,7 +150,7 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
     {
       id: 'full',
       name: 'Đường dẫn trực tiếp (Chuẩn SEO)',
-      tagline: 'Link đầy đủ trực tiếp • Phù hợp đăng Website / Fanpage',
+      tagline: 'Link đầy đủ chế độ Khách hàng • Phù hợp đăng Website / Fanpage',
       url: fullBookingUrl,
       isAdFree: true,
       isDirectRedirect: true,
@@ -162,8 +162,8 @@ export async function shortenUrl(longUrl: string, slug?: string, origin?: string
     options.push({
       id: 'render',
       name: 'Link công khai (Dành cho khách hàng ngoài)',
-      tagline: 'Đường dẫn chia sẻ công khai không cần tài khoản nhà phát triển',
-      url: `${sharedAiStudioOrigin}/b/${cleanSlug}`,
+      tagline: 'Đường dẫn chế độ Khách hàng không cần tài khoản nhà phát triển',
+      url: `${sharedAiStudioOrigin}/b/${cleanSlug}?mode=customer`,
       isAdFree: true,
       isDirectRedirect: true,
       type: 'brand',

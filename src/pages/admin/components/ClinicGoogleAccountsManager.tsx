@@ -27,6 +27,7 @@ import { Input } from '../../../components/ui/Input';
 export interface ClinicGoogleAccount {
   id: string;
   clinicName: string;
+  clinicSlug?: string;
   doctorName: string;
   email: string;
   phone?: string;
@@ -50,6 +51,7 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
   // Single form state
   const [formEmail, setFormEmail] = useState('');
   const [formClinicName, setFormClinicName] = useState('');
+  const [formClinicSlug, setFormClinicSlug] = useState('');
   const [formDoctorName, setFormDoctorName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formNotes, setFormNotes] = useState('');
@@ -88,6 +90,7 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
     setEditingId(null);
     setFormEmail('');
     setFormClinicName('');
+    setFormClinicSlug('');
     setFormDoctorName('');
     setFormPhone('');
     setFormNotes('');
@@ -101,6 +104,7 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
     setEditingId(acc.id);
     setFormEmail(acc.email);
     setFormClinicName(acc.clinicName || '');
+    setFormClinicSlug(acc.clinicSlug || '');
     setFormDoctorName(acc.doctorName || '');
     setFormPhone(acc.phone || '');
     setFormNotes(acc.notes || '');
@@ -122,6 +126,7 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
         const res = await api.post('/admin/google-sync-accounts', {
           email: formEmail,
           clinicName: formClinicName,
+          clinicSlug: formClinicSlug.trim().toLowerCase() || undefined,
           doctorName: formDoctorName,
           phone: formPhone,
           notes: formNotes
@@ -135,6 +140,7 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
         const res = await api.put(`/admin/google-sync-accounts/${editingId}`, {
           email: formEmail,
           clinicName: formClinicName,
+          clinicSlug: formClinicSlug.trim().toLowerCase(),
           doctorName: formDoctorName,
           phone: formPhone,
           notes: formNotes,
@@ -428,7 +434,14 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-800">{acc.clinicName || 'Chưa đặt tên phòng khám'}</div>
+                      <div className="font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                        <span>{acc.clinicName || 'Chưa đặt tên phòng khám'}</span>
+                        {acc.clinicSlug && (
+                          <span className="text-[10px] font-mono bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded">
+                            /{acc.clinicSlug}
+                          </span>
+                        )}
+                      </div>
                       {acc.doctorName && (
                         <div className="text-[11px] text-teal-700 font-medium">BS: {acc.doctorName}</div>
                       )}
@@ -567,6 +580,19 @@ export const ClinicGoogleAccountsManager: React.FC = () => {
                     <option value="disabled">Tạm dừng</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-800">Mã định danh phòng khám (Slug - Tùy chọn)</label>
+                <Input
+                  value={formClinicSlug}
+                  onChange={(e) => setFormClinicSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  placeholder="Ví dụ: lephuong (để trống nếu là Admin Tổng)"
+                  className="text-xs font-mono"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Gắn Gmail này vào đúng phòng khám có đường dẫn <code className="text-teal-700">/b/&#123;slug&#125;/login</code>.
+                </p>
               </div>
 
               <div className="space-y-1.5">

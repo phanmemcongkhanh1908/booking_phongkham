@@ -137,6 +137,25 @@
         "status": { "type": "string" }
       },
       "required": ["patientId", "status"]
+    },
+    "Clinic": {
+      "title": "Clinic",
+      "description": "Public clinic branding and booking portal configuration",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string", "maxLength": 128 },
+        "clinicName": { "type": "string", "maxLength": 200 },
+        "doctorName": { "type": "string", "maxLength": 200 },
+        "address": { "type": "string", "maxLength": 400 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "hotline": { "type": "string", "maxLength": 50 },
+        "workingHours": { "type": "string", "maxLength": 200 },
+        "workingHoursStr": { "type": "string", "maxLength": 200 },
+        "slogan": { "type": "string", "maxLength": 300 },
+        "tenantId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["slug", "clinicName"]
     }
   },
   "firestore": {
@@ -179,6 +198,10 @@
     "/waitlist/{waitlistId}": {
       "schema": { "$ref": "#/entities/Waitlist" },
       "description": "Waitlist queue for slot cancellation openings"
+    },
+    "/clinics/{clinicId}": {
+      "schema": { "$ref": "#/entities/Clinic" },
+      "description": "Public clinic profiles keyed by clinic slug"
     }
   }
 }

@@ -166,10 +166,17 @@ const app = express();
 
   app.use(globalErrorHandler);
 
-  // Direct internal short links: /b/:slug and /s/:slug -> /booking/:slug
+  // Direct internal short links: /b/:slug and /s/:slug -> /booking/:slug?mode=customer
   app.get(["/b/:slug", "/s/:slug"], (req, res) => {
-    const slug = req.params.slug;
-    res.redirect(302, `/booking/${slug}`);
+    const slug = encodeURIComponent(req.params.slug);
+    const queryIndex = req.originalUrl.indexOf("?");
+    let queryString = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : "";
+    if (!queryString) {
+      queryString = "?mode=customer";
+    } else if (!req.query.mode) {
+      queryString += "&mode=customer";
+    }
+    res.redirect(302, `/booking/${slug}${queryString}`);
   });
 
   // ==========================================

@@ -716,11 +716,14 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
     const settingsObj: any = {};
     const myTenantId = req.user?.tenantId;
 
-    // 1. Áp dụng cài đặt cơ sở toàn hệ thống (không có tenantId)
+    // 1. Áp dụng cài đặt cơ sở toàn hệ thống (không có tenantId) - KHÔNG kế thừa googleLoginConfig cho chi nhánh riêng
     allSettings
       .filter((s: any) => !s.tenantId)
       .forEach((s: any) => {
         const key = s.key || s.id;
+        if (myTenantId && (key === 'googleLoginConfig' || s.id === 'googleLoginConfig')) {
+          return;
+        }
         if (key === 'clinic_profile' || s.id === 'clinic_profile') {
           settingsObj['clinicProfile'] = s.value;
         } else {
@@ -742,6 +745,18 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
             if (s.key) settingsObj[s.key] = s.value;
           }
         });
+    }
+
+    // Chuẩn hóa googleLoginConfig theo đúng phạm vi phòng khám / hệ thống
+    if (!settingsObj.googleLoginConfig || typeof settingsObj.googleLoginConfig !== 'object') {
+      settingsObj.googleLoginConfig = { enabled: false, allowedEmails: [] };
+    } else {
+      settingsObj.googleLoginConfig = {
+        enabled: Boolean(settingsObj.googleLoginConfig.enabled),
+        allowedEmails: Array.isArray(settingsObj.googleLoginConfig.allowedEmails)
+          ? settingsObj.googleLoginConfig.allowedEmails
+          : [],
+      };
     }
 
     // 3. Đảm bảo thông tin phòng khám luôn đồng bộ chuẩn xác với hồ sơ phòng khám của tài khoản
@@ -780,11 +795,11 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 // Cập nhật cài đặt hệ thống & hồ sơ phòng khám
 adminRouter.post("/settings", requireAuth, async (req, res, next) => {
   try {
-    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes } = req.body;
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes, googleLoginConfig } = req.body;
     const myTenantId = req.user?.tenantId;
     
-    // Kiểm tra quyền: Chỉ yêu cầu setting.manage đối với các cài đặt hệ thống / hạ tầng nhạy cảm (Telegram, SMTP, Banner toàn site)
-    const isUpdatingSystemConfig = telegramToken !== undefined || telegramChatId !== undefined || telegramBotUsername !== undefined || emailConfig !== undefined || announcementBanner !== undefined;
+    // Kiểm tra quyền: Chỉ yêu cầu setting.manage đối với các cài đặt hệ thống / hạ tầng nhạy cảm (Telegram, SMTP, Banner toàn site, Đăng nhập Gmail)
+    const isUpdatingSystemConfig = telegramToken !== undefined || telegramChatId !== undefined || telegramBotUsername !== undefined || emailConfig !== undefined || announcementBanner !== undefined || googleLoginConfig !== undefined;
     if (isUpdatingSystemConfig) {
       const permissions = req.user?.permissions || [];
       const hasSettingPerm = req.user?.role === "admin" || permissions.includes("*") || permissions.includes("all") || permissions.includes("setting.manage");
@@ -865,6 +880,23 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
       await db.insert(settings)
         .values({ id: 'idleTimeoutMinutes', key: 'idleTimeoutMinutes', value: String(idleTimeoutMinutes), tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: String(idleTimeoutMinutes) } });
+    }
+    if (googleLoginConfig !== undefined && typeof googleLoginConfig === 'object') {
+      const sanitizedEmails = Array.isArray(googleLoginConfig.allowedEmails)
+        ? Array.from(new Set(
+            googleLoginConfig.allowedEmails
+              .map((e: any) => String(e || '').trim().toLowerCase())
+              .filter((e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+          ))
+        : [];
+      const sanitizedGoogleLoginConfig = {
+        enabled: Boolean(googleLoginConfig.enabled),
+        allowedEmails: sanitizedEmails,
+        updatedAt: new Date().toISOString(),
+      };
+      await db.insert(settings)
+        .values({ id: 'googleLoginConfig', key: 'googleLoginConfig', value: sanitizedGoogleLoginConfig, tenantId: myTenantId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: sanitizedGoogleLoginConfig } });
     }
 
     // Chỉ reload Telegram bot nếu có cập nhật cấu hình Telegram
@@ -977,8 +1009,16 @@ adminRouter.post("/storage-alert", requireAuth, async (req, res, next) => {
 // ==========================================
 adminRouter.get("/google-sync-accounts", requireAuth, async (req, res, next) => {
   try {
+    const myTenantId = req.user?.tenantId;
+    const isRootSuperAdmin = !myTenantId && (req.user?.role === "admin" || req.user?.permissions?.includes("*") || req.user?.permissions?.includes("all"));
     const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
-    const accounts = Array.isArray(record[0]?.value) ? record[0].value : [];
+    let accounts = Array.isArray(record[0]?.value) ? record[0].value : [];
+    if (!isRootSuperAdmin && myTenantId) {
+      const cleanTenantSlug = myTenantId.replace(/^tenant_/i, "").toLowerCase();
+      accounts = accounts.filter((a: any) =>
+        a.tenantId === myTenantId || (a.clinicSlug && a.clinicSlug.toLowerCase() === cleanTenantSlug)
+      );
+    }
     res.json({ success: true, data: accounts });
   } catch (error) {
     next(error);
@@ -987,11 +1027,15 @@ adminRouter.get("/google-sync-accounts", requireAuth, async (req, res, next) => 
 
 adminRouter.post("/google-sync-accounts", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
-    const { clinicName, doctorName, email, phone, notes } = req.body;
+    const { clinicName, doctorName, email, phone, notes, clinicSlug, tenantId: bodyTenantId } = req.body;
     if (!email || !email.includes("@")) {
       throw new BadRequestError("Địa chỉ Gmail không hợp lệ");
     }
     const cleanEmail = email.trim().toLowerCase();
+    const myTenantId = req.user?.tenantId;
+    const effectiveClinicSlug = (clinicSlug || (myTenantId ? myTenantId.replace(/^tenant_/i, "") : "") || "").trim().toLowerCase();
+    const effectiveTenantId = myTenantId || bodyTenantId || (effectiveClinicSlug ? `tenant_${effectiveClinicSlug}` : undefined);
+
     const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
     let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
 
@@ -1003,6 +1047,8 @@ adminRouter.post("/google-sync-accounts", requireAuth, requirePermission("settin
       email: cleanEmail,
       phone: (phone || '').trim(),
       notes: (notes || '').trim(),
+      clinicSlug: effectiveClinicSlug || undefined,
+      tenantId: effectiveTenantId || undefined,
       status: 'active',
       createdAt: existingIndex >= 0 ? accounts[existingIndex].createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -1076,7 +1122,9 @@ adminRouter.post("/google-sync-accounts/batch", requireAuth, requirePermission("
 adminRouter.put("/google-sync-accounts/:id", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { clinicName, doctorName, email, phone, notes, status } = req.body;
+    const { clinicName, doctorName, email, phone, notes, status, clinicSlug } = req.body;
+    const myTenantId = req.user?.tenantId;
+    const isRootSuperAdmin = !myTenantId && (req.user?.role === "admin" || req.user?.permissions?.includes("*") || req.user?.permissions?.includes("all"));
     const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
     let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
 
@@ -1085,9 +1133,26 @@ adminRouter.put("/google-sync-accounts/:id", requireAuth, requirePermission("set
       throw new BadRequestError("Không tìm thấy tài khoản Gmail cần cập nhật");
     }
 
+    if (!isRootSuperAdmin && myTenantId) {
+      const cleanTenantSlug = myTenantId.replace(/^tenant_/i, "").toLowerCase();
+      const target = accounts[index];
+      if (target.tenantId !== myTenantId && target.clinicSlug?.toLowerCase() !== cleanTenantSlug) {
+        throw new ForbiddenError("Bạn không có quyền chỉnh sửa tài khoản Gmail của phòng khám khác.");
+      }
+    }
+
+    const updatedSlug = clinicSlug !== undefined
+      ? clinicSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "")
+      : accounts[index].clinicSlug;
+    const updatedTenantId = isRootSuperAdmin
+      ? (updatedSlug ? `tenant_${updatedSlug}` : undefined)
+      : (myTenantId || accounts[index].tenantId);
+
     accounts[index] = {
       ...accounts[index],
       clinicName: clinicName !== undefined ? clinicName.trim() : accounts[index].clinicName,
+      clinicSlug: updatedSlug || undefined,
+      tenantId: updatedTenantId,
       doctorName: doctorName !== undefined ? doctorName.trim() : accounts[index].doctorName,
       email: email !== undefined ? email.trim().toLowerCase() : accounts[index].email,
       phone: phone !== undefined ? phone.trim() : accounts[index].phone,
@@ -1109,8 +1174,18 @@ adminRouter.put("/google-sync-accounts/:id", requireAuth, requirePermission("set
 adminRouter.delete("/google-sync-accounts/:id", requireAuth, requirePermission("setting.manage"), async (req, res, next) => {
   try {
     const { id } = req.params;
+    const myTenantId = req.user?.tenantId;
+    const isRootSuperAdmin = !myTenantId && (req.user?.role === "admin" || req.user?.permissions?.includes("*") || req.user?.permissions?.includes("all"));
     const record = await db.select().from(settings).where(eq(settings.id, "google_sync_accounts")).limit(1);
     let accounts: any[] = Array.isArray(record[0]?.value) ? record[0].value : [];
+
+    const target = accounts.find((a: any) => a.id === id);
+    if (target && !isRootSuperAdmin && myTenantId) {
+      const cleanTenantSlug = myTenantId.replace(/^tenant_/i, "").toLowerCase();
+      if (target.tenantId !== myTenantId && target.clinicSlug?.toLowerCase() !== cleanTenantSlug) {
+        throw new ForbiddenError("Bạn không có quyền xóa tài khoản Gmail của phòng khám khác.");
+      }
+    }
 
     accounts = accounts.filter((a: any) => a.id !== id);
 

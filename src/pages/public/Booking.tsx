@@ -1,13 +1,11 @@
 import React, { useEffect, Suspense } from 'react';
 import { useBookingStore } from '../../store/booking';
-import { Link, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { 
-  ShieldAlert, 
   Check, 
   Stethoscope, 
   Phone, 
   ShieldCheck, 
-  ChevronRight, 
   Sparkles,
   UserCheck,
   Clock,
@@ -82,6 +80,17 @@ export default function Booking() {
     return () => clearTimeout(timer);
   }, [currentPath, step]);
 
+  const querySearch = location.search || '';
+  const isCustomerQrMode = searchParams.get('mode') === 'customer' || searchParams.get('source') === 'qr';
+
+  useEffect(() => {
+    if (isCustomerQrMode) {
+      try {
+        sessionStorage.setItem('customer_booking_mode', 'true');
+      } catch {}
+    }
+  }, [isCustomerQrMode]);
+
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
 
@@ -91,15 +100,15 @@ export default function Booking() {
     const hasService = !!serviceId || (selectedServices && selectedServices.length > 0);
 
     if (currentPath === 'book' || currentPath === '') {
-      navigate(`${basePath}/dich-vu`, { replace: true });
+      navigate(`${basePath}/dich-vu${querySearch}`, { replace: true });
     } else if (step >= 2 && !hasService && currentPath !== 'dich-vu') {
-      navigate(`${basePath}/dich-vu`, { replace: true });
+      navigate(`${basePath}/dich-vu${querySearch}`, { replace: true });
     } else if (step >= 3 && step < 5 && (!selectedDate || (!sessionToken && !appointmentId)) && currentPath !== 'chon-gio') {
-      navigate(`${basePath}/chon-gio`, { replace: true });
+      navigate(`${basePath}/chon-gio${querySearch}`, { replace: true });
     } else if (step >= 4 && step < 5 && (!patientDraft?.fullName || !patientDraft?.phone) && currentPath !== 'thong-tin') {
-      navigate(`${basePath}/thong-tin`, { replace: true });
+      navigate(`${basePath}/thong-tin${querySearch}`, { replace: true });
     }
-  }, [currentPath, step, serviceId, selectedServices, selectedDate, sessionToken, patientDraft, appointmentId, navigate, bookingFormConfig?.uiVersion, basePath]);
+  }, [currentPath, step, serviceId, selectedServices, selectedDate, sessionToken, patientDraft, appointmentId, navigate, bookingFormConfig?.uiVersion, basePath, querySearch]);
 
   const clinicDisplayName = clinicProfile?.clinicName || clinicProfile?.name || 'Dental Smart Clinic';
   const doctorDisplayName = clinicProfile?.doctorName ? (
@@ -120,16 +129,16 @@ export default function Booking() {
   const handleStepClick = (targetStep: number) => {
     if (targetStep === 1) {
       setStepStore(1);
-      navigate(`${basePath}/dich-vu`);
+      navigate(`${basePath}/dich-vu${querySearch}`);
     } else if (targetStep === 2 && serviceId) {
       setStepStore(2);
-      navigate(`${basePath}/chon-gio`);
+      navigate(`${basePath}/chon-gio${querySearch}`);
     } else if (targetStep === 3 && serviceId && selectedDate && sessionToken) {
       setStepStore(3);
-      navigate(`${basePath}/thong-tin`);
+      navigate(`${basePath}/thong-tin${querySearch}`);
     } else if (targetStep === 4 && serviceId && selectedDate && sessionToken && patientDraft?.fullName && patientDraft?.phone) {
       setStepStore(4);
-      navigate(`${basePath}/xac-nhan`);
+      navigate(`${basePath}/xac-nhan${querySearch}`);
     }
   };
 
@@ -228,13 +237,6 @@ export default function Booking() {
             )}
 
             <PWAInstallButton />
-            <Link
-              to={slug ? `/b/${slug}/login` : "/admin/login"}
-              className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
-              title={clinicProfile?.clinicName ? `Cổng Đăng nhập Quản trị ${clinicProfile.clinicName}` : "Cổng Đăng nhập Quản trị viên"}
-            >
-              <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
-            </Link>
           </div>
         </div>
       </header>)}
@@ -376,7 +378,7 @@ export default function Booking() {
                   <Route path="chon-gio" element={<DateTimeSelection />} />
                   <Route path="thong-tin" element={<PatientForm />} />
                   <Route path="xac-nhan" element={<BookingConfirmation />} />
-                  <Route path="*" element={<Navigate to={`${basePath}/dich-vu`} replace />} />
+                  <Route path="*" element={<Navigate to={`${basePath}/dich-vu${querySearch}`} replace />} />
                 </Routes>
               </div>
 
@@ -397,7 +399,7 @@ export default function Booking() {
             <div className="animate-in fade-in zoom-in-95 duration-500">
               <Routes>
                 <Route path="hoan-tat" element={<SuccessView />} />
-                <Route path="*" element={<Navigate to={`${basePath}/hoan-tat`} replace />} />
+                <Route path="*" element={<Navigate to={`${basePath}/hoan-tat${querySearch}`} replace />} />
               </Routes>
             </div>
           </Suspense>

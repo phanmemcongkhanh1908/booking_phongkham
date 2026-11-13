@@ -1,9 +1,19 @@
 import { adminDb } from "../lib/firebase-admin.js";
-import { serverDb } from "../lib/firebase-server.js";
+import { serverDb, firestoreFns } from "../lib/firebase-server.js";
 import { db } from "../db/index.js";
 import { users, settings, providers, services } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { appContext } from "../core/context.js";
+
+let adminDbUnavailable = false;
+function isPermissionOrCredentialError(err: any): boolean {
+  const msg = String(err?.message || err || "");
+  return (
+    msg.includes("PERMISSION_DENIED") ||
+    msg.includes("UNAUTHENTICATED") ||
+    msg.includes("Could not load the default credentials")
+  );
+}
 
 export interface BusinessHoursInfo {
   workingHoursStr: string;
@@ -123,8 +133,8 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
   // Collections checked: 'clinics', 'users', 'settings', 'clinic_profiles'
   // -------------------------------------------------------------
   const firestoreResult = await withTimeout(async () => {
-    // 1.1 Try adminDb if initialized
-    if (adminDb && typeof adminDb.collection === "function") {
+    // 1.1 Try adminDb if initialized and has IAM access
+    if (!adminDbUnavailable && adminDb && typeof adminDb.collection === "function") {
       try {
         // A. Check 'clinics' by ID
         const clinicDoc = await adminDb.collection("clinics").doc(cleanSlug).get();
@@ -136,17 +146,17 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
         // B. Check 'clinics' by slug field
         const clinicQuery = await adminDb.collection("clinics").where("slug", "==", cleanSlug).limit(1).get();
         if (!clinicQuery.empty) {
-          const doc = clinicQuery.docs[0];
+          const docSnap = clinicQuery.docs[0];
           console.log(`[ClinicLookup][Firestore] Found doc in 'clinics' by slug query: "${cleanSlug}"`);
-          return mapFirestoreData(doc.data(), doc.id, cleanSlug);
+          return mapFirestoreData(docSnap.data(), docSnap.id, cleanSlug);
         }
 
         // C. Check 'users' by slug field
         const userQuery = await adminDb.collection("users").where("slug", "==", cleanSlug).limit(1).get();
         if (!userQuery.empty) {
-          const doc = userQuery.docs[0];
+          const docSnap = userQuery.docs[0];
           console.log(`[ClinicLookup][Firestore] Found user doc in 'users' by slug query: "${cleanSlug}"`);
-          return mapFirestoreData(doc.data(), doc.id, cleanSlug);
+          return mapFirestoreData(docSnap.data(), docSnap.id, cleanSlug);
         }
 
         // D. Check 'settings' by clinicProfile_${cleanSlug}
@@ -164,15 +174,19 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
           return mapFirestoreData(cpDoc.data(), cpDoc.id, cleanSlug);
         }
       } catch (err: any) {
-        console.warn("[ClinicLookup][adminDb] Query failed:", err?.message || err);
+        if (isPermissionOrCredentialError(err)) {
+          adminDbUnavailable = true;
+        } else {
+          console.warn("[ClinicLookup][adminDb] Query failed:", err?.message || err);
+        }
       }
     }
 
-    // 1.2 Try serverDb (client-SDK format) if adminDb did not find it
+    // 1.2 Try serverDb (client-SDK format) if adminDb did not find it or lacks IAM credentials
     if (serverDb) {
       try {
-        const { doc, getDoc, collection, query, where, getDocs, limit } = await import("firebase/firestore");
-        
+        const { doc, getDoc, collection, query, where, getDocs, limit } = firestoreFns;
+
         // A. Check 'clinics' doc
         const cRef = doc(serverDb, "clinics", cleanSlug);
         const cSnap = await getDoc(cRef);
@@ -187,15 +201,6 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
         if (!cqSnap.empty) {
           const d = cqSnap.docs[0];
           console.log(`[ClinicLookup][serverDb] Found doc in 'clinics' by slug: "${cleanSlug}"`);
-          return mapFirestoreData(d.data(), d.id, cleanSlug);
-        }
-
-        // C. Query 'users' where slug == cleanSlug
-        const uq = query(collection(serverDb, "users"), where("slug", "==", cleanSlug), limit(1));
-        const uqSnap = await getDocs(uq);
-        if (!uqSnap.empty) {
-          const d = uqSnap.docs[0];
-          console.log(`[ClinicLookup][serverDb] Found doc in 'users' by slug: "${cleanSlug}"`);
           return mapFirestoreData(d.data(), d.id, cleanSlug);
         }
       } catch (err: any) {
@@ -393,14 +398,22 @@ export async function syncClinicToFirestore(slug: string, config: Partial<Clinic
       updatedAt: new Date().toISOString(),
     };
 
-    if (adminDb && typeof adminDb.collection === "function") {
-      await adminDb.collection("clinics").doc(cleanSlug).set(payload, { merge: true });
-      console.log(`[ClinicSync][adminDb] Synced clinic "${cleanSlug}" to Firestore 'clinics'`);
-      return true;
+    if (!adminDbUnavailable && adminDb && typeof adminDb.collection === "function") {
+      try {
+        await adminDb.collection("clinics").doc(cleanSlug).set(payload, { merge: true });
+        console.log(`[ClinicSync][adminDb] Synced clinic "${cleanSlug}" to Firestore 'clinics'`);
+        return true;
+      } catch (adminErr: any) {
+        if (isPermissionOrCredentialError(adminErr)) {
+          adminDbUnavailable = true;
+        } else {
+          console.warn(`[ClinicSync][adminDb] Failed to sync clinic "${cleanSlug}":`, adminErr?.message || adminErr);
+        }
+      }
     }
 
     if (serverDb) {
-      const { doc, setDoc } = await import("firebase/firestore");
+      const { doc, setDoc } = firestoreFns;
       await setDoc(doc(serverDb, "clinics", cleanSlug), payload, { merge: true });
       console.log(`[ClinicSync][serverDb] Synced clinic "${cleanSlug}" to Firestore 'clinics'`);
       return true;

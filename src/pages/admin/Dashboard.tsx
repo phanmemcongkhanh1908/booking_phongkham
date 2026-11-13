@@ -571,7 +571,7 @@ export default function Dashboard() {
             {/* Quick Visit Public Booking Link - Expanded on large screens, compact icon on medium */}
             {(() => {
               const activeSlug = user?.slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug');
-              const publicUrl = activeSlug ? `/b/${activeSlug}` : '/book';
+              const publicUrl = activeSlug ? `/b/${activeSlug}?mode=customer` : '/book?mode=customer';
               return (
                 <>
                   <a
