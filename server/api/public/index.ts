@@ -471,6 +471,11 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
     const notificationEvent = bookingResult.status === "CONFIRMED" ? "CONFIRMED" : "CREATED";
     notifyPatientAppointment(bookingResult.id, notificationEvent).catch(console.error);
 
+    // Send Web Push (VAPID) exclusively to this clinic's subscribed Admin mobile/desktop devices
+    import("../../services/notification.js")
+      .then(({ sendAdminNewBookingPush }) => sendAdminNewBookingPush(bookingResult.id))
+      .catch(console.error);
+
     // Emit real-time BOOKING_CREATED event for the Admin Dashboard
     let aptDetailPayload: any = null;
     try {
@@ -1074,6 +1079,7 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
     
     const apts = await db.select({
       id: appointments.id,
+      tenantId: appointments.tenantId,
       patientId: appointments.patientId,
       status: appointments.status,
       providerId: appointments.providerId,
@@ -1104,7 +1110,13 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
     notifyPatientAppointment(id, 'CANCELLED', 'Bệnh nhân chủ động hủy qua trang tra cứu lịch hẹn').catch(console.error);
 
     import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
-      realtimeNotification.emitBookingCreated({ id, action: 'cancel' });
+      realtimeNotification.emitBookingUpdated({
+        id,
+        tenantId: apts[0].tenantId || null,
+        patientName: pt[0]?.fullName,
+        startAt: apts[0].startAt,
+        action: 'cancel',
+      });
     });
     
     res.json({ success: true, message: "Hủy lịch thành công" });
@@ -1124,6 +1136,7 @@ publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
     
     const apts = await db.select({
       id: appointments.id,
+      tenantId: appointments.tenantId,
       patientId: appointments.patientId,
       status: appointments.status,
       providerId: appointments.providerId,
@@ -1161,7 +1174,13 @@ publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
     notifyPatientAppointment(id, 'RESCHEDULED').catch(console.error);
 
     import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
-      realtimeNotification.emitBookingCreated({ id, action: 'reschedule' });
+      realtimeNotification.emitBookingUpdated({
+        id,
+        tenantId: apts[0].tenantId || null,
+        patientName: pt[0]?.fullName,
+        startAt: startAt.toISOString(),
+        action: 'reschedule',
+      });
     });
     
     res.json({ success: true, message: "Dời lịch thành công, đang chờ phòng khám xác nhận lại" });
@@ -1440,6 +1459,53 @@ publicRouter.post("/pwa-install", async (req, res, next) => {
     console.warn("[PWA Install Metric] Error saving metric:", error);
     res.json({ success: false });
   }
+});
+
+// Dedicated Web App Manifest for Clinic Admin Mobile App (Home Screen Launcher)
+publicRouter.get("/admin-manifest.webmanifest", (req, res) => {
+  const rawSlug = typeof req.query.slug === "string" ? req.query.slug.trim().toLowerCase() : "";
+  const rawName = typeof req.query.name === "string" ? req.query.name.trim() : "";
+  const clinicTitle = rawName ? `Quản Lý - ${rawName}` : "Quản Lý Phòng Khám Nha Khoa";
+  const startUrl = rawSlug ? `/admin/dashboard?clinic=${encodeURIComponent(rawSlug)}` : "/admin/dashboard";
+
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  res.json({
+    id: rawSlug ? `/admin/dashboard?clinic=${rawSlug}` : "/admin/dashboard",
+    name: clinicTitle,
+    short_name: "Quản Lý PK",
+    description: "Ứng dụng quản trị lịch hẹn và nhận thông báo đặt lịch trực tiếp trên điện thoại",
+    start_url: startUrl,
+    scope: "/",
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: "#0f766e",
+    orientation: "portrait-primary",
+    icons: [
+      {
+        src: "/pwa-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  });
 });
 
 export default publicRouter;

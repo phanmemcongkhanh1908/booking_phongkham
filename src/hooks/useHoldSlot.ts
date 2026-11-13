@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useBookingStore } from '../store/booking';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import { getActiveRouteClinicSlug } from '../services/clinicResolver';
 
 export interface Slot {
   providerId: string;
@@ -81,7 +82,7 @@ export function useHoldSlot() {
         startAt: slot.startAt,
         endAt: slot.endAt,
         tenantId: useBookingStore.getState().tenantId || undefined,
-        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+        clinicSlug: getActiveRouteClinicSlug() || useBookingStore.getState().clinicProfile?.slug || undefined,
       });
 
       if (res.data?.success && res.data?.data?.sessionToken) {

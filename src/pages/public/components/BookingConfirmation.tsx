@@ -20,7 +20,7 @@ import {
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { getClinicBasePath } from '../../../services/clinicResolver';
+import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 
 export default function BookingConfirmation() {
   const { 
@@ -131,7 +131,7 @@ export default function BookingConfirmation() {
         serviceIds: targetServiceIds,
         customServiceName: customName,
         tenantId: useBookingStore.getState().tenantId || undefined,
-        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+        clinicSlug: getActiveRouteClinicSlug() || useBookingStore.getState().clinicProfile?.slug || undefined,
         bookingFor: patientDraft.bookingFor,
         isNewProfile: (patientDraft as any).isNewProfile,
       });

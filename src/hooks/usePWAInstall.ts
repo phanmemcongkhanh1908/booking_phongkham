@@ -53,6 +53,14 @@ export function usePWAInstall() {
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
+      const isAdminPath =
+        window.location.pathname.startsWith('/admin') ||
+        window.location.pathname.endsWith('/login');
+      if (isAdminPath) {
+        localStorage.setItem('pwa_admin_mode', '1');
+      } else {
+        localStorage.removeItem('pwa_admin_mode');
+      }
       const platformStr = isIOSDevice ? 'ios' : isAndroidDevice ? 'android' : 'pc';
       fetch('/api/public/pwa-install', {
         method: 'POST',
@@ -81,6 +89,14 @@ export function usePWAInstall() {
     if (outcome === 'accepted') {
       setIsInstalled(true);
       setDeferredPrompt(null);
+      const isAdminPath =
+        window.location.pathname.startsWith('/admin') ||
+        window.location.pathname.endsWith('/login');
+      if (isAdminPath) {
+        localStorage.setItem('pwa_admin_mode', '1');
+      } else {
+        localStorage.removeItem('pwa_admin_mode');
+      }
       const userAgent = window.navigator.userAgent.toLowerCase();
       const platformStr = /iphone|ipad|ipod/.test(userAgent) ? 'ios' : /android/.test(userAgent) ? 'android' : 'pc';
       fetch('/api/public/pwa-install', {

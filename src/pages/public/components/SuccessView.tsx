@@ -166,7 +166,7 @@ export default function SuccessView() {
 
   const handleNewBooking = () => {
     reset();
-    navigate(`${basePath}/dich-vu`);
+    navigate(`${basePath}/dich-vu${location.search || ''}`);
   };
 
   const handleViewMyBookings = () => {

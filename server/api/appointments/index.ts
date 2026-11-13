@@ -82,6 +82,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
     let queryBuilder = db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         endAt: appointments.endAt,
         status: appointments.status,
@@ -118,10 +119,19 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(appointments.startAt);
 
+    const requestTenantId = req.user?.tenantId ? String(req.user.tenantId).trim() : null;
+    const includeAllTenants = req.query.scope === "all" && !requestTenantId;
+    const matchesCurrentTenant = (r: any) => {
+      if (includeAllTenants) return true;
+      const rowTenantId = r.tenantId ? String(r.tenantId).trim() : null;
+      return rowTenantId === requestTenantId;
+    };
+
     const mapRow = (r: any) => {
       const mode = resolveMode(r);
       return {
         ...r,
+        tenantId: r.tenantId ? String(r.tenantId).trim() : null,
         bookingFor: mode,
         isProxyBooking: mode === "relative",
         bookedForName: r.bookedForName || r.patientName,
@@ -130,14 +140,12 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       };
     };
 
+    const allRawResults = (await queryBuilder).filter(matchesCurrentTenant);
+
     if (limit > 0) {
       const offset = (page - 1) * limit;
-      const rawResults = await queryBuilder.limit(limit).offset(offset);
-      const results = rawResults.map(mapRow);
-      
-      const countQuery = db.select({ id: appointments.id }).from(appointments).where(conditions.length > 0 ? and(...conditions) : undefined);
-      const countResult = await countQuery;
-      const total = countResult.length;
+      const results = allRawResults.slice(offset, offset + limit).map(mapRow);
+      const total = allRawResults.length;
       
       return res.json({ 
         success: true, 
@@ -150,8 +158,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         }
       });
     } else {
-      const rawResults = await queryBuilder;
-      const results = rawResults.map(mapRow);
+      const results = allRawResults.map(mapRow);
       res.json({
         success: true,
         data: results,

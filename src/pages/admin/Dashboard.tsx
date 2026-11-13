@@ -2,8 +2,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/auth';
 import { useVoiceStore } from '../../store/voiceStore';
-import { useBroadcastStore } from '../../store/broadcastStore';
+import { useBroadcastStore, normalizeTenantId } from '../../store/broadcastStore';
 import { ServerSpeechEngine } from '../../services/speech/ServerSpeechEngine';
+import { TTSQueueManager } from '../../services/speech/TTSQueueManager';
 import { usePermissions } from '../../hooks/usePermissions';
 import api from '../../services/api';
 import { format, differenceInMinutes, startOfWeek } from 'date-fns';
@@ -27,10 +28,12 @@ import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarnin
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
 import { resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
+import MobileNotificationControls from '../../components/admin/MobileNotificationControls';
+import { useAdminManifestBinding, useAdminMobileNotifications } from '../../hooks/useAdminMobileNotifications';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -51,6 +54,7 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDataCleanModal, setShowDataCleanModal] = useState(false);
   const [showStorageReminder, setShowStorageReminder] = useState(false);
+  const [showMobileNotifModal, setShowMobileNotifModal] = useState(false);
   
   // Reschedule Modal State
   const [rescheduleData, setRescheduleData] = useState<{isOpen: boolean, appointment: any | null, newDate: string, newTime: string}>({
@@ -136,6 +140,19 @@ export default function Dashboard() {
   const [clinicProfile, setClinicProfile] = useState<any>(null);
   const [bookingFormConfig, setBookingFormConfig] = useState<any>(null);
   const { enabled: audioEnabled, setEnabled: setAudioEnabled } = useVoiceStore();
+  const autoplayBlocked = useBroadcastStore((s) => s.autoplayBlocked);
+  const { isPushSubscribed } = useAdminMobileNotifications();
+
+  useAdminManifestBinding(
+    user?.slug || clinicProfile?.slug || null,
+    clinicProfile?.clinicName || user?.clinicName || null
+  );
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pwa_admin_mode', '1');
+    }
+  }, []);
 
 
     const [toasts, setToasts] = useState<any[]>([]);
@@ -212,12 +229,14 @@ export default function Dashboard() {
         const fetchedAppts = res.data.data;
         
         if (!isInitialLoad.current) {
-          // Check for new bookings
-          const newAppts = fetchedAppts.filter((a: any) => 
-            !knownAppointmentIds.current.has(a.id) && 
+          const myTenantId = normalizeTenantId(useAuthStore.getState().user?.tenantId);
+          // Check for new bookings strictly matching this clinic tenant
+          const newAppts = fetchedAppts.filter((a: any) =>
+            normalizeTenantId(a.tenantId) === myTenantId &&
+            !knownAppointmentIds.current.has(a.id) &&
             (a.status === 'REQUESTED' || a.status === 'PENDING' || a.status === 'CONFIRMED')
           );
-          
+
           if (newAppts.length > 0) {
             newAppts.forEach((appt: any) => {
               useBroadcastStore.getState().handleIncomingBooking(appt);
@@ -249,9 +268,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    knownAppointmentIds.current.clear();
+    isInitialLoad.current = true;
     fetchAppointments();
     fetchPatients();
-  }, []);
+  }, [user?.id, user?.tenantId]);
 
   const notifiedApptsRef = useRef<Set<string>>(new Set());
 
@@ -282,7 +303,9 @@ export default function Dashboard() {
   useEffect(() => {
     const checkUpcomingAppointments = () => {
       const now = new Date();
+      const myTenantId = normalizeTenantId(useAuthStore.getState().user?.tenantId);
       appointmentsRef.current.forEach(appt => {
+        if (normalizeTenantId(appt.tenantId) !== myTenantId) return;
         if (appt.status !== 'REQUESTED' && appt.status !== 'CONFIRMED') return;
         if (!appt.startAt) return;
 
@@ -298,7 +321,16 @@ export default function Dashboard() {
             const msgText = `Sắp đến lịch hẹn của khách hàng ${appt.patientName} vào lúc ${timeStr}.`;
             
             addToast('Nhắc nhở lịch hẹn', msgText, 'reminder');
-            import('../../services/speech/TTSQueueManager').then(m => m.TTSQueueManager.enqueue('msg_'+Date.now(), msgText));
+            const broadcastState = useBroadcastStore.getState();
+            if (broadcastState.enabled && useVoiceStore.getState().enabled) {
+              TTSQueueManager.enqueue({
+                id: `upcoming-${appt.id}-${threshold}`,
+                title: `Sắp tới giờ hẹn: ${appt.patientName}`,
+                text: msgText,
+                playChime: broadcastState.autoChime,
+                source: 'upcoming',
+              });
+            }
 
             if ('Notification' in window && Notification.permission === 'granted') {
               new Notification('Nhắc nhở lịch hẹn', {
@@ -599,6 +631,34 @@ export default function Dashboard() {
               );
             })()}
 
+            {/* Mobile / Desktop Notification & Broadcast Quick Setup Button */}
+            <button
+              type="button"
+              onClick={() => {
+                ServerSpeechEngine.unlockAudio();
+                setShowMobileNotifModal(true);
+              }}
+              className={`relative p-2 rounded-full transition-colors flex items-center gap-1.5 border cursor-pointer ${
+                autoplayBlocked
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
+                  : isPushSubscribed && audioEnabled
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title="Thông báo & Phát thanh trên điện thoại"
+              aria-label="Cài đặt thông báo điện thoại"
+            >
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden lg:inline text-xs font-bold pr-1">
+                {autoplayBlocked ? 'Bật loa' : 'TB Điện thoại'}
+              </span>
+              <span
+                className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                  autoplayBlocked ? 'bg-amber-500' : isPushSubscribed ? 'bg-emerald-500' : 'bg-slate-400'
+                }`}
+              />
+            </button>
+
             {/* Quick QR Scanner */}
             <button 
               onClick={() => setShowScanner(true)}
@@ -706,14 +766,35 @@ export default function Dashboard() {
                         </div>
                       )}
 
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          ServerSpeechEngine.unlockAudio();
+                          setShowMobileNotifModal(true);
+                        }}
+                        className="flex items-center justify-between px-3 py-2 text-sm font-medium text-teal-700 bg-teal-50/70 hover:bg-teal-100/80 rounded-xl transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center">
+                          <Smartphone className="w-4 h-4 mr-3 text-teal-600" />
+                          Cài App &amp; Thông báo ĐT
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPushSubscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {isPushSubscribed ? 'Đã bật' : 'Cài đặt'}
+                        </span>
+                      </button>
+
                       <button 
                         onClick={() => {
                           if (!audioEnabled) {
                             ServerSpeechEngine.unlockAudio();
+                            TTSQueueManager.clearAutoplayBlocked();
                             setAudioEnabled(true);
+                            useBroadcastStore.getState().setEnabled(true);
                           } else {
-                            ServerSpeechEngine.cancel();
+                            TTSQueueManager.clear();
                             setAudioEnabled(false);
+                            useBroadcastStore.getState().setEnabled(false);
                           }
                         }}
                         className="flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-colors"
@@ -1801,8 +1882,55 @@ export default function Dashboard() {
       </nav>
 
       <IdleTimeoutManager />
-      {/* Floating Toast Message System */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none print:hidden">
+
+      {/* Mobile Notification, Broadcast & Home Screen Install Drawer Modal */}
+      {showMobileNotifModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[125] flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-2 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setShowMobileNotifModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg max-h-[90dvh] bg-slate-50 rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
+          >
+            <div className="bg-white px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                    Thông báo &amp; Phát thanh trên Điện thoại
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate">
+                    {clinicProfile?.clinicName || user?.clinicName || 'Trang Quản Trị Phòng Khám'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMobileNotifModal(false)}
+                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0"
+                aria-label="Đóng cửa sổ"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1">
+              <MobileNotificationControls
+                clinicName={clinicProfile?.clinicName || user?.clinicName || 'Phòng Khám'}
+                onClose={() => setShowMobileNotifModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Message System (Positioned safely above mobile bottom navigation bar) */}
+      <div className="fixed bottom-24 md:bottom-6 right-3 sm:right-6 z-[90] flex flex-col gap-3 max-w-sm w-[calc(100vw-1.5rem)] sm:w-full pointer-events-none print:hidden">
         {toasts.map((t) => (
           <div
             key={t.id}

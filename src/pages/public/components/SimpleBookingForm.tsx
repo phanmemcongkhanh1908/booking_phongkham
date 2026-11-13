@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
-import { getClinicBasePath } from '../../../services/clinicResolver';
+import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 import { PWAInstallBanner } from './PWAInstallBanner';
 import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
 
@@ -274,7 +274,7 @@ export default function SimpleBookingForm() {
           startAt: selectedSlot.startAt,
           endAt: selectedSlot.endAt,
           tenantId: useBookingStore.getState().tenantId || undefined,
-          clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+          clinicSlug: getActiveRouteClinicSlug() || useBookingStore.getState().clinicProfile?.slug || undefined,
         });
         
         if (!holdRes.data.success) {
@@ -299,7 +299,7 @@ export default function SimpleBookingForm() {
         serviceIds: selectedServiceIds,
         customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
         tenantId: useBookingStore.getState().tenantId || undefined,
-        clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
+        clinicSlug: getActiveRouteClinicSlug() || useBookingStore.getState().clinicProfile?.slug || undefined,
         bookingFor: bookingFor,
         isNewProfile: bookingFor === 'self' ? isNewProfile : false,
       });

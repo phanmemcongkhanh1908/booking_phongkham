@@ -1,7 +1,7 @@
-// Service Worker for Dental Smart Booking Web Push Notifications
-const CACHE_NAME = 'dental-smart-static-v1';
+// Service Worker for Dental Smart Booking & Clinic Admin Mobile Notifications
+const CACHE_NAME = 'dental-smart-static-v2';
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -9,15 +9,26 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// Handle incoming Web Push Notifications
+// Handle incoming Web Push Notifications (Patient & Clinic Admin)
 self.addEventListener('push', (event) => {
   let data = {
     title: 'Dental Smart Booking',
     body: 'Bạn có một cập nhật mới về lịch hẹn.',
     url: '/lich-hen-cua-toi',
-    icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png',
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
     tag: 'dental-smart-appointment',
+    type: 'patient_update',
+    requireInteraction: false,
+    vibrate: [200, 100, 200],
+    appointmentId: null,
+    tenantId: null,
+    patientName: '',
+    patientPhone: '',
+    serviceName: '',
+    providerName: '',
+    startAt: '',
+    status: 'REQUESTED',
   };
 
   if (event.data) {
@@ -29,53 +40,104 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  const isAdminBooking = data.type === 'admin_booking' || data.type === 'admin_test';
+
   const notificationOptions = {
     body: data.body,
-    icon: data.icon || '/icon-192x192.png',
-    badge: data.badge || '/icon-192x192.png',
-    vibrate: [200, 100, 200],
-    tag: data.tag || 'dental-smart-appointment',
+    icon: data.icon || '/pwa-192x192.png',
+    badge: data.badge || '/pwa-192x192.png',
+    vibrate: Array.isArray(data.vibrate)
+      ? data.vibrate
+      : isAdminBooking
+      ? [250, 100, 250, 100, 250]
+      : [200, 100, 200],
+    tag: data.tag || (data.appointmentId ? `apt-${data.appointmentId}` : 'dental-smart-appointment'),
     renotify: true,
+    requireInteraction: isAdminBooking || Boolean(data.requireInteraction),
     data: {
-      url: data.url || '/lich-hen-cua-toi',
+      url: data.url || (isAdminBooking ? '/admin/dashboard' : '/lich-hen-cua-toi'),
       appointmentId: data.appointmentId || null,
-      timestamp: Date.now()
+      type: data.type,
+      tenantId: data.tenantId || null,
+      timestamp: Date.now(),
     },
-    actions: [
-      {
-        action: 'view-appointment',
-        title: 'Xem lịch hẹn'
-      }
-    ]
+    actions: isAdminBooking
+      ? [
+          {
+            action: 'open-popup',
+            title: 'Xem & Chốt lịch',
+          },
+          {
+            action: 'dismiss',
+            title: 'Đóng',
+          },
+        ]
+      : [
+          {
+            action: 'view-appointment',
+            title: 'Xem lịch hẹn',
+          },
+        ],
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, notificationOptions)
+    (async () => {
+      await self.registration.showNotification(data.title, notificationOptions);
+
+      // If Admin app/PWA is currently open in foreground or suspended tab, notify it immediately
+      if (isAdminBooking) {
+        const windowClients = await self.clients.matchAll({
+          type: 'window',
+          includeUncontrolled: true,
+        });
+        for (const client of windowClients) {
+          if (client.url && client.url.includes('/admin')) {
+            try {
+              client.postMessage({
+                type: 'SW_PUSH_BOOKING',
+                payload: data,
+              });
+            } catch {}
+          }
+        }
+      }
+    })()
   );
 });
 
 // Handle clicking on the notification
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) 
-    ? event.notification.data.url 
-    : '/lich-hen-cua-toi';
+
+  if (event.action === 'dismiss') {
+    return;
+  }
+
+  const notifData = event.notification.data || {};
+  const targetUrl = notifData.url || '/lich-hen-cua-toi';
+  const appointmentId = notifData.appointmentId || null;
+  const isAdmin = notifData.type === 'admin_booking' || notifData.type === 'admin_test' || String(targetUrl).includes('/admin');
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // If a window is already open with the app, focus it and navigate
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
+      // Prefer focusing an existing Admin window when clicking an Admin notification
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url && 'focus' in client) {
-          if (client.navigate) {
-            client.navigate(targetUrl);
-          }
+        const matchesContext = isAdmin ? client.url.includes('/admin') : !client.url.includes('/admin');
+        if (client.url && matchesContext && 'focus' in client) {
+          try {
+            client.postMessage({
+              type: 'OPEN_BOOKING_POPUP',
+              appointmentId,
+              url: targetUrl,
+            });
+          } catch {}
           return client.focus();
         }
       }
-      // Otherwise open a new window
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
       }
     })
   );

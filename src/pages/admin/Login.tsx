@@ -6,10 +6,13 @@ import { useAuthStore } from '../../store/auth';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
-import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, Lock, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, Building2, ShieldCheck, Lock, RefreshCw, Smartphone, Download, Share, PlusSquare, X } from 'lucide-react';
 import UnauthorizedEmailModal, { UnauthorizedModalData } from './components/UnauthorizedEmailModal';
 import { GoogleOriginHelpModal } from './components/GoogleOriginHelpModal';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
+import { useAdminManifestBinding } from '../../hooks/useAdminMobileNotifications';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
+import toast from 'react-hot-toast';
 
 export default function Login() {
   const { slug: routeSlug } = useParams<{ slug?: string }>();
@@ -18,6 +21,9 @@ export default function Login() {
 
   // Use the high-performance Clinic Settings Service Layer
   const { clinicProfile: clinicInfo, loading: clinicLoading } = useClinicSettings(effectiveSlug);
+  useAdminManifestBinding(effectiveSlug || null, clinicInfo?.clinicName || null);
+  const { isInstalled, isInstallable, isIOS, install } = usePWAInstall();
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -312,7 +318,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-base p-4 relative">
       <Link 
-        to={effectiveSlug ? `/b/${effectiveSlug}?mode=customer` : (localStorage.getItem('last_clinic_slug') ? `/b/${localStorage.getItem('last_clinic_slug')}?mode=customer` : "/book?mode=customer")} 
+        to={effectiveSlug ? `/b/${effectiveSlug}?mode=customer` : "/book"} 
         className="absolute top-6 left-6 flex items-center text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white px-3.5 py-2 rounded-2xl shadow-sm border border-slate-200 transition-all hover:bg-slate-50"
       >
         <ArrowLeft className="w-4 h-4 mr-2 text-teal-600" />
@@ -508,9 +514,86 @@ export default function Login() {
                 {loading ? 'Đang xử lý...' : (effectiveSlug && clinicInfo?.clinicName ? `Đăng nhập ${clinicInfo.clinicName}` : 'Đăng nhập')}
               </Button>
             </form>
+
+            {!isInstalled && (
+              <div className="pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    localStorage.setItem('pwa_admin_mode', '1');
+                    if (effectiveSlug) localStorage.setItem('last_admin_slug', effectiveSlug);
+                    if (isInstallable) {
+                      const ok = await install();
+                      if (ok) {
+                        toast.success('Đã cài App Quản Lý ra Màn hình chính!');
+                        return;
+                      }
+                    }
+                    setShowInstallModal(true);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Smartphone className="w-4 h-4 text-teal-600 shrink-0" />
+                  <span>Cài trang Quản Lý ra Màn hình chính điện thoại</span>
+                </button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
+
+      {showInstallModal && (
+        <div
+          className="fixed inset-0 z-[120] bg-slate-950/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3"
+          onClick={() => setShowInstallModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Cài App Quản Lý Phòng Khám</h3>
+                  <p className="text-xs text-slate-500">Mở nhanh và nhận thông báo đặt lịch trên điện thoại</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallModal(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isIOS ? (
+              <ol className="list-decimal pl-5 space-y-1.5 text-xs text-slate-700 leading-relaxed">
+                <li>Mở trang này bằng trình duyệt <strong>Safari</strong>.</li>
+                <li>Nhấn biểu tượng <strong>Chia sẻ</strong> <Share className="w-3.5 h-3.5 inline text-blue-600 mx-0.5" /> ở thanh dưới cùng.</li>
+                <li>Chọn <PlusSquare className="w-3.5 h-3.5 inline mx-0.5" /> <strong>&ldquo;Thêm vào MH chính&rdquo;</strong> ➔ bấm <strong>Thêm</strong>.</li>
+              </ol>
+            ) : (
+              <ol className="list-decimal pl-5 space-y-1.5 text-xs text-slate-700 leading-relaxed">
+                <li>Bấm menu <strong>3 chấm (⋮)</strong> ở góc trên bên phải Chrome / trình duyệt.</li>
+                <li>Chọn <strong>&ldquo;Cài đặt ứng dụng&rdquo;</strong> hoặc <strong>&ldquo;Thêm vào màn hình chính&rdquo;</strong>.</li>
+                <li>Đăng nhập xong, chạm biểu tượng chuông 🔔 trên đầu để bật thông báo đẩy.</li>
+              </ol>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowInstallModal(false)}
+              className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer"
+            >
+              Đã hiểu
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal thân thiện giải thích Admin Whitelist khi email chưa được uỷ quyền hoặc access_denied */}
       <UnauthorizedEmailModal

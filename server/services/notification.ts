@@ -244,3 +244,186 @@ export async function sendAppointmentStatusPush(
     console.error("[WebPush] Lỗi gửi thông báo trạng thái lịch hẹn:", err);
   }
 }
+
+function normalizeTenantIdValue(val?: string | null): string | null {
+  if (!val) return null;
+  const trimmed = String(val).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Gửi Web Push (VAPID) tức thì tới điện thoại/máy tính của Quản trị viên PHÒNG KHÁM ĐÓ
+ * (cô lập tuyệt đối theo tenantId) khi có khách hàng đặt lịch mới.
+ */
+export async function sendAdminNewBookingPush(appointmentId: string) {
+  try {
+    const aptList = await db
+      .select({
+        id: appointments.id,
+        tenantId: appointments.tenantId,
+        startAt: appointments.startAt,
+        status: appointments.status,
+        customServiceName: appointments.customServiceName,
+        patientName: patients.fullName,
+        patientPhone: patients.phone,
+        serviceName: services.name,
+        providerName: providers.name,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+
+    if (aptList.length === 0) return;
+    const apt = aptList[0];
+    const bookingTenantId = normalizeTenantIdValue(apt.tenantId);
+
+    const allSubs = await db.select().from(pushSubscriptions);
+    const adminSubs = allSubs.filter(
+      (sub: any) =>
+        sub?.subscriberType === "admin" &&
+        sub?.endpoint &&
+        normalizeTenantIdValue(sub.tenantId) === bookingTenantId
+    );
+
+    if (adminSubs.length === 0) {
+      return;
+    }
+
+    let clinicName = "Phòng Khám Nha Khoa";
+    try {
+      const profileKey = bookingTenantId ? `${bookingTenantId}__clinicProfile` : "clinicProfile";
+      const settingRes = await db.select().from(settings).where(eq(settings.id, profileKey)).limit(1);
+      if (settingRes.length > 0 && typeof settingRes[0].value === "object") {
+        const val = settingRes[0].value as any;
+        clinicName = val.clinicName || val.name || clinicName;
+      }
+    } catch {}
+
+    const timeStr = safeFormatDate(apt.startAt, "HH:mm dd/MM");
+    const serviceTitle = apt.customServiceName || apt.serviceName || "Khám nha khoa";
+    const patientTitle = apt.patientName || "Khách hàng";
+    const doctorPart = apt.providerName ? ` • ${apt.providerName}` : "";
+
+    const payload = JSON.stringify({
+      type: "admin_booking",
+      title: `🔔 Lịch hẹn mới — ${clinicName}`,
+      body: `Khách ${patientTitle}${apt.patientPhone ? ` (${apt.patientPhone})` : ""}\n${serviceTitle}${doctorPart} • Lúc ${timeStr}`,
+      url: `/admin/dashboard?openBooking=${encodeURIComponent(apt.id)}`,
+      icon: "/pwa-192x192.png",
+      badge: "/pwa-192x192.png",
+      tag: `admin-booking-${apt.id}`,
+      requireInteraction: true,
+      vibrate: [250, 100, 250, 100, 250],
+      appointmentId: apt.id,
+      tenantId: bookingTenantId,
+      patientName: patientTitle,
+      patientPhone: apt.patientPhone || "",
+      serviceName: serviceTitle,
+      providerName: apt.providerName || "",
+      startAt: apt.startAt,
+      status: apt.status || "REQUESTED",
+      timestamp: Date.now(),
+    });
+
+    const uniqueMap = new Map<string, any>();
+    for (const sub of adminSubs) {
+      if (!uniqueMap.has(sub.endpoint)) {
+        uniqueMap.set(sub.endpoint, sub);
+      }
+    }
+
+    await Promise.all(
+      Array.from(uniqueMap.values()).map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+            payload
+          );
+        } catch (err: any) {
+          if (err?.statusCode === 410 || err?.statusCode === 404) {
+            try {
+              await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
+            } catch {}
+          } else {
+            console.warn("[WebPush][Admin] Delivery warning:", err?.message || err);
+          }
+        }
+      })
+    );
+  } catch (err) {
+    console.error("[WebPush][Admin] Failed to notify admin devices:", err);
+  }
+}
+
+/**
+ * Gửi thông báo Web Push thử nghiệm tới thiết bị Quản trị viên đang đăng nhập.
+ */
+export async function sendAdminTestPush(userId: string, tenantId: string | null, endpoint?: string) {
+  const normalizedTenant = normalizeTenantIdValue(tenantId);
+  const allSubs = await db.select().from(pushSubscriptions);
+  const targetSubs = allSubs.filter((sub: any) => {
+    if (sub?.subscriberType !== "admin" || !sub?.endpoint) return false;
+    if (normalizeTenantIdValue(sub.tenantId) !== normalizedTenant) return false;
+    if (endpoint) return sub.endpoint === endpoint;
+    return sub.userId === userId;
+  });
+
+  if (targetSubs.length === 0) {
+    return { sent: 0 };
+  }
+
+  let clinicName = "Quản Lý Phòng Khám";
+  try {
+    const profileKey = normalizedTenant ? `${normalizedTenant}__clinicProfile` : "clinicProfile";
+    const settingRes = await db.select().from(settings).where(eq(settings.id, profileKey)).limit(1);
+    if (settingRes.length > 0 && typeof settingRes[0].value === "object") {
+      const val = settingRes[0].value as any;
+      clinicName = val.clinicName || val.name || clinicName;
+    }
+  } catch {}
+
+  const payload = JSON.stringify({
+    type: "admin_test",
+    title: `🔔 Thử nghiệm thông báo — ${clinicName}`,
+    body: "Thiết bị đã kết nối thành công! Khi có khách đặt lịch, điện thoại sẽ hiện popup cảnh báo ngay lập tức.",
+    url: "/admin/dashboard",
+    icon: "/pwa-192x192.png",
+    badge: "/pwa-192x192.png",
+    tag: `admin-test-${Date.now()}`,
+    requireInteraction: true,
+    vibrate: [250, 100, 250],
+    tenantId: normalizedTenant,
+    timestamp: Date.now(),
+  });
+
+  let sent = 0;
+  await Promise.all(
+    targetSubs.map(async (sub: any) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          payload
+        );
+        sent++;
+      } catch (err: any) {
+        if (err?.statusCode === 410 || err?.statusCode === 404) {
+          try {
+            await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
+          } catch {}
+        }
+      }
+    })
+  );
+
+  return { sent };
+}
+

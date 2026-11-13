@@ -58,23 +58,47 @@ export class GooglePublicTTSProvider implements TTSProvider {
   async generate(text: string, outputPath: string) {
     const chunks = splitTextIntoSafeChunks(text, 180);
     const audioBuffers: Buffer[] = [];
+    const clients = ["tw-ob", "gtx"];
 
     for (const chunk of chunks) {
-      if (!chunk.trim()) continue;
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=${encodeURIComponent(chunk.trim())}`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/"
-        }
-      });
+      const cleanChunk = chunk.trim();
+      if (!cleanChunk) continue;
 
-      if (!res.ok) {
-        throw new Error(`Google Public TTS failed: ${res.status}`);
+      let chunkBuf: Buffer | null = null;
+      let lastStatus = 0;
+
+      for (const client of clients) {
+        try {
+          const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=${client}&q=${encodeURIComponent(cleanChunk)}`;
+          const res = await fetch(url, {
+            signal: AbortSignal.timeout(7000),
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Referer": "https://translate.google.com/",
+              "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+            }
+          });
+
+          lastStatus = res.status;
+          const contentType = (res.headers.get("content-type") || "").toLowerCase();
+          if (!res.ok || contentType.includes("text/html")) {
+            continue;
+          }
+
+          const ab = await res.arrayBuffer();
+          if (ab.byteLength > 200) {
+            chunkBuf = Buffer.from(ab);
+            break;
+          }
+        } catch {
+          // Try next client fallback
+        }
       }
 
-      const ab = await res.arrayBuffer();
-      audioBuffers.push(Buffer.from(ab));
+      if (!chunkBuf) {
+        throw new Error(`Google Public TTS failed: ${lastStatus || "timeout"}`);
+      }
+      audioBuffers.push(chunkBuf);
     }
 
     if (audioBuffers.length === 0) {

@@ -1,11 +1,12 @@
 import React, { useEffect, Suspense } from 'react';
 import { useBookingStore } from '../../store/booking';
-import { useNavigate, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, Routes, Route, Navigate, useLocation, useParams, Link } from 'react-router-dom';
 import { 
   Check, 
   Stethoscope, 
   Phone, 
   ShieldCheck, 
+  ShieldAlert,
   Sparkles,
   UserCheck,
   Clock,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
-import { getClinicBasePath } from '../../services/clinicResolver';
+import { getClinicBasePath, extractCustomClinicSubdomain } from '../../services/clinicResolver';
 import ServiceSelection from './components/ServiceSelection';
 import DateTimeSelection from './components/DateTimeSelection';
 import PatientForm from './components/PatientForm';
@@ -82,14 +83,28 @@ export default function Booking() {
 
   const querySearch = location.search || '';
   const isCustomerQrMode = searchParams.get('mode') === 'customer' || searchParams.get('source') === 'qr';
+  const customClinicSubdomain = extractCustomClinicSubdomain(
+    typeof window !== 'undefined' ? window.location.hostname : ''
+  );
+  const isClinicPathRoute = Boolean(routeSlug) || /^\/(b|booking|s)\/[^/]+/i.test(location.pathname);
+  const isCustomerBookingPortal = Boolean(
+    isClinicPathRoute ||
+    querySlug ||
+    isCustomerQrMode ||
+    customClinicSubdomain
+  );
 
   useEffect(() => {
-    if (isCustomerQrMode) {
-      try {
-        sessionStorage.setItem('customer_booking_mode', 'true');
-      } catch {}
-    }
-  }, [isCustomerQrMode]);
+    try {
+      if (isCustomerBookingPortal) {
+        if (isCustomerQrMode) {
+          sessionStorage.setItem('customer_booking_mode', 'true');
+        }
+      } else {
+        sessionStorage.removeItem('customer_booking_mode');
+      }
+    } catch {}
+  }, [isCustomerQrMode, isCustomerBookingPortal]);
 
   useEffect(() => {
     if (bookingFormConfig?.uiVersion === 'simple') return;
@@ -237,6 +252,16 @@ export default function Booking() {
             )}
 
             <PWAInstallButton />
+
+            {!isCustomerBookingPortal && (
+              <Link
+                to="/admin/login"
+                className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs"
+                title="Cổng Đăng nhập Quản trị viên"
+              >
+                <ShieldAlert className="w-4 h-4" />
+              </Link>
+            )}
           </div>
         </div>
       </header>)}

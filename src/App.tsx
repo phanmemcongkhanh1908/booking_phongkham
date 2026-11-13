@@ -85,8 +85,28 @@ class ErrorBoundary extends Component<
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = useAuthStore((state) => state.token);
-  if (!token) return <Navigate to="/admin/login" replace />;
+  if (!token) {
+    const savedAdminSlug = typeof window !== 'undefined' ? localStorage.getItem('last_admin_slug') : null;
+    const isAdminPwa = typeof window !== 'undefined' && localStorage.getItem('pwa_admin_mode') === '1';
+    if (isAdminPwa && savedAdminSlug) {
+      return <Navigate to={`/b/${savedAdminSlug}/login`} replace />;
+    }
+    return <Navigate to="/admin/login" replace />;
+  }
   return <>{children}</>;
+};
+
+const RootEntryRedirect = () => {
+  const token = useAuthStore((state) => state.token);
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+  const isAdminPwa = typeof window !== 'undefined' && localStorage.getItem('pwa_admin_mode') === '1';
+
+  if (isStandalone && (isAdminPwa || token)) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  return <Navigate to="/book" replace />;
 };
 
 // Global scroll to top on route change (solves mobile remaining scrolled to bottom)
@@ -127,7 +147,7 @@ export default function App() {
         >
           <Routes>
             {/* Public Routes */}
-            <Route path="/" element={<Navigate to="/book" replace />} />
+            <Route path="/" element={<RootEntryRedirect />} />
             
             {/* Dedicated Clinic Admin Login Routes */}
             <Route path="/b/:slug/login" element={<Login />} />

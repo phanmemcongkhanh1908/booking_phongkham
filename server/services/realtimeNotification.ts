@@ -21,9 +21,15 @@ class RealtimeNotificationService extends EventEmitter {
     }, 15000);
   }
 
+  private normalizeTenantId(val?: string | null): string | null {
+    if (!val) return null;
+    const trimmed = String(val).trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   public addClient(req: Request, res: Response) {
     const user = (req as any).user;
-    const tenantId = user?.tenantId || null;
+    const tenantId = this.normalizeTenantId(user?.tenantId);
     const isSuperAdmin = !tenantId;
 
     res.writeHead(200, {
@@ -38,7 +44,7 @@ class RealtimeNotificationService extends EventEmitter {
 
     const client: ConnectedClient = {
       res,
-      userId: user?.id,
+      userId: user?.userId || user?.id,
       tenantId,
       isSuperAdmin
     };
@@ -72,8 +78,9 @@ class RealtimeNotificationService extends EventEmitter {
 
   public emitBookingCreated(payload: any) {
     this.emit('BOOKING_CREATED', payload);
-    const data = `event: BOOKING_CREATED\ndata: ${JSON.stringify(payload)}\n\n`;
-    const bookingTenantId = payload?.tenantId || null;
+    const bookingTenantId = this.normalizeTenantId(payload?.tenantId);
+    const normalizedPayload = { ...payload, tenantId: bookingTenantId };
+    const data = `event: BOOKING_CREATED\ndata: ${JSON.stringify(normalizedPayload)}\n\n`;
 
     for (const client of this.clients) {
       try {
@@ -82,20 +89,36 @@ class RealtimeNotificationService extends EventEmitter {
           continue;
         }
 
-        // TENANT ISOLATION LOGIC:
-        // 1. If appointment belongs to a private clinic tenant (bookingTenantId is set):
-        //    ONLY send to admins of that exact tenant clinic!
-        //    Admin tổng (Super admin) and other clinics MUST NOT receive private clinic alerts.
-        // 2. If appointment has no tenantId (default root platform booking):
-        //    Only send to root platform admins (!client.tenantId).
-        if (bookingTenantId) {
-          if (client.tenantId !== bookingTenantId) {
-            continue; // Skip non-matching tenants and super admin
-          }
-        } else {
-          if (client.tenantId) {
-            continue; // Skip private clinic tenants for root-level bookings
-          }
+        // STRICT TENANT ISOLATION LOGIC:
+        // Client receives notifications ONLY when client.tenantId === bookingTenantId.
+        const clientTenantId = this.normalizeTenantId(client.tenantId);
+        if (clientTenantId !== bookingTenantId) {
+          continue;
+        }
+
+        client.res.write(data);
+      } catch (err) {
+        this.clients.delete(client);
+      }
+    }
+  }
+
+  public emitBookingUpdated(payload: any) {
+    this.emit('BOOKING_UPDATED', payload);
+    const bookingTenantId = this.normalizeTenantId(payload?.tenantId);
+    const normalizedPayload = { ...payload, tenantId: bookingTenantId };
+    const data = `event: BOOKING_UPDATED\ndata: ${JSON.stringify(normalizedPayload)}\n\n`;
+
+    for (const client of this.clients) {
+      try {
+        if (!client.res.writable || client.res.destroyed) {
+          this.clients.delete(client);
+          continue;
+        }
+
+        const clientTenantId = this.normalizeTenantId(client.tenantId);
+        if (clientTenantId !== bookingTenantId) {
+          continue;
         }
 
         client.res.write(data);

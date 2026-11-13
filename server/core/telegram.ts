@@ -269,12 +269,12 @@ async function initBot() {
 initBot().catch(console.error);
 
 export const sendNewAppointmentAlert = async (appointmentId: string) => {
-  if (!bot || !currentChatId) return;
-  const chatId = currentChatId;
+  if (!bot) return;
 
   try {
     const results = await db
       .select({
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         patientName: patients.fullName,
         patientPhone: patients.phone,
@@ -289,7 +289,22 @@ export const sendNewAppointmentAlert = async (appointmentId: string) => {
       .limit(1);
 
     if (results.length === 0) return;
-    const apt = results[0];
+    const apt = results[0] as any;
+    const aptTenantId = apt.tenantId ? String(apt.tenantId).trim() : null;
+
+    let targetChatId: string | null = null;
+    if (aptTenantId) {
+      // Only send to tenant-specific Telegram chat if that clinic explicitly configured one
+      const allSettings = await db.select().from(settings);
+      const tenantChatSetting = allSettings.find(
+        (s: any) => s.id === "telegramChatId" && String(s.tenantId || "").trim() === aptTenantId
+      );
+      targetChatId = tenantChatSetting?.value ? String(tenantChatSetting.value).trim() : null;
+    } else {
+      targetChatId = currentChatId;
+    }
+
+    if (!targetChatId) return;
 
     const message = `🔔 *CÓ LỊCH HẸN MỚI!*\n\n`
       + `👤 Khách hàng: ${apt.patientName}\n`
@@ -308,7 +323,7 @@ export const sendNewAppointmentAlert = async (appointmentId: string) => {
       ]
     };
 
-    await bot.sendMessage(chatId, message, {
+    await bot.sendMessage(targetChatId, message, {
       parse_mode: 'Markdown',
       reply_markup: inlineKeyboard
     });

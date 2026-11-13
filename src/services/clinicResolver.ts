@@ -74,6 +74,108 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 // In-flight promise deduplication map to prevent waterfall/duplicate requests
 const inFlightRequests = new Map<string, Promise<ClinicBundleData>>();
 
+const PLATFORM_HOST_SUFFIXES = [
+  '.onrender.com',
+  '.run.app',
+  '.vercel.app',
+  '.netlify.app',
+  '.web.app',
+  '.firebaseapp.com',
+  '.herokuapp.com',
+  '.railway.app',
+  '.fly.dev',
+  '.pages.dev',
+  '.github.io',
+  '.replit.app',
+  '.repl.co',
+];
+
+const RESERVED_SUBDOMAINS = [
+  'www',
+  'api',
+  'app',
+  'dev',
+  'stage',
+  'staging',
+  'preview',
+  'admin',
+  'auth',
+  'mail',
+  'static',
+];
+
+/**
+ * Extracts a custom tenant subdomain (e.g. lephuong.phongkham.vn or lephuong.localhost)
+ * while ignoring root platform domains like booking-phongkham.onrender.com or *.run.app.
+ */
+export function extractCustomClinicSubdomain(
+  hostname: string = typeof window !== 'undefined' ? window.location.hostname : ''
+): string {
+  const cleanHost = hostname.split(':')[0].trim().toLowerCase();
+  if (!cleanHost || cleanHost === 'localhost') return '';
+
+  // Ignore IPv4 addresses (e.g. 127.0.0.1)
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(cleanHost)) return '';
+
+  const hostParts = cleanHost.split('.');
+  if (hostParts.length === 2 && hostParts[1] === 'localhost') {
+    const sub = hostParts[0];
+    return RESERVED_SUBDOMAINS.includes(sub) ? '' : sub;
+  }
+
+  if (PLATFORM_HOST_SUFFIXES.some(suffix => cleanHost.endsWith(suffix))) {
+    return '';
+  }
+
+  if (hostParts.length >= 3) {
+    const sub = hostParts[0];
+    if (
+      !RESERVED_SUBDOMAINS.includes(sub) &&
+      !sub.startsWith('ais-dev-') &&
+      !sub.startsWith('ais-pre-') &&
+      !sub.startsWith('ais-app-')
+    ) {
+      return sub;
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Extracts explicit clinic slug from current route path, query params, or custom subdomain
+ * WITHOUT reading stale localStorage values.
+ */
+export function getActiveRouteClinicSlug(
+  pathname: string = typeof window !== 'undefined' ? window.location.pathname : '',
+  search: string = typeof window !== 'undefined' ? window.location.search : '',
+  hostname: string = typeof window !== 'undefined' ? window.location.hostname : ''
+): string {
+  const pathParts = pathname.split('/').filter(Boolean);
+  if (pathParts.length >= 2) {
+    const prefix = pathParts[0].toLowerCase();
+    if (['b', 'booking', 's'].includes(prefix)) {
+      const candidateSlug = pathParts[1].toLowerCase();
+      if (!['login', 'admin', 'dich-vu', 'chon-gio', 'thong-tin', 'xac-nhan'].includes(candidateSlug)) {
+        return candidateSlug;
+      }
+    }
+  }
+
+  const params = new URLSearchParams(search);
+  const querySlug = params.get('clinic') || params.get('slug') || params.get('s');
+  if (querySlug && querySlug.trim()) {
+    return querySlug.trim().toLowerCase();
+  }
+
+  const customSubdomain = extractCustomClinicSubdomain(hostname);
+  if (customSubdomain) {
+    return customSubdomain;
+  }
+
+  return '';
+}
+
 /**
  * Extracts clinic slug from URL path, query params, or subdomain
  */
@@ -82,44 +184,24 @@ export function extractClinicIdentifier(
   search: string = window.location.search,
   hostname: string = window.location.hostname
 ): string {
-  // 1. Check URL Path (/b/:slug/*, /booking/:slug/*, /s/:slug/*)
-  const pathParts = pathname.split('/').filter(Boolean);
-  if (pathParts.length >= 2) {
-    const prefix = pathParts[0].toLowerCase();
-    if (['b', 'booking', 's'].includes(prefix)) {
-      const candidateSlug = pathParts[1].toLowerCase();
-      // Ignore static sub-actions like 'login', 'admin', 'dich-vu' if they happen to be in index 1
-      if (!['login', 'admin', 'dich-vu', 'chon-gio', 'thong-tin', 'xac-nhan'].includes(candidateSlug)) {
-        return candidateSlug;
-      }
+  const activeSlug = getActiveRouteClinicSlug(pathname, search, hostname);
+  if (activeSlug) {
+    return activeSlug;
+  }
+
+  // 4. Do not override explicit Root software routes (/book/*, /admin/login) with stale localStorage clinic slugs
+  const cleanPath = pathname.toLowerCase();
+  const isExplicitRootRoute =
+    cleanPath === '/' ||
+    cleanPath === '/book' ||
+    cleanPath.startsWith('/book/') ||
+    cleanPath === '/admin/login';
+
+  if (!isExplicitRootRoute && typeof window !== 'undefined') {
+    const storedSlug = localStorage.getItem('last_clinic_slug');
+    if (storedSlug && storedSlug.trim()) {
+      return storedSlug.trim().toLowerCase();
     }
-  }
-
-  // 2. Check Query Parameters (?clinic=..., ?slug=..., ?s=...)
-  const params = new URLSearchParams(search);
-  const querySlug = params.get('clinic') || params.get('slug') || params.get('s');
-  if (querySlug && querySlug.trim()) {
-    return querySlug.trim().toLowerCase();
-  }
-
-  // 3. Check Subdomain (e.g. lephuong.phongkham.vn or lephuong.localhost)
-  const cleanHost = hostname.split(':')[0].toLowerCase();
-  const hostParts = cleanHost.split('.');
-  if (hostParts.length === 2 && hostParts[1] === 'localhost') {
-    return hostParts[0];
-  }
-  if (hostParts.length >= 3) {
-    const sub = hostParts[0];
-    const reserved = ['www', 'api', 'app', 'dev', 'stage', 'preview', 'admin', 'auth', 'mail', 'static'];
-    if (!reserved.includes(sub) && !sub.startsWith('ais-dev-') && !sub.startsWith('ais-pre-') && !sub.startsWith('ais-app-') && !sub.includes('run.app')) {
-      return sub;
-    }
-  }
-
-  // 4. Fallback to localStorage last visited clinic if available
-  const storedSlug = localStorage.getItem('last_clinic_slug');
-  if (storedSlug && storedSlug.trim()) {
-    return storedSlug.trim().toLowerCase();
   }
 
   return '';
@@ -222,9 +304,7 @@ export async function fetchClinicSettings(slugOrDomain?: string): Promise<Clinic
       if (bundle.slug) {
         localStorage.setItem('last_clinic_slug', bundle.slug);
       }
-      if (bundle.tenantId) {
-        useBookingStore.getState().setTenantId(bundle.tenantId);
-      }
+      useBookingStore.getState().setTenantId(bundle.tenantId || null);
       if (bundle.clinicProfile) {
         useBookingStore.getState().setClinicProfile(bundle.clinicProfile);
       }
