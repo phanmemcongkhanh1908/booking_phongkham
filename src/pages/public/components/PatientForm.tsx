@@ -17,7 +17,8 @@ import {
   Send,
   Users,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  CalendarClock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -26,6 +27,7 @@ import api from '../../../services/api';
 import { auth } from '../../../lib/firebase';
 import { getClinicBasePath } from '../../../services/clinicResolver';
 import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
+import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
 
 const DEFAULT_QUICK_TAGS = [
   'Đang đau nhức / Ê buốt',
@@ -80,6 +82,8 @@ export default function PatientForm() {
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   
   useEffect(() => {
@@ -90,6 +94,14 @@ export default function PatientForm() {
         if (parsed.phone && parsed.fullName) {
           setFormData(prev => ({ ...prev, phone: parsed.phone, fullName: parsed.fullName }));
           setPhoneStatus('verified'); // Assume verified if it's from local storage
+          api.post('/public/patients/verify', {
+            phone: parsed.phone,
+            fullName: parsed.fullName,
+          }).then(res => {
+            if (res.data?.success && res.data?.match && Array.isArray(res.data?.data?.bookingHistory)) {
+              setBookingHistory(res.data.data.bookingHistory);
+            }
+          }).catch(() => {});
         }
       }
     } catch (e) {}
@@ -200,7 +212,7 @@ export default function PatientForm() {
         const p = res.data.data;
         updateField('fullName', p.fullName || formData.fullName);
         updateField('email', p.email || formData.email);
-        updateField('notes', p.notes || formData.notes);
+        setBookingHistory(Array.isArray(p.bookingHistory) ? p.bookingHistory : []);
         
         setPhoneStatus('verified');
         toast.success("Xác thực thành công! Đã tự động điền thông tin.");
@@ -240,7 +252,7 @@ export default function PatientForm() {
         setPhoneStatus('idle');
       }
     }
-    setPatientDraft({ bookingFor: mode, isNewProfile: mode === 'relative' });
+    setPatientDraft({ bookingFor: mode, isNewProfile: false });
   };
 
   useEffect(() => {
@@ -483,7 +495,10 @@ export default function PatientForm() {
                     onChange={e => {
                       const val = e.target.value.replace(/[^\d\s.-]/g, '');
                       updateField('phone', val);
-                      if (phoneStatus === 'verified') setPhoneStatus('idle');
+                      if (phoneStatus === 'verified') {
+                        setPhoneStatus('idle');
+                        setBookingHistory([]);
+                      }
                       if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: '' }));
                     }}
                     onBlur={() => handleBlur('phone')}
@@ -500,6 +515,18 @@ export default function PatientForm() {
                     <CheckCircle className="w-4 h-4 text-teal-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
                   )}
                 </div>
+                {phoneStatus === 'verified' && bookingHistory.length > 0 && (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryModal(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 hover:text-teal-800 hover:underline cursor-pointer"
+                    >
+                      <CalendarClock className="w-3.5 h-3.5" />
+                      <span>Xem lịch sử đặt lịch khám ({bookingHistory.length})</span>
+                    </button>
+                  </div>
+                )}
                 {fieldErrors.phone && (
                   <p className="text-[11px] text-red-500 font-medium px-1">{fieldErrors.phone}</p>
                 )}
@@ -832,6 +859,14 @@ export default function PatientForm() {
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      <CustomerBookingHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        customerName={formData.fullName}
+        customerPhone={formData.phone}
+        appointments={bookingHistory}
+      />
     </div>
   );
 }

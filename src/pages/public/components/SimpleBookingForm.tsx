@@ -6,12 +6,13 @@ import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { 
   Stethoscope, Calendar as CalendarIcon, Clock, User, Users, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
-  ChevronLeft, ChevronRight, CalendarDays
+  ChevronLeft, ChevronRight, CalendarDays, CalendarClock
 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
 import { getClinicBasePath } from '../../../services/clinicResolver';
 import { PWAInstallBanner } from './PWAInstallBanner';
+import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -70,6 +71,8 @@ export default function SimpleBookingForm() {
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [bookingFor, setBookingFor] = useState<'self' | 'relative'>('self');
   const [lastServiceId, setLastServiceId] = useState<string | null>(null);
+  const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -215,8 +218,8 @@ export default function SimpleBookingForm() {
           ...prev,
           fullName: p.fullName || prev.fullName,
           email: p.email || prev.email,
-          notes: p.notes || prev.notes
         }));
+        setBookingHistory(Array.isArray(p.bookingHistory) ? p.bookingHistory : []);
         setPhoneStatus('verified');
         toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
         if (p.lastServiceId && selectedServiceIds.length === 0) {
@@ -298,7 +301,7 @@ export default function SimpleBookingForm() {
         tenantId: useBookingStore.getState().tenantId || undefined,
         clinicSlug: useBookingStore.getState().clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || undefined,
         bookingFor: bookingFor,
-        isNewProfile: isNewProfile || bookingFor === 'relative',
+        isNewProfile: bookingFor === 'self' ? isNewProfile : false,
       });
 
       if (res.data.success) {
@@ -760,9 +763,12 @@ export default function SimpleBookingForm() {
                   inputMode="tel"
                   required
                   value={formData.phone || ''}
-                  onChange={e => {
+                onChange={e => {
                     setFormData({...formData, phone: e.target.value});
-                    if (phoneStatus === 'verified') setPhoneStatus('idle'); // reset if they type a new number
+                    if (phoneStatus === 'verified') {
+                      setPhoneStatus('idle');
+                      setBookingHistory([]);
+                    }
                   }}
                   className="w-full pl-10 sm:pl-11 pr-4 py-3 sm:py-3.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all text-base font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-normal bg-slate-50/50 hover:bg-white focus:bg-white shadow-2xs"
                   placeholder="Nhập số điện thoại để nhận thông báo..."
@@ -778,6 +784,18 @@ export default function SimpleBookingForm() {
                   </div>
                 )}
               </div>
+              {phoneStatus === 'verified' && bookingHistory.length > 0 && (
+                <div className="pt-1 flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setShowHistoryModal(true)}
+                    className="inline-flex items-center gap-1.5 text-teal-700 hover:text-teal-800 font-semibold hover:underline cursor-pointer"
+                  >
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    <span>Xem lịch sử đặt lịch khám ({bookingHistory.length})</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Khối xác thực nếu là khách cũ */}
@@ -954,6 +972,14 @@ export default function SimpleBookingForm() {
 
       {/* Floating PWA Install Prompt for Mobile */}
       <PWAInstallBanner />
+
+      <CustomerBookingHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        customerName={formData.fullName}
+        customerPhone={formData.phone}
+        appointments={bookingHistory}
+      />
     </div>
   );
 }

@@ -30,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
+import { resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -1174,7 +1175,7 @@ export default function Dashboard() {
                           <div className="min-w-0 pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap mb-1">
                               <h4 className="font-bold text-slate-900 text-base truncate">{apt.patientName}</h4>
-                              {apt.notes && apt.notes.includes('[Đặt lịch hộ') && (
+                              {resolveBookingMode(apt) === 'relative' && (
                                 <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200">
                                   Đặt lịch hộ
                                 </span>
@@ -1394,7 +1395,7 @@ export default function Dashboard() {
                             <td className="px-4 py-3.5">
                               <div className="font-semibold text-text-main flex items-center gap-1.5 flex-wrap">
                                 <span>{apt.patientName}</span>
-                                {apt.notes && apt.notes.includes('[Đặt lịch hộ') && (
+                                {resolveBookingMode(apt) === 'relative' && (
                                   <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded border border-amber-200">
                                     Đặt lịch hộ
                                   </span>

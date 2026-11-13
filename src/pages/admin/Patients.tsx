@@ -11,8 +11,9 @@ import {
   UploadCloud, Eye, Download, X, AlertCircle, ZoomIn, ZoomOut, 
   RotateCw, CalendarPlus, FolderPlus, Clock, Phone, Mail, 
   ClipboardList, Receipt, CalendarClock, Check, Sparkles,
-  Send, ExternalLink, ChevronLeft, Loader2
+  Send, ExternalLink, ChevronLeft, Loader2, User, Users
 } from 'lucide-react';
+import { format } from 'date-fns';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import toast from 'react-hot-toast';
@@ -20,6 +21,12 @@ import api from '../../services/api';
 import { uploadImageToDrive, syncPatientToSheet, findOrCreateFolder, findOrCreateClinicSpreadsheet } from '../../lib/googleWorkspace';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { useAuthStore } from '../../store/auth';
+import CustomerBookingHistoryModal, {
+  BookingHistoryItem,
+  resolveBookingMode,
+  stripSystemBookingNotes,
+} from '../../components/CustomerBookingHistoryModal';
+import { APPOINTMENT_STATUSES, LABEL_OVERRIDES, STATUS_ALIASES } from '../../constants/appointmentStatus';
 
 
 // Document structure
@@ -56,9 +63,12 @@ export interface ParsedNotes {
   treatmentPlan?: string;
   documents: DocumentGroup[];
   beforeAfterCases: BeforeAfterCase[];
+  isProxyBooking?: boolean;
+  bookingFor?: 'self' | 'relative';
+  primaryContactPhone?: string;
 }
 
-// Utility to parse notes field (supports JSON and legacy text)
+// Utility to parse notes field (supports JSON and legacy text) and keep clinical text clean of proxy annotations
 function parseNotes(rawNotes: string | null | undefined): ParsedNotes {
   if (!rawNotes) return { text: '', diagnosis: '', treatmentPlan: '', documents: [], beforeAfterCases: [] };
   try {
@@ -74,17 +84,64 @@ function parseNotes(rawNotes: string | null | undefined): ParsedNotes {
       }));
       const rawCases = Array.isArray(parsed.beforeAfterCases) ? parsed.beforeAfterCases : [];
       return {
-        text: parsed.text || '',
+        text: stripSystemBookingNotes(parsed.text || ''),
         diagnosis: parsed.diagnosis || '',
         treatmentPlan: parsed.treatmentPlan || '',
         documents: normalizedDocs,
-        beforeAfterCases: rawCases
+        beforeAfterCases: rawCases,
+        isProxyBooking: parsed.bookingFor === 'relative' ? true : (parsed.bookingFor === 'self' ? false : Boolean(parsed.isProxyBooking)),
+        bookingFor: parsed.bookingFor === 'relative' ? 'relative' : (parsed.bookingFor === 'self' ? 'self' : undefined),
+        primaryContactPhone: parsed.primaryContactPhone,
       };
     }
   } catch (e) {
     // Legacy plain text
   }
-  return { text: rawNotes, diagnosis: '', treatmentPlan: '', documents: [], beforeAfterCases: [] };
+  return { text: stripSystemBookingNotes(rawNotes), diagnosis: '', treatmentPlan: '', documents: [], beforeAfterCases: [] };
+}
+
+function isProxyPatientRecord(p: any): boolean {
+  if (!p) return false;
+  if (p.bookingFor === 'relative') return true;
+  if (p.bookingFor === 'self') return false;
+  if (p.isProxyBooking === true) return true;
+  if (p.notes) {
+    try {
+      const parsed = JSON.parse(p.notes);
+      if (parsed?.bookingFor === 'relative') return true;
+      if (parsed?.bookingFor === 'self') return false;
+      if (parsed?.isProxyBooking === true) return true;
+      if (parsed?.text && (parsed.text.includes('[Đặt lịch hộ') || parsed.text.includes('[Đặt cho người thân]'))) {
+        return true;
+      }
+    } catch {
+      if (String(p.notes).includes('[Đặt lịch hộ') || String(p.notes).includes('[Đặt cho người thân]')) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function buildPatientNotesJson(params: {
+  text: string;
+  diagnosis: string;
+  treatmentPlan: string;
+  documents: DocumentGroup[];
+  beforeAfterCases: BeforeAfterCase[];
+  basePatient?: any;
+}) {
+  const existingParsed = parseNotes(params.basePatient?.notes);
+  return JSON.stringify({
+    text: stripSystemBookingNotes(params.text),
+    diagnosis: params.diagnosis,
+    treatmentPlan: params.treatmentPlan,
+    documents: params.documents,
+    beforeAfterCases: params.beforeAfterCases,
+    ...(existingParsed.bookingFor ? { bookingFor: existingParsed.bookingFor } : {}),
+    ...(typeof existingParsed.isProxyBooking === 'boolean' ? { isProxyBooking: existingParsed.isProxyBooking } : {}),
+    ...(existingParsed.primaryContactPhone ? { primaryContactPhone: existingParsed.primaryContactPhone } : {}),
+  });
 }
 
 // Read file as base64 data URL for local storage fallback
@@ -188,6 +245,39 @@ export default function Patients() {
     doctorNote: ''
   });
   const [savingCase, setSavingCase] = useState(false);
+
+  // Booking History Modal & Scrollable EMR Tabs State
+  const [showBookingHistoryModal, setShowBookingHistoryModal] = useState(false);
+  const tabNavRef = useRef<HTMLDivElement | null>(null);
+  const [tabScrollState, setTabScrollState] = useState({ canLeft: false, canRight: false });
+
+  const updateTabScrollState = () => {
+    const el = tabNavRef.current;
+    if (!el) return;
+    setTabScrollState({
+      canLeft: el.scrollLeft > 4,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  };
+
+  useEffect(() => {
+    const el = tabNavRef.current;
+    if (!el) return;
+    updateTabScrollState();
+    const ro = new ResizeObserver(() => updateTabScrollState());
+    ro.observe(el);
+    window.addEventListener('resize', updateTabScrollState);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateTabScrollState);
+    };
+  }, [selectedPatient?.id, activeTab]);
+
+  const scrollTabsBy = (delta: number) => {
+    const el = tabNavRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     const fetchClinic = async () => {
@@ -394,12 +484,13 @@ export default function Patients() {
       if (!silent) setLoading(true);
       const newDebt = Math.max(0, (debt + currentServiceCost) - paidAmount);
       
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: documents,
-        beforeAfterCases: beforeAfterCases
+        documents,
+        beforeAfterCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -555,12 +646,13 @@ export default function Patients() {
 
       setBeforeAfterCases(updatedCases);
 
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
         documents,
-        beforeAfterCases: updatedCases
+        beforeAfterCases: updatedCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -592,12 +684,13 @@ export default function Patients() {
       const updatedCases = beforeAfterCases.filter(c => c.id !== caseId);
       setBeforeAfterCases(updatedCases);
 
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
         documents,
-        beforeAfterCases: updatedCases
+        beforeAfterCases: updatedCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -714,11 +807,13 @@ export default function Patients() {
       setIsSaved(false);
 
       // Save directly to server
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: updatedDocs
+        documents: updatedDocs,
+        beforeAfterCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -764,11 +859,13 @@ export default function Patients() {
       const updatedDocs = [newGroup, ...documents].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setDocuments(updatedDocs);
       
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: updatedDocs
+        documents: updatedDocs,
+        beforeAfterCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -829,11 +926,13 @@ export default function Patients() {
     setIsSaved(false);
 
     try {
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: updatedDocs
+        documents: updatedDocs,
+        beforeAfterCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -858,11 +957,13 @@ export default function Patients() {
     setIsSaved(false);
 
     try {
-      const combinedNotes = JSON.stringify({
+      const combinedNotes = buildPatientNotesJson({
         text: notesText,
         diagnosis,
         treatmentPlan,
-        documents: updatedDocs
+        documents: updatedDocs,
+        beforeAfterCases,
+        basePatient: selectedPatient,
       });
 
       await api.put(`/patients/${selectedPatient.id}`, {
@@ -921,10 +1022,27 @@ export default function Patients() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, filterType]);
 
-  // Patient appointments
-  const patientAppointments = selectedPatient ? appointments.filter(a => 
-    a.patientId === selectedPatient.id || a.phone === selectedPatient.phone
-  ) : [];
+  // Patient appointments (strictly for this patient profile, plus proxy bookings if this is primary phone holder)
+  const selectedIsProxy = isProxyPatientRecord(selectedPatient);
+  const selectedCleanPhone = selectedPatient?.phone ? String(selectedPatient.phone).replace(/\D/g, '') : '';
+
+  const patientAppointments: BookingHistoryItem[] = selectedPatient
+    ? appointments
+        .filter((a) => {
+          if (a.patientId === selectedPatient.id) return true;
+          if (!selectedIsProxy && selectedCleanPhone) {
+            const aptPhone = String(a.patientPhone || a.phone || '').replace(/\D/g, '');
+            return aptPhone === selectedCleanPhone && resolveBookingMode(a) === 'relative';
+          }
+          return false;
+        })
+        .map((a) => ({
+          ...a,
+          patientName: a.bookedForName || a.patientName || selectedPatient.fullName,
+          notes: stripSystemBookingNotes(a.notes),
+        }))
+        .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
+    : [];
 
   const totalFilesCount = documents.reduce((acc, curr) => acc + (curr.files ? curr.files.length : 0), 0);
 
@@ -1024,7 +1142,7 @@ export default function Patients() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-semibold text-text-main text-xs truncate">{p.fullName}</span>
-                    {p.notes && p.notes.includes('Đặt lịch hộ') && (
+                    {isProxyPatientRecord(p) && (
                       <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
                         Đặt hộ
                       </span>
@@ -1087,7 +1205,7 @@ export default function Patients() {
                 <div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h2 className="text-xl font-bold text-text-main">{selectedPatient.fullName}</h2>
-                    {selectedPatient.notes && selectedPatient.notes.includes('Đặt lịch hộ') && (
+                    {selectedIsProxy && (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                         Hồ sơ đặt lịch hộ
                       </span>
@@ -1120,6 +1238,14 @@ export default function Patients() {
                         • <ImageIcon className="w-3 h-3" /> X-Q gần nhất: {new Date(lastXRayDate).toLocaleDateString('vi-VN')}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setShowBookingHistoryModal(true)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800 hover:underline print:hidden cursor-pointer"
+                    >
+                      <CalendarClock className="w-3.5 h-3.5" />
+                      <span>Xem lịch sử đặt lịch khám ({patientAppointments.length})</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1181,87 +1307,142 @@ export default function Patients() {
               </div>
             </div>
             
-            {/* EMR NAVIGATION TABS WITH UNIFIED ILLUSTRATIVE ICONS */}
-            <div className="flex items-center border-b border-border-subtle px-4 lg:px-6 bg-bg-base/60 print:hidden overflow-x-auto whitespace-nowrap scrollbar-hide min-w-0">
-              <button 
-                onClick={() => setActiveTab('overview')}
-                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
-                  activeTab === 'overview' 
-                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
-                    : 'border-transparent text-text-muted hover:text-text-main'
-                }`}
-              >
-                <ClipboardList className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                Khám & Bệnh lý
-              </button>
+            {/* EMR NAVIGATION TABS WITH AUTO HORIZONTAL SCROLLBAR & OVERFLOW ARROWS */}
+            <div className="relative border-b border-border-subtle bg-bg-base/60 print:hidden min-w-0">
+              {tabScrollState.canLeft && (
+                <button
+                  type="button"
+                  onClick={() => scrollTabsBy(-200)}
+                  className="absolute left-0 top-0 bottom-1.5 z-10 px-1.5 bg-gradient-to-r from-white via-white/95 to-transparent text-slate-600 hover:text-teal-700 flex items-center cursor-pointer"
+                  aria-label="Cuộn menu sang trái"
+                  title="Xem các mục trước"
+                >
+                  <ChevronLeft className="w-4 h-4 bg-white rounded-full shadow-xs border border-slate-200 p-0.5" />
+                </button>
+              )}
 
-              <button 
-                onClick={() => setActiveTab('documents')}
-                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
-                  activeTab === 'documents' 
-                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
-                    : 'border-transparent text-text-muted hover:text-text-main'
-                }`}
+              <div
+                ref={tabNavRef}
+                onScroll={updateTabScrollState}
+                onWheel={(e) => {
+                  if (tabNavRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    tabNavRef.current.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="flex items-center px-4 lg:px-6 overflow-x-auto whitespace-nowrap min-w-0 scroll-smooth [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb:hover]:bg-teal-500 [&::-webkit-scrollbar-thumb]:rounded-full"
               >
-                <Images className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                X-Quang & Tài liệu theo ngày
-                {totalFilesCount > 0 && (
-                  <span className="ml-2 bg-primary/10 text-primary font-black text-[11px] py-0.5 px-2 rounded-full">
-                    {totalFilesCount}
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveTab('overview');
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+                  }}
+                  className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                    activeTab === 'overview'
+                      ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  <ClipboardList className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                  Khám & Bệnh lý
+                </button>
 
-              <button 
-                onClick={() => setActiveTab('finance')}
-                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
-                  activeTab === 'finance' 
-                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
-                    : 'border-transparent text-text-muted hover:text-text-main'
-                }`}
-              >
-                <Receipt className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                Chi phí & Thanh toán
-                {debt > 0 && (
-                  <span className="ml-2 bg-red-100 text-error font-bold text-[10px] py-0.5 px-1.5 rounded-full">
-                    Nợ
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveTab('documents');
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+                  }}
+                  className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                    activeTab === 'documents'
+                      ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  <Images className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                  X-Quang & Tài liệu theo ngày
+                  {totalFilesCount > 0 && (
+                    <span className="ml-2 bg-primary/10 text-primary font-black text-[11px] py-0.5 px-2 rounded-full">
+                      {totalFilesCount}
+                    </span>
+                  )}
+                </button>
 
-              <button 
-                onClick={() => setActiveTab('appointments')}
-                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
-                  activeTab === 'appointments' 
-                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
-                    : 'border-transparent text-text-muted hover:text-text-main'
-                }`}
-              >
-                <CalendarClock className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                Lịch sử hẹn khám
-                {patientAppointments.length > 0 && (
-                  <span className="ml-2 bg-slate-200 text-text-main text-[11px] py-0.5 px-1.5 rounded-full">
-                    {patientAppointments.length}
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveTab('finance');
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+                  }}
+                  className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                    activeTab === 'finance'
+                      ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  <Receipt className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                  Chi phí & Thanh toán
+                  {debt > 0 && (
+                    <span className="ml-2 bg-red-100 text-error font-bold text-[10px] py-0.5 px-1.5 rounded-full">
+                      Nợ
+                    </span>
+                  )}
+                </button>
 
-              <button 
-                onClick={() => setActiveTab('gallery')}
-                className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all ${
-                  activeTab === 'gallery' 
-                    ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg' 
-                    : 'border-transparent text-text-muted hover:text-text-main'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 mr-2 shrink-0 text-primary" />
-                <span>Thư viện Trước & Sau</span>
-                {beforeAfterCases.length > 0 && (
-                  <span className="ml-2 bg-teal-100 text-teal-800 font-bold text-[10px] py-0.5 px-1.5 rounded-full">
-                    {beforeAfterCases.length}
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveTab('appointments');
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+                  }}
+                  className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                    activeTab === 'appointments'
+                      ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  <CalendarClock className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                  Lịch sử hẹn khám
+                  {patientAppointments.length > 0 && (
+                    <span className="ml-2 bg-slate-200 text-text-main text-[11px] py-0.5 px-1.5 rounded-full">
+                      {patientAppointments.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveTab('gallery');
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+                  }}
+                  className={`shrink-0 py-3 px-4 text-xs font-bold flex items-center border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                    activeTab === 'gallery'
+                      ? 'border-primary text-primary bg-surface shadow-xs rounded-t-lg'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 mr-2 shrink-0 text-primary" />
+                  <span>Thư viện Trước & Sau</span>
+                  {beforeAfterCases.length > 0 && (
+                    <span className="ml-2 bg-teal-100 text-teal-800 font-bold text-[10px] py-0.5 px-1.5 rounded-full">
+                      {beforeAfterCases.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {tabScrollState.canRight && (
+                <button
+                  type="button"
+                  onClick={() => scrollTabsBy(200)}
+                  className="absolute right-0 top-0 bottom-1.5 z-10 px-1.5 bg-gradient-to-l from-white via-white/95 to-transparent text-slate-600 hover:text-teal-700 flex items-center cursor-pointer"
+                  aria-label="Cuộn menu sang phải"
+                  title="Xem tiếp các mục"
+                >
+                  <ChevronRight className="w-4 h-4 bg-white rounded-full shadow-xs border border-slate-200 p-0.5" />
+                </button>
+              )}
             </div>
 
             {/* TAB CONTENTS */}
@@ -2092,40 +2273,66 @@ export default function Patients() {
                       </div>
                     ) : (
                       <div className="space-y-2.5">
-                        {patientAppointments.map((apt) => (
-                          <div 
-                            key={apt.id} 
-                            className="p-3.5 rounded-lg border border-border-subtle bg-bg-base/60 flex items-center justify-between text-xs gap-3 hover:bg-bg-base transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-lg bg-mint text-primary flex items-center justify-center font-bold">
-                                <Clock className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-text-main">{apt.date}</span>
-                                  <span className="text-text-muted font-medium">• {apt.time}</span>
-                                </div>
-                                <p className="text-text-muted text-[11px] mt-0.5">
-                                  Dịch vụ: <b className="text-text-main">{apt.serviceName || apt.service}</b>
-                                </p>
-                              </div>
-                            </div>
+                        {patientAppointments.map((apt) => {
+                          const parsedStart = apt.startAt ? new Date(apt.startAt) : null;
+                          const hasValidDate = parsedStart && !isNaN(parsedStart.getTime());
+                          const mode = resolveBookingMode(apt);
+                          const isRelative = mode === 'relative';
+                          const targetName = apt.bookedForName || apt.patientName || selectedPatient.fullName;
+                          const mappedStatus = STATUS_ALIASES[apt.status] || apt.status;
+                          const statusConfig =
+                            APPOINTMENT_STATUSES[mappedStatus as keyof typeof APPOINTMENT_STATUSES] ||
+                            APPOINTMENT_STATUSES.PENDING;
+                          const statusLabel = LABEL_OVERRIDES[apt.status] || statusConfig.label;
+                          const cleanNote = stripSystemBookingNotes(apt.notes);
 
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                apt.status === 'checked-in' ? 'bg-green-50 text-green-700 border border-green-200' :
-                                apt.status === 'confirmed' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                apt.status === 'cancelled' ? 'bg-red-50 text-error border border-red-200' :
-                                'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                                {apt.status === 'checked-in' ? 'Đã check-in' :
-                                 apt.status === 'confirmed' ? 'Đã xác nhận' :
-                                 apt.status === 'cancelled' ? 'Đã hủy' : 'Chờ xác nhận'}
-                              </span>
+                          return (
+                            <div 
+                              key={apt.id} 
+                              className="p-3.5 rounded-lg border border-border-subtle bg-bg-base/60 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-3 hover:bg-bg-base transition-colors"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-lg bg-mint text-primary flex items-center justify-center font-bold shrink-0">
+                                  <Clock className="w-4 h-4" />
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-text-main tabular-nums">
+                                      {hasValidDate ? format(parsedStart, 'HH:mm • dd/MM/yyyy') : 'Chưa rõ thời gian'}
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border ${
+                                        isRelative
+                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                          : 'bg-teal-50 text-teal-800 border-teal-200'
+                                      }`}
+                                    >
+                                      {isRelative ? <Users className="w-3 h-3" /> : <User className="w-3 h-3" />}
+                                      {isRelative ? 'Đặt hộ người thân' : 'Đặt cho chính tôi'}
+                                    </span>
+                                  </div>
+                                  <p className="text-text-muted text-[11px]">
+                                    Đặt cho: <b className="text-text-main">{targetName}</b>
+                                    <span aria-hidden="true"> · </span>
+                                    Dịch vụ: <b className="text-text-main">{apt.serviceName || 'Khám nha khoa'}</b>
+                                  </p>
+                                  {cleanNote && (
+                                    <p className="text-[11px] text-slate-600">{cleanNote}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                <span
+                                  className="px-2.5 py-1 rounded text-[11px] font-bold"
+                                  style={{ backgroundColor: statusConfig.bg, color: statusConfig.color }}
+                                >
+                                  {statusLabel}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2889,6 +3096,14 @@ export default function Patients() {
           </div>
         </div>
       )}
+
+      <CustomerBookingHistoryModal
+        isOpen={showBookingHistoryModal}
+        onClose={() => setShowBookingHistoryModal(false)}
+        customerName={selectedPatient?.fullName}
+        customerPhone={selectedPatient?.phone}
+        appointments={patientAppointments}
+      />
     </div>
   );
 }

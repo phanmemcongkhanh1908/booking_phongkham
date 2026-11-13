@@ -81,6 +81,17 @@ export async function notifyPatientAppointment(
     result.patientEmail = email;
     result.patientTelegramId = telegramId;
 
+    const cleanAptNote = apt.notes
+      ? String(apt.notes)
+          .replace(/\[Đặt lịch hộ qua SĐT[^\]]*\]\s*/gi, "")
+          .replace(/\[Đặt lịch hộ cho:[^\]]*\]\s*-?\s*/gi, "")
+          .replace(/\[Đặt lịch hộ[^\]]*\]\s*-?\s*/gi, "")
+          .replace(/\[Đặt cho người thân\]\s*-?\s*/gi, "")
+          .replace(/\[HỆ THỐNG\]:[^\n]*\n?/gi, "")
+          .replace(/^\s*[-–|]\s*/, "")
+          .trim()
+      : "";
+
     const notificationPayload: AppointmentNotificationData = {
       appointmentId: apt.id,
       patientName: apt.patientName || "Quý khách",
@@ -90,7 +101,7 @@ export async function notifyPatientAppointment(
       providerName: apt.providerName || clinicProfile.doctorName,
       startAt: apt.startAt,
       status: apt.status,
-      notes: apt.notes || undefined,
+      notes: cleanAptNote || undefined,
       clinicName: clinicProfile.clinicName,
       clinicAddress: clinicProfile.address,
       clinicPhone: clinicProfile.phone,
@@ -143,7 +154,7 @@ export async function notifyPatientAppointment(
             `⏰ *Thời gian:* ${timeStr}\n` +
             `📍 *Địa chỉ:* ${clinicProfile.address}\n` +
             `📞 *Hotline:* ${clinicProfile.phone}\n` +
-            (apt.notes ? `📝 *Ghi chú:* _${apt.notes}_\n` : "") +
+            (cleanAptNote ? `📝 *Ghi chú:* _${cleanAptNote}_\n` : "") +
             `\n💡 _Vui lòng đến trước 5-10 phút để được phục vụ chu đáo nhất!_`;
 
           await bot.sendMessage(telegramId, tgMessage, { parse_mode: "Markdown" });

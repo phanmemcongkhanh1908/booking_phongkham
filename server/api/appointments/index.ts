@@ -42,6 +42,43 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 0;
 
+    const cleanSystemNotes = (raw?: string | null) => {
+      if (!raw) return "";
+      return String(raw)
+        .replace(/\[Đặt lịch hộ qua SĐT[^\]]*\]\s*/gi, "")
+        .replace(/\[Đặt lịch hộ cho:[^\]]*\]\s*-?\s*/gi, "")
+        .replace(/\[Đặt lịch hộ[^\]]*\]\s*-?\s*/gi, "")
+        .replace(/\[Đặt cho người thân\]\s*-?\s*/gi, "")
+        .replace(/\[HỆ THỐNG\]:[^\n]*\n?/gi, "")
+        .replace(/^\s*[-–|]\s*/, "")
+        .trim();
+    };
+
+    const resolveMode = (r: any): "self" | "relative" => {
+      if (r.bookingFor === "relative") return "relative";
+      if (r.bookingFor === "self") return "self";
+      if (r.isProxyBooking === true) return "relative";
+      if (r.notes && (r.notes.includes("[Đặt lịch hộ") || r.notes.includes("[Đặt cho người thân]"))) {
+        return "relative";
+      }
+      if (r.patientNotes) {
+        try {
+          const parsed = JSON.parse(r.patientNotes);
+          if (parsed?.bookingFor === "relative") return "relative";
+          if (parsed?.bookingFor === "self") return "self";
+          if (parsed?.isProxyBooking === true) return "relative";
+          if (parsed?.text && (parsed.text.includes("[Đặt lịch hộ") || parsed.text.includes("[Đặt cho người thân]"))) {
+            return "relative";
+          }
+        } catch {
+          if (String(r.patientNotes).includes("[Đặt lịch hộ") || String(r.patientNotes).includes("[Đặt cho người thân]")) {
+            return "relative";
+          }
+        }
+      }
+      return "self";
+    };
+
     let queryBuilder = db
       .select({
         id: appointments.id,
@@ -50,9 +87,13 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         status: appointments.status,
         source: appointments.source,
         notes: appointments.notes,
+        bookingFor: (appointments as any).bookingFor,
+        isProxyBooking: (appointments as any).isProxyBooking,
+        bookedForName: (appointments as any).bookedForName,
         patientId: patients.id,
         patientName: patients.fullName,
         patientPhone: patients.phone,
+        patientNotes: patients.notes,
         debt: patients.debt,
         allergies: patients.allergies,
         lastXRayDate: patients.lastXRayDate,
@@ -77,13 +118,22 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(appointments.startAt);
 
+    const mapRow = (r: any) => {
+      const mode = resolveMode(r);
+      return {
+        ...r,
+        bookingFor: mode,
+        isProxyBooking: mode === "relative",
+        bookedForName: r.bookedForName || r.patientName,
+        notes: cleanSystemNotes(r.notes),
+        serviceName: r.customServiceName || r.serviceName,
+      };
+    };
+
     if (limit > 0) {
       const offset = (page - 1) * limit;
       const rawResults = await queryBuilder.limit(limit).offset(offset);
-      const results = rawResults.map((r: any) => ({
-        ...r,
-        serviceName: r.customServiceName || r.serviceName
-      }));
+      const results = rawResults.map(mapRow);
       
       const countQuery = db.select({ id: appointments.id }).from(appointments).where(conditions.length > 0 ? and(...conditions) : undefined);
       const countResult = await countQuery;
@@ -101,10 +151,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       });
     } else {
       const rawResults = await queryBuilder;
-      const results = rawResults.map((r: any) => ({
-        ...r,
-        serviceName: r.customServiceName || r.serviceName
-      }));
+      const results = rawResults.map(mapRow);
       res.json({
         success: true,
         data: results,
@@ -335,10 +382,17 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
         if (existingPatient) {
            patientId = existingPatient.id;
         } else {
-          let notesVal = undefined;
-          if (patientRecords.length > 0) {
-             notesVal = JSON.stringify({ text: `[HỆ THỐNG]: Cùng số điện thoại với bệnh nhân ${patientRecords[0].fullName}`, diagnosis: '', treatmentPlan: '', documents: [] });
-          }
+          const notesVal = patientRecords.length > 0
+            ? JSON.stringify({
+                text: '',
+                diagnosis: '',
+                treatmentPlan: '',
+                documents: [],
+                bookingFor: 'self',
+                isProxyBooking: false,
+                primaryContactPhone: cleanPhone
+              })
+            : undefined;
           const newPatient = await tx.insert(patients).values({
             fullName: patientName.trim(),
             phone: cleanPhone,

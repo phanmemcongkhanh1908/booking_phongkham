@@ -108,9 +108,7 @@ export default function BookingConfirmation() {
     setSubmitting(true);
     setError(null);
 
-    const patientNote = patientDraft.bookingFor === 'relative'
-      ? `[Đặt cho người thân] ${patientDraft.notes || ''}`.trim()
-      : (patientDraft.notes || '').trim();
+    const patientNote = (patientDraft.notes || '').trim();
 
     try {
       const targetServiceIds = (selectedServices && selectedServices.length > 0)

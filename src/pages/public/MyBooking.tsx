@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
-import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles, CalendarClock, User, Users } from 'lucide-react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
@@ -13,6 +13,7 @@ import ClinicReputationWidget from '../../components/ClinicReputationWidget';
 import GoogleCalendarSyncCard from './components/GoogleCalendarSyncCard';
 import { useBookingStore } from '../../store/booking';
 import { fetchClinicSettings } from '../../services/clinicResolver';
+import CustomerBookingHistoryModal, { BookingHistoryItem, resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 
 interface AppointmentData {
   id: string;
@@ -23,6 +24,10 @@ interface AppointmentData {
   serviceName: string;
   providerName: string | null;
   patientName: string;
+  bookedForName?: string | null;
+  bookingFor?: 'self' | 'relative' | string | null;
+  isProxyBooking?: boolean | null;
+  notes?: string | null;
   cancelReason?: string | null;
   rating?: number | null;
   reviewComment?: string | null;
@@ -104,6 +109,8 @@ export default function MyBooking() {
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [reviewModalApt, setReviewModalApt] = useState<AppointmentData | null>(null);
+  const [allBookingHistory, setAllBookingHistory] = useState<BookingHistoryItem[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   
   const handleReviewSuccess = (updatedData?: any) => {
     if (!reviewModalApt) return;
@@ -167,6 +174,7 @@ export default function MyBooking() {
       });
       if (res.data.success) {
         setAppointments(res.data.data);
+        setAllBookingHistory(Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []));
         setVerifiedPhone(searchPhone);
         setIsFromLocalStorage(false);
         setHasHistory(res.data.hasHistory || false);
@@ -230,6 +238,7 @@ export default function MyBooking() {
           const res = await api.post('/public/appointments/lookup', { phone: vp.phone, fullName: vp.fullName });
           if (res.data.success) {
             setAppointments(res.data.data);
+            setAllBookingHistory(Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []));
             setVerifiedPhone(vp.phone);
             setHasHistory(res.data.hasHistory || false);
           } else {
@@ -322,13 +331,29 @@ export default function MyBooking() {
           </div>
         ) : (
           <div className="space-y-4">
-            {isFromLocalStorage && (
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-[13px] text-slate-500">Đang hiển thị lịch hẹn của <strong className="text-slate-700">{searchName}</strong> ({searchPhone})</p>
-                <button onClick={handleClearHistory} className="text-[13px] text-rose-500 hover:text-rose-600 font-medium flex items-center gap-1">
-                  <XCircle className="w-4 h-4" />
-                  Đăng xuất
-                </button>
+            {(isFromLocalStorage || (allBookingHistory.length > 0 && verifiedPhone)) && (
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-slate-500">
+                  <span>
+                    Đang hiển thị lịch hẹn của <strong className="text-slate-700">{searchName}</strong> ({searchPhone})
+                  </span>
+                  {allBookingHistory.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryModal(true)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800 hover:underline cursor-pointer"
+                    >
+                      <CalendarClock className="w-3.5 h-3.5" />
+                      <span>Xem lịch sử đặt lịch khám ({allBookingHistory.length})</span>
+                    </button>
+                  )}
+                </div>
+                {isFromLocalStorage && (
+                  <button onClick={handleClearHistory} className="text-[13px] text-rose-500 hover:text-rose-600 font-medium flex items-center gap-1 cursor-pointer">
+                    <XCircle className="w-4 h-4" />
+                    Đăng xuất
+                  </button>
+                )}
               </div>
             )}
             
@@ -341,18 +366,33 @@ export default function MyBooking() {
               const statusConfig = APPOINTMENT_STATUSES[mappedStatus as keyof typeof APPOINTMENT_STATUSES] || APPOINTMENT_STATUSES.PENDING;
               const displayLabel = LABEL_OVERRIDES[apt.status] || statusConfig.label;
               const StatusIcon = statusConfig.icon;
+              const isRelative = resolveBookingMode(apt) === 'relative';
+              const targetPersonName = (apt.bookedForName || apt.patientName || searchName || '').trim();
               return (
                 <Card key={apt.id} className="border border-border-subtle shadow-soft bg-surface">
                   <CardContent className="p-5">
-                    <div className="flex justify-between items-start mb-4 border-b border-border-subtle pb-4">
-                      <div>
+                    <div className="flex justify-between items-start mb-4 border-b border-border-subtle pb-4 gap-3">
+                      <div className="min-w-0">
                         <h3 className="font-bold text-text-main">{apt.serviceName}</h3>
                         <p className="text-sm text-text-muted mt-1 flex items-center gap-1">
-                          <Stethoscope className="w-3.5 h-3.5" />
-                          {apt.providerName || 'Bác sĩ chuyên khoa'}
+                          <Stethoscope className="w-3.5 h-3.5 shrink-0" />
+                          <span>{apt.providerName || 'Bác sĩ chuyên khoa'}</span>
                         </p>
+                        <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-600">
+                          {isRelative ? (
+                            <span className="inline-flex items-center gap-1 text-amber-800 font-semibold">
+                              <Users className="w-3.5 h-3.5 shrink-0" />
+                              Đặt hộ: {targetPersonName}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-teal-700 font-semibold">
+                              <User className="w-3.5 h-3.5 shrink-0" />
+                              Đặt cho chính tôi{targetPersonName ? ` · ${targetPersonName}` : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: statusConfig.bg, color: statusConfig.color }}>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shrink-0" style={{ backgroundColor: statusConfig.bg, color: statusConfig.color }}>
                         <StatusIcon className="w-3.5 h-3.5" />
                         {displayLabel}
                       </div>
@@ -601,6 +641,14 @@ export default function MyBooking() {
         appointment={reviewModalApt}
         phone={searchPhone || verifiedPhone}
         onSuccess={handleReviewSuccess}
+      />
+
+      <CustomerBookingHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        customerName={searchName}
+        customerPhone={searchPhone || verifiedPhone}
+        appointments={allBookingHistory.length > 0 ? allBookingHistory : appointments}
       />
     </div>
   );

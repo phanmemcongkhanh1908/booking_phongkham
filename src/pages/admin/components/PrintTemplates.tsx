@@ -7,13 +7,16 @@ import { Stethoscope, Phone, MapPin, Globe } from 'lucide-react';
 // A5: w-[148mm] min-h-[210mm] (roughly w-[559px])
 
 
+import { stripSystemBookingNotes } from '../../../components/CustomerBookingHistoryModal';
+
 const getNoteText = (notes: any) => {
   if (!notes) return 'Không';
   try {
     const parsed = JSON.parse(notes);
-    return parsed.text || parsed.diagnosis || parsed.treatmentPlan || 'Không';
+    const cleanedText = stripSystemBookingNotes(parsed.text || '');
+    return cleanedText || parsed.diagnosis || parsed.treatmentPlan || 'Không';
   } catch (e) {
-    return notes;
+    return stripSystemBookingNotes(String(notes)) || 'Không';
   }
 };
 

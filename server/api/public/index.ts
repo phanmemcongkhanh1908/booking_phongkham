@@ -313,11 +313,12 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
 
       const incomingName = (data.fullName || '').trim();
       const normalizedIncomingName = incomingName.toLowerCase().replace(/\s+/g, ' ');
-      const isBookingForOther = data.bookingFor === 'relative' || data.isNewProfile === true;
+      const isProxyBooking = data.bookingFor === 'relative';
+      const shouldCreateNewProfile = isProxyBooking || data.isNewProfile === true;
 
       // Look for an existing patient with exact matching name under this phone number
       let matchingPatient = null;
-      if (!isBookingForOther) {
+      if (!shouldCreateNewProfile) {
         for (const p of patientRecords) {
           if (p.fullName && p.fullName.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedIncomingName) {
             matchingPatient = p;
@@ -326,11 +327,11 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         }
       }
 
+      const cleanUserNote = stripSystemBookingTags(data.notes);
       let patientId;
-      let isProxyBooking = false;
-      let patientNotes = data.notes;
+      let patientNotes = cleanUserNote || undefined;
       if (data.email) {
-        patientNotes = data.notes ? (data.notes + ' | Email: ' + data.email) : ('Email: ' + data.email);
+        patientNotes = patientNotes ? (patientNotes + ' | Email: ' + data.email) : ('Email: ' + data.email);
       }
 
       if (matchingPatient) {
@@ -342,15 +343,26 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         if (matchingPatient.notes) {
           try {
             const parsed = JSON.parse(matchingPatient.notes);
+            const existingCleanText = stripSystemBookingTags(parsed.text || '');
+            parsed.text = existingCleanText;
             if (mergedNotes) {
-              parsed.text = (parsed.text ? parsed.text + '\n' : '') + mergedNotes;
+              parsed.text = parsed.text ? (parsed.text + '\n' + mergedNotes) : mergedNotes;
             }
             mergedNotes = JSON.stringify(parsed);
           } catch (e) {
-            mergedNotes = matchingPatient.notes + (mergedNotes ? '\n' + mergedNotes : '');
+            const existingClean = stripSystemBookingTags(matchingPatient.notes);
+            mergedNotes = existingClean ? (mergedNotes ? existingClean + '\n' + mergedNotes : existingClean) : mergedNotes;
           }
         } else if (mergedNotes) {
-          mergedNotes = JSON.stringify({ text: mergedNotes, diagnosis: '', treatmentPlan: '', documents: [] });
+          mergedNotes = JSON.stringify({
+            text: mergedNotes,
+            diagnosis: '',
+            treatmentPlan: '',
+            documents: [],
+            bookingFor: 'self',
+            isProxyBooking: false,
+            primaryContactPhone: cleanPhone
+          });
         }
 
         await tx.update(patients).set({
@@ -365,22 +377,13 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         // NO MATCH OR USER EXPLICITLY REQUESTED NEW PROFILE / BOOKING FOR RELATIVE:
         // CRITICAL: NEVER overwrite or rename any existing patient!
         // We MUST create a new patient row so historical records remain completely untouched!
-        isProxyBooking = patientRecords.length > 0 || isBookingForOther;
-        
-        const proxyAnnotation = isProxyBooking
-          ? `[Đặt lịch hộ qua SĐT ${cleanPhone}${patientRecords.length > 0 ? ` - SĐT chính của: ${patientRecords[0].fullName}` : ''}]`
-          : '';
-
-        let initialNotesText = patientNotes || '';
-        if (proxyAnnotation) {
-          initialNotesText = initialNotesText ? `${proxyAnnotation}\n${initialNotesText}` : proxyAnnotation;
-        }
-
+        // IMPORTANT: Only mark as proxy booking ('Đặt lịch hộ') when bookingFor === 'relative'.
         const newPatientNotesJson = JSON.stringify({ 
-          text: initialNotesText, 
+          text: patientNotes || '', 
           diagnosis: '', 
           treatmentPlan: '', 
           documents: [],
+          bookingFor: isProxyBooking ? 'relative' : 'self',
           isProxyBooking,
           primaryContactPhone: cleanPhone
         });
@@ -392,10 +395,13 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
           gender: data.gender,
           telegramId: data.telegramId || undefined,
           notes: newPatientNotesJson,
+          bookingFor: isProxyBooking ? 'relative' : 'self',
+          isProxyBooking,
+          primaryContactPhone: cleanPhone,
           tenantId: targetTenantId || undefined,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }).returning();
+        } as any).returning();
         patientId = newPatient[0].id;
       }
 
@@ -438,12 +444,13 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         startAt: aptStartAt,
         endAt: aptEndAt,
         status: finalStatus,
-        notes: (isProxyBooking || isBookingForOther)
-          ? (`[Đặt lịch hộ cho: ${incomingName}]` + (data.notes ? ` - ${data.notes}` : ''))
-          : data.notes,
+        notes: cleanUserNote || undefined,
+        bookingFor: isProxyBooking ? 'relative' : 'self',
+        isProxyBooking,
+        bookedForName: incomingName,
         source: "ONLINE",
         tenantId: targetTenantId || undefined,
-      }).returning();
+      } as any).returning();
 
       // 5. Delete the hold session so it can't be reused
       await tx.delete(appointmentHolds).where(eq(appointmentHolds.id, hold.id));
@@ -640,22 +647,21 @@ publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, nex
     }
 
     const pts = await db.select().from(patients);
-    let matchedPatient = null;
+    const phonePatients = pts.filter((p: any) => p.phone && variants.has(String(p.phone).replace(/\D/g, "")));
+    let matchedPatient: any = null;
 
-    for (const p of pts) {
-      if (!p.phone) continue;
-      if (variants.has(String(p.phone).replace(/\D/g, ""))) {
-        // If OTP verified, we just match by phone directly
-        if (isOtpVerified) {
+    if (isOtpVerified) {
+      matchedPatient =
+        phonePatients.find((p: any) => !isPatientProxyRecord(p)) ||
+        phonePatients[0] ||
+        null;
+    } else {
+      const searchName = normalizeName(fullName || "");
+      for (const p of phonePatients) {
+        const pName = normalizeName(p.fullName);
+        if (pName && searchName && pName === searchName) {
           matchedPatient = p;
           break;
-        } else {
-          const pName = normalizeName(p.fullName);
-          const searchName = normalizeName(fullName || "");
-          if (pName && searchName && (pName === searchName)) { // STRICT MATCH
-            matchedPatient = p;
-            break;
-          }
         }
       }
     }
@@ -677,10 +683,12 @@ publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, nex
       if (emailMatch) email = emailMatch[1].trim();
     }
     if (notesText) {
-      notesText = notesText.replace(/\|\s*Email:\s*[^\s|]+/gi, "").replace(/Email:\s*[^\s|]+/gi, "").trim();
+      notesText = stripSystemBookingTags(
+        notesText.replace(/\|\s*Email:\s*[^\s|]+/gi, "").replace(/Email:\s*[^\s|]+/gi, "")
+      );
     }
 
-    // Tìm lịch sử khám gần nhất để gợi ý dịch vụ
+    // Tìm lịch sử khám gần nhất để gợi ý dịch vụ + trả về danh sách lịch sử đặt lịch cho popup modal
     const aptHistory = await db.select().from(appointments).where(eq(appointments.patientId, matchedPatient.id)).orderBy(desc(appointments.startAt));
     let lastServiceId = null;
     let lastServiceName = null;
@@ -689,6 +697,21 @@ publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, nex
       const s = await db.select().from(services).where(eq(services.id, lastServiceId)).limit(1);
       if (s.length > 0) lastServiceName = s[0].name;
     }
+
+    // Nếu người xác thực là hồ sơ chính (hoặc qua OTP), cho phép xem kèm các lịch đặt hộ cùng SĐT (cùng tenant nếu có)
+    const matchedIsProxy = isPatientProxyRecord(matchedPatient);
+    const scopePatients = (!matchedIsProxy || isOtpVerified)
+      ? phonePatients.filter((p: any) => {
+          if (matchedPatient.tenantId && p.tenantId && p.tenantId !== matchedPatient.tenantId) {
+            return false;
+          }
+          if (p.id === matchedPatient.id) return true;
+          return isOtpVerified || isPatientProxyRecord(p);
+        })
+      : [matchedPatient];
+
+    const scopePatientIds = scopePatients.map((p: any) => p.id);
+    const bookingHistory = await buildBookingHistoryList(scopePatientIds, scopePatients);
 
     return res.json({
       success: true,
@@ -700,7 +723,8 @@ publicRouter.post("/patients/verify", patientVerifyLimiter, async (req, res, nex
         email: email,
         notes: notesText,
         lastServiceId,
-        lastServiceName
+        lastServiceName,
+        bookingHistory
       }
     });
 
@@ -811,6 +835,101 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
   }
 });
 
+function stripSystemBookingTags(raw?: string | null): string {
+  if (!raw) return "";
+  return String(raw)
+    .replace(/\[Đặt lịch hộ qua SĐT[^\]]*\]\s*/gi, "")
+    .replace(/\[Đặt lịch hộ cho:[^\]]*\]\s*-?\s*/gi, "")
+    .replace(/\[Đặt lịch hộ[^\]]*\]\s*-?\s*/gi, "")
+    .replace(/\[Đặt cho người thân\]\s*-?\s*/gi, "")
+    .replace(/\[HỆ THỐNG\]:[^\n]*\n?/gi, "")
+    .replace(/^\s*[-–|]\s*/, "")
+    .trim();
+}
+
+function isPatientProxyRecord(p: any): boolean {
+  if (!p) return false;
+  if (p.bookingFor === "relative") return true;
+  if (p.bookingFor === "self") return false;
+  if (p.isProxyBooking === true) return true;
+  if (p.notes) {
+    try {
+      const parsed = JSON.parse(p.notes);
+      if (parsed && typeof parsed === "object") {
+        if (parsed.bookingFor === "relative") return true;
+        if (parsed.bookingFor === "self") return false;
+        if (parsed.isProxyBooking === true) return true;
+        if (parsed.text && (parsed.text.includes("[Đặt lịch hộ") || parsed.text.includes("[Đặt cho người thân]"))) {
+          return true;
+        }
+      }
+    } catch {
+      if (String(p.notes).includes("[Đặt lịch hộ") || String(p.notes).includes("[Đặt cho người thân]")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function resolveAppointmentMode(apt: any, pt?: any): "self" | "relative" {
+  if (apt?.bookingFor === "relative") return "relative";
+  if (apt?.bookingFor === "self") return "self";
+  if (apt?.isProxyBooking === true) return "relative";
+  if (apt?.notes && (apt.notes.includes("[Đặt lịch hộ") || apt.notes.includes("[Đặt cho người thân]"))) {
+    return "relative";
+  }
+  if (pt && isPatientProxyRecord(pt)) return "relative";
+  return "self";
+}
+
+async function buildBookingHistoryList(patientIds: string[], patientRows: any[]) {
+  if (!patientIds || patientIds.length === 0) return [];
+  const rawList = await db
+    .select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      status: appointments.status,
+      startAt: appointments.startAt,
+      endAt: appointments.endAt,
+      serviceId: appointments.serviceId,
+      serviceName: services.name,
+      customServiceName: appointments.customServiceName,
+      providerName: providers.name,
+      notes: appointments.notes,
+      bookingFor: (appointments as any).bookingFor,
+      isProxyBooking: (appointments as any).isProxyBooking,
+      bookedForName: (appointments as any).bookedForName,
+      cancelReason: appointments.cancelReason,
+      rating: appointments.rating,
+      reviewComment: appointments.reviewComment,
+      reviewTags: appointments.reviewTags,
+      reviewedAt: appointments.reviewedAt,
+    })
+    .from(appointments)
+    .leftJoin(services, eq(appointments.serviceId, services.id))
+    .leftJoin(providers, eq(appointments.providerId, providers.id))
+    .where(inArray(appointments.patientId, patientIds));
+
+  const ptMap = new Map(patientRows.map((p: any) => [p.id, p]));
+  return rawList
+    .map((r: any) => {
+      const pt = ptMap.get(r.patientId);
+      const mode = resolveAppointmentMode(r, pt);
+      const targetName = r.bookedForName || pt?.fullName || "Khách hàng";
+      return {
+        ...r,
+        serviceName: r.customServiceName || r.serviceName || "Khám nha khoa",
+        patientName: targetName,
+        bookedForName: targetName,
+        bookingFor: mode,
+        isProxyBooking: mode === "relative",
+        notes: stripSystemBookingTags(r.notes),
+      };
+    })
+    .sort((a: any, b: any) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
+}
+
 function normalizeName(str: string) {
   if (!str) return "";
   return str
@@ -832,43 +951,36 @@ publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, 
     if (!code && !fullName) {
       return res.status(400).json({ success: false, error: { message: "Vui lòng cung cấp Mã lịch hẹn hoặc Họ tên để xác thực" } });
     }
-    
-    // Tìm patient dựa trên phone
-    const pts = await db.select().from(patients).where(eq(patients.phone, phone.replace(/\D/g, '')));
+
+    const cleanedPhone = String(phone).replace(/\D/g, "");
+    const phoneVariants = new Set<string>([cleanedPhone]);
+    if (cleanedPhone.startsWith("84")) {
+      phoneVariants.add("0" + cleanedPhone.slice(2));
+      phoneVariants.add(cleanedPhone.slice(2));
+    } else if (cleanedPhone.startsWith("0")) {
+      phoneVariants.add("84" + cleanedPhone.slice(1));
+      phoneVariants.add(cleanedPhone.slice(1));
+    } else if (cleanedPhone.length >= 9) {
+      phoneVariants.add("0" + cleanedPhone);
+      phoneVariants.add("84" + cleanedPhone);
+    }
+
+    const allPts = await db.select().from(patients);
+    const pts = allPts.filter((p: any) => p.phone && phoneVariants.has(String(p.phone).replace(/\D/g, "")));
     if (pts.length === 0) {
-      return res.json({ success: true, data: [] });
+      return res.json({ success: true, data: [], allBookingHistory: [] });
     }
     
     const patientIds = pts.map(p => p.id);
-    
-    // Tìm các cuộc hẹn của patient này
-    let query = db.select({
-      id: appointments.id,
-      patientId: appointments.patientId,
-      status: appointments.status,
-      startAt: appointments.startAt,
-      endAt: appointments.endAt,
-      serviceId: appointments.serviceId,
-      serviceName: services.name,
-      providerName: providers.name,
-      cancelReason: appointments.cancelReason,
-      rating: appointments.rating,
-      reviewComment: appointments.reviewComment,
-      reviewTags: appointments.reviewTags,
-      reviewedAt: appointments.reviewedAt,
-    })
-    .from(appointments)
-    .leftJoin(services, eq(appointments.serviceId, services.id))
-    .leftJoin(providers, eq(appointments.providerId, providers.id))
-    .where(inArray(appointments.patientId, patientIds));
-    
-    const results = await query;
+    const results = await buildBookingHistoryList(patientIds, pts);
     let finalResults = results;
+    let allBookingHistory = results;
     let patientDob = null;
     
     // Lọc theo code hoặc fullName
     if (code) {
       finalResults = results.filter(r => r.id.includes(code) || r.id === code);
+      allBookingHistory = finalResults;
     } else if (fullName) {
       const inputNameNorm = normalizeName(fullName);
       const matchedPatient = pts.find(p => normalizeName(p.fullName) === inputNameNorm);
@@ -878,12 +990,28 @@ publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, 
       }
       
       patientDob = matchedPatient.dob;
-      finalResults = results.filter(r => r.patientId === matchedPatient.id);
+      const matchedIsProxy = isPatientProxyRecord(matchedPatient);
+      if (matchedIsProxy) {
+        finalResults = results.filter(r => r.patientId === matchedPatient.id);
+        allBookingHistory = finalResults;
+      } else {
+        // Primary profile sees their own bookings + any proxy bookings placed via their phone
+        const allowedPatientIds = new Set(
+          pts
+            .filter((p: any) => {
+              if (matchedPatient.tenantId && p.tenantId && p.tenantId !== matchedPatient.tenantId) return false;
+              return p.id === matchedPatient.id || isPatientProxyRecord(p);
+            })
+            .map((p: any) => p.id)
+        );
+        finalResults = results.filter(r => r.patientId === matchedPatient.id);
+        allBookingHistory = results.filter(r => allowedPatientIds.has(r.patientId) || r.isProxyBooking === true);
+      }
     }
     
     if (code) {
       // If looked up by exact code, just return it
-      return res.json({ success: true, data: finalResults.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()) });
+      return res.json({ success: true, data: finalResults, allBookingHistory });
     }
     
     const now = new Date();
@@ -917,7 +1045,8 @@ publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, 
       } else {
         return res.json({ 
           success: true, 
-          data: upcoming.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()),
+          data: upcoming,
+          allBookingHistory,
           hasHistory: true 
         });
       }
@@ -925,7 +1054,8 @@ publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, 
     
     res.json({ 
       success: true, 
-      data: finalResults.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()),
+      data: finalResults,
+      allBookingHistory,
       hasHistory: false
     });
   } catch (error) {
