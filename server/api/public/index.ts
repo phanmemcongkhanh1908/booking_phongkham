@@ -15,32 +15,70 @@ import { sendAppointmentStatusPush } from "../../services/notification.js";
 import { savePatientContact } from "../../services/patientContact.js";
 import { createRateLimiter } from "../../core/rateLimit.js";
 
-// Rate limiters for public endpoints
+const buildTenantRateKey = (req: any) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  const ip = (typeof forwarded === "string" ? forwarded.split(",")[0] : req.socket?.remoteAddress) || "unknown";
+  const tenantPart =
+    req.headers["x-tenant-id"] ||
+    req.query?.tenantId ||
+    req.body?.tenantId ||
+    req.query?.clinic ||
+    req.query?.slug ||
+    req.body?.clinicSlug ||
+    "default";
+  return `${ip}:${String(tenantPart).trim().toLowerCase()}:${req.baseUrl || ""}${req.path || ""}`;
+};
+
+// Rate limiters for public endpoints (isolated per IP + clinic tenant so clinics never cross-throttle)
 const bookingHoldLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 250,
+  keyGenerator: buildTenantRateKey,
   message: "Bạn đã gửi quá nhiều yêu cầu đặt giữ chỗ. Vui lòng đợi 1 phút trước khi thử lại."
 });
 
 const patientVerifyLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 12,
+  max: 120,
+  keyGenerator: buildTenantRateKey,
   message: "Quá nhiều yêu cầu kiểm tra hoặc xác thực thông tin. Vui lòng đợi 1 phút."
 });
 
 const appointmentLookupLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 15,
+  max: 150,
+  keyGenerator: buildTenantRateKey,
   message: "Quá nhiều yêu cầu tra cứu lịch hẹn. Vui lòng thử lại sau 1 phút."
 });
 
 import { appContext } from "../../core/context.js";
 const publicRouter = Router();
-publicRouter.use((req, res, next) => {
-  const tenantId = req.headers["x-tenant-id"] || req.query.tenantId || null;
-  appContext.run({ tenantId: tenantId as string | null }, () => {
-    next();
-  });
+publicRouter.use(async (req, res, next) => {
+  try {
+    let tenantId = (req.headers["x-tenant-id"] || req.query.tenantId || (req.body as any)?.tenantId || null) as string | null;
+    if (!tenantId) {
+      const slugHint = (
+        req.query.clinic ||
+        req.query.slug ||
+        (req.body as any)?.clinicSlug ||
+        ""
+      )
+        .toString()
+        .trim();
+      if (slugHint) {
+        const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+        const matched = await findClinicBySlug(slugHint);
+        if (matched?.tenantId) {
+          tenantId = matched.tenantId;
+        }
+      }
+    }
+    appContext.run({ tenantId: tenantId ? String(tenantId).trim() : null }, () => {
+      next();
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 publicRouter.get("/services", async (req, res, next) => {
@@ -211,47 +249,49 @@ publicRouter.post("/appointments/hold", bookingHoldLimiter, async (req, res, nex
       }
     }
 
-    // SERIALIZABLE Transaction to prevent double holding
-    const holdResult = await db.transaction(async (tx) => {
-      // Check if slot is still available
-      const conflictingBookings = await tx.select().from(appointments).where(
-        and(
+    // SERIALIZABLE Transaction scoped strictly to targetTenantId to prevent cross-tenant or same-slot conflicts
+    const holdResult = await appContext.run({ tenantId: targetTenantId || null }, async () => {
+      return await db.transaction(async (tx: any) => {
+        // Check if slot is still available within this clinic tenant
+        const bookingConds: any[] = [
           eq(appointments.providerId, data.providerId),
           lt(appointments.startAt, endAt),
           gt(appointments.endAt, startAt),
-          sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`
-        )
-      );
+          sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`,
+        ];
+        if (targetTenantId) bookingConds.push(eq(appointments.tenantId, targetTenantId));
+        const conflictingBookings = await tx.select().from(appointments).where(and(...bookingConds));
 
-      const conflictingHolds = await tx.select().from(appointmentHolds).where(
-        and(
+        const holdConds: any[] = [
           eq(appointmentHolds.providerId, data.providerId),
-          gte(appointmentHolds.expiresAt, new Date()), // only active holds
+          gte(appointmentHolds.expiresAt, new Date()),
           lt(appointmentHolds.startAt, endAt),
-          gt(appointmentHolds.endAt, startAt)
-        )
-      );
+          gt(appointmentHolds.endAt, startAt),
+        ];
+        if (targetTenantId) holdConds.push(eq(appointmentHolds.tenantId, targetTenantId));
+        const conflictingHolds = await tx.select().from(appointmentHolds).where(and(...holdConds));
 
-      if (conflictingBookings.length > 0 || conflictingHolds.length > 0) {
-        throw new ConflictError("Rất tiếc, giờ này vừa được đặt bởi người khác. Vui lòng chọn giờ khác.");
-      }
+        if (conflictingBookings.length > 0 || conflictingHolds.length > 0) {
+          throw new ConflictError("Rất tiếc, giờ này vừa được đặt bởi người khác. Vui lòng chọn giờ khác.");
+        }
 
-      const sessionToken = crypto.randomUUID();
+        const sessionToken = crypto.randomUUID();
 
-      const newHold = await tx.insert(appointmentHolds).values({
-        sessionToken,
-        providerId: data.providerId,
-        serviceId: data.serviceId,
-        serviceIds: data.serviceIds || [data.serviceId],
-        customServiceName: data.customServiceName,
-        startAt,
-        endAt,
-        expiresAt,
-        tenantId: targetTenantId || undefined,
-      }).returning();
+        const newHold = await tx.insert(appointmentHolds).values({
+          sessionToken,
+          providerId: data.providerId,
+          serviceId: data.serviceId,
+          serviceIds: data.serviceIds || [data.serviceId],
+          customServiceName: data.customServiceName,
+          startAt,
+          endAt,
+          expiresAt,
+          tenantId: targetTenantId || undefined,
+        }).returning();
 
-      return newHold[0];
-    }, { isolationLevel: "serializable" });
+        return newHold[0];
+      }, { isolationLevel: "serializable" });
+    });
 
     res.json({
       success: true,
@@ -280,20 +320,21 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       }
     }
 
-    const bookingResult = await db.transaction(async (tx) => {
-      // 1. Verify the hold session
-      const holds = await tx.select().from(appointmentHolds).where(
-        eq(appointmentHolds.sessionToken, data.sessionToken)
-      ).limit(1);
+    const bookingResult = await appContext.run({ tenantId: targetTenantId || null }, async () => {
+      return await db.transaction(async (tx: any) => {
+        // 1. Verify the hold session
+        const holds = await tx.select().from(appointmentHolds).where(
+          eq(appointmentHolds.sessionToken, data.sessionToken)
+        ).limit(1);
 
-      if (holds.length === 0) {
-        throw new NotFoundError("Không tìm thấy phiên giữ chỗ");
-      }
+        if (holds.length === 0) {
+          throw new NotFoundError("Không tìm thấy phiên giữ chỗ");
+        }
 
-      const hold = holds[0];
-      if (hold.expiresAt < new Date()) {
-        throw new BadRequestError("Phiên giữ chỗ đã hết hạn. Vui lòng chọn lại giờ.");
-      }
+        const hold = holds[0];
+        if (hold.expiresAt < new Date()) {
+          throw new BadRequestError("Phiên giữ chỗ đã hết hạn. Vui lòng chọn lại giờ.");
+        }
 
       // Check if providerId is null
       if (!hold.providerId) {
@@ -418,14 +459,14 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       const aptEndAt = hold.endAt instanceof Date ? hold.endAt : new Date(hold.endAt);
 
       // 4. Check for overlap again just to be safe (prevent race condition bypass)
-      const conflictingBookings = await tx.select().from(appointments).where(
-        and(
-          eq(appointments.providerId, hold.providerId),
-          lt(appointments.startAt, aptEndAt),
-          gt(appointments.endAt, aptStartAt),
-          sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`
-        )
-      );
+      const conflictConds: any[] = [
+        eq(appointments.providerId, hold.providerId),
+        lt(appointments.startAt, aptEndAt),
+        gt(appointments.endAt, aptStartAt),
+        sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW', 'CANCEL_PATIENT', 'CANCEL_CLINIC')`,
+      ];
+      if (targetTenantId) conflictConds.push(eq(appointments.tenantId, targetTenantId));
+      const conflictingBookings = await tx.select().from(appointments).where(and(...conflictConds));
 
       if (conflictingBookings.length > 0) {
         throw new ConflictError("Khung giờ này đã có người khác đặt trong tích tắc. Vui lòng thử lại với giờ khác.");
@@ -452,11 +493,12 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
         tenantId: targetTenantId || undefined,
       } as any).returning();
 
-      // 5. Delete the hold session so it can't be reused
+      // 6. Delete the hold session so it can't be reused
       await tx.delete(appointmentHolds).where(eq(appointmentHolds.id, hold.id));
 
       return newAppointment[0];
     }, { isolationLevel: "serializable" });
+    });
 
     // Save contact info mapping (email & telegramId)
     await savePatientContact(bookingResult.patientId, data.phone.replace(/\D/g, ''), {
@@ -476,55 +518,65 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       .then(({ sendAdminNewBookingPush }) => sendAdminNewBookingPush(bookingResult.id))
       .catch(console.error);
 
-    // Emit real-time BOOKING_CREATED event for the Admin Dashboard
+    // Fast local DB lookup for response metadata + background async TTS & SSE dispatch
     let aptDetailPayload: any = null;
+    const targetTenantSnapshot = bookingResult.tenantId || (req.body as any).tenantId || targetTenantId || null;
     try {
       const { realtimeNotification } = await import("../../services/realtimeNotification.js");
       const { generateVietnameseAnnouncement } = await import("../../services/tts/announcement.js");
       const { generateAudio } = await import("../../services/tts/index.js");
 
-      const fullApt = await db
-        .select({
-          id: appointments.id,
-          tenantId: appointments.tenantId,
-          status: appointments.status,
-          startAt: appointments.startAt,
-          endAt: appointments.endAt,
-          serviceName: services.name,
-          providerName: providers.name,
-          patientName: patients.fullName,
-          patientPhone: patients.phone
-        })
-        .from(appointments)
-        .leftJoin(services, eq(appointments.serviceId, services.id))
-        .leftJoin(providers, eq(appointments.providerId, providers.id))
-        .leftJoin(patients, eq(appointments.patientId, patients.id))
-        .where(eq(appointments.id, bookingResult.id))
-        .limit(1);
+      const fullApt = await appContext.run({ tenantId: targetTenantSnapshot }, async () => {
+        return await db
+          .select({
+            id: appointments.id,
+            tenantId: appointments.tenantId,
+            status: appointments.status,
+            startAt: appointments.startAt,
+            endAt: appointments.endAt,
+            serviceName: services.name,
+            providerName: providers.name,
+            patientName: patients.fullName,
+            patientPhone: patients.phone
+          })
+          .from(appointments)
+          .leftJoin(services, eq(appointments.serviceId, services.id))
+          .leftJoin(providers, eq(appointments.providerId, providers.id))
+          .leftJoin(patients, eq(appointments.patientId, patients.id))
+          .where(eq(appointments.id, bookingResult.id))
+          .limit(1);
+      });
 
       if (fullApt.length > 0) {
         const payload = fullApt[0] as any;
-        if (!payload.tenantId && (bookingResult.tenantId || (req.body as any).tenantId)) {
-          payload.tenantId = bookingResult.tenantId || (req.body as any).tenantId;
+        if (!payload.tenantId && targetTenantSnapshot) {
+          payload.tenantId = targetTenantSnapshot;
         }
         if (bookingResult.customServiceName) {
           payload.serviceName = bookingResult.customServiceName;
         }
         aptDetailPayload = payload;
-        try {
-          const text = generateVietnameseAnnouncement(payload);
-          const audioUrl = await generateAudio(text);
-          if (audioUrl) {
-            payload.audioUrl = audioUrl;
+
+        void (async () => {
+          try {
+            if (realtimeNotification.hasClientsForTenant(payload.tenantId)) {
+              const text = generateVietnameseAnnouncement(payload);
+              const audioUrl = await Promise.race([
+                generateAudio(text),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+              ]);
+              if (audioUrl) {
+                payload.audioUrl = audioUrl;
+              }
+            }
+            realtimeNotification.emitBookingCreated(payload);
+          } catch (bgErr) {
+            console.error("Failed to dispatch realtime notification:", bgErr);
           }
-        } catch (ttsErr) {
-          console.error("Failed to generate TTS audio:", ttsErr);
-        }
-        
-        realtimeNotification.emitBookingCreated(payload);
+        })();
       }
     } catch (e) {
-      console.error("Failed to emit real-time event:", e);
+      console.error("Failed to prepare real-time event:", e);
     }
 
     const botUsername = await getTelegramBotUsername();
@@ -1071,7 +1123,7 @@ publicRouter.post("/appointments/lookup", appointmentLookupLimiter, async (req, 
 publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { phone } = req.body;
+    const { phone, reason } = req.body;
     
     if (!phone) {
       return res.status(400).json({ success: false, error: { message: "Cần xác thực bằng số điện thoại để hủy lịch" } });
@@ -1081,6 +1133,7 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
       id: appointments.id,
       tenantId: appointments.tenantId,
       patientId: appointments.patientId,
+      serviceId: appointments.serviceId,
       status: appointments.status,
       providerId: appointments.providerId,
       startAt: appointments.startAt
@@ -1102,12 +1155,20 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
     if (apts[0].status !== 'REQUESTED' && apts[0].status !== 'PENDING' && apts[0].status !== 'CONFIRMED') {
       return res.status(400).json({ success: false, error: { message: "Không thể hủy lịch ở trạng thái hiện tại" } });
     }
+
+    const cancelReasonText = reason ? String(reason).trim() : "Khách hàng chủ động hủy lịch";
+    await db.update(appointments).set({
+      status: 'CANCEL_PATIENT',
+      cancelReason: cancelReasonText,
+      updatedAt: new Date(),
+    }).where(eq(appointments.id, id));
     
-    await db.update(appointments).set({ status: 'CANCEL_PATIENT' }).where(eq(appointments.id, id));
-    
-    // Send Push Notification (VAPID) and multichannel alert to patient
-    sendAppointmentStatusPush(id, 'CANCEL_PATIENT').catch(console.error);
-    notifyPatientAppointment(id, 'CANCELLED', 'Bệnh nhân chủ động hủy qua trang tra cứu lịch hẹn').catch(console.error);
+    // Send Push Notification (VAPID), Waitlist matching, and multichannel alert to patient
+    sendAppointmentStatusPush(id, 'CANCEL_PATIENT', { cancelReason: cancelReasonText }).catch(console.error);
+    notifyPatientAppointment(id, 'CANCELLED', cancelReasonText).catch(console.error);
+    import('../../jobs/waitlistMatcher.js')
+      .then(({ triggerWaitlistMatching }) => triggerWaitlistMatching(apts[0]))
+      .catch(console.error);
 
     import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
       realtimeNotification.emitBookingUpdated({
@@ -1299,7 +1360,7 @@ publicRouter.get("/reviews", async (req, res, next) => {
       .filter((a: any) => {
         if (!a.rating || a.rating <= 0) return false;
         if (a.isReviewHidden === true) return false;
-        if (targetTenantId && a.tenantId && a.tenantId !== targetTenantId) return false;
+        if (targetTenantId && a.tenantId !== targetTenantId) return false;
         if (req.query.serviceId && a.serviceId !== req.query.serviceId) return false;
         return true;
       })

@@ -17,6 +17,7 @@ const Analytics = React.lazy(() => import('./Analytics'));
 const Patients = React.lazy(() => import('./Patients'));
 const Settings = React.lazy(() => import('./Settings'));
 const UsersManagement = React.lazy(() => import('./UsersManagement'));
+const AppointmentHistoryView = React.lazy(() => import('./components/AppointmentHistoryView'));
 
 import OtpQuotaWidget from './components/OtpQuotaWidget';
 import IdleTimeoutManager from '../../components/admin/IdleTimeoutManager';
@@ -28,7 +29,7 @@ import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarnin
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone, History } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
 import { resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
@@ -109,13 +110,13 @@ export default function Dashboard() {
           : 'settings';
 
   // Set default active tab based on saved preference or permissions
-  const validTabs = ['appointments', 'patients', 'settings', 'services', 'analytics', 'users'];
+  const validTabs = ['appointments', 'history', 'patients', 'settings', 'services', 'analytics', 'users'];
   const savedTab = typeof window !== 'undefined' ? localStorage.getItem('admin_active_tab') : null;
   const initialTab = (savedTab && validTabs.includes(savedTab))
     ? savedTab
     : (defaultTab as any);
 
-  const [activeTab, setActiveTab] = useState<'appointments' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(initialTab as any);
+  const [activeTab, setActiveTab] = useState<'appointments' | 'history' | 'patients' | 'settings' | 'services' | 'analytics' | 'users'>(initialTab as any);
 
   useEffect(() => {
     if (activeTab) {
@@ -557,6 +558,19 @@ export default function Dashboard() {
                 Lịch hẹn
               </button>
             )}
+            {hasPermission('appointment.view') && (
+              <button 
+                onClick={() => setActiveTab('history')}
+                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'history' 
+                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <History className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
+                Lịch sử
+              </button>
+            )}
             {hasPermission('patient.view') && (
               <button 
                 onClick={() => setActiveTab('patients')}
@@ -918,6 +932,7 @@ export default function Dashboard() {
             </div>
           }>
             {activeTab === 'analytics' && <Analytics />}
+            {activeTab === 'history' && <AppointmentHistoryView />}
             {activeTab === 'patients' && <Patients />}
             {activeTab === 'services' && <ServicesConfig />}
             {activeTab === 'settings' && <Settings />}
@@ -1044,6 +1059,15 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('history')}
+                    title="Xem lịch sử giao dịch hoàn thành hoặc đã hủy của từng khách hàng"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+                  >
+                    <History className="w-4 h-4 shrink-0 text-teal-600" />
+                    <span className="hidden lg:inline">Lịch sử khám</span>
+                  </button>
                   <button 
                     onClick={() => setShowExportModal(true)}
                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors shadow-2xs"
@@ -1821,61 +1845,70 @@ export default function Dashboard() {
       />
 
       
-      {/* Mobile Bottom Navigation (Persistent, replacing horizontal scroll) */}
+      {/* Mobile Bottom Navigation (Persistent, horizontal-scroll safe for small viewports) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] pb-[max(env(safe-area-inset-bottom),10px)] print:hidden">
-        <div className="flex items-center justify-around px-2 h-16 gap-1">
+        <div className="flex items-center justify-around px-1.5 h-16 gap-0.5 overflow-x-auto no-scrollbar">
           {hasPermission('appointment.view') && (
             <button 
               onClick={() => setActiveTab('appointments')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'appointments' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'appointments' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <Calendar className={`w-5 h-5 ${activeTab === 'appointments' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Lịch hẹn</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Lịch hẹn</span>
+            </button>
+          )}
+          {hasPermission('appointment.view') && (
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'history' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <History className={`w-5 h-5 ${activeTab === 'history' ? 'text-primary' : ''}`} />
+              <span className="text-[10px] font-semibold whitespace-nowrap">Lịch sử</span>
             </button>
           )}
           {hasPermission('patient.view') && (
             <button 
               onClick={() => setActiveTab('patients')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'patients' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'patients' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <Users className={`w-5 h-5 ${activeTab === 'patients' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Bệnh án</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Bệnh án</span>
             </button>
           )}
           {!isSimpleMode && hasPermission('service.manage') && (
             <button 
               onClick={() => setActiveTab('services')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'services' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'services' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <LayoutList className={`w-5 h-5 ${activeTab === 'services' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Dịch vụ</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Dịch vụ</span>
             </button>
           )}
           {!isSimpleMode && hasPermission('analytics.view') && (
             <button 
               onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'analytics' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'analytics' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <BarChart3 className={`w-5 h-5 ${activeTab === 'analytics' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Thống kê</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Thống kê</span>
             </button>
           )}
           {hasPermission('user.create') && (
             <button 
               onClick={() => setActiveTab('users')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'users' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'users' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <ShieldCheck className={`w-5 h-5 ${activeTab === 'users' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Nhân sự</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Nhân sự</span>
             </button>
           )}
           {hasPermission('setting.manage') && (
             <button 
               onClick={() => setActiveTab('settings')}
-              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[64px] shrink-0 ${activeTab === 'settings' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex flex-col items-center justify-center h-full space-y-1 transition-colors flex-1 min-w-[54px] shrink-0 ${activeTab === 'settings' ? 'text-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <SettingsIcon className={`w-5 h-5 ${activeTab === 'settings' ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-semibold">Cài đặt</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap">Cài đặt</span>
             </button>
           )}
         </div>

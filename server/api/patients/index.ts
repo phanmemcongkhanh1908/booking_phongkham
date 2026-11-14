@@ -71,14 +71,21 @@ patientsRouter.post("/", requireAuth, async (req, res, next) => {
   }
 });
 
+const normalizeTenant = (val?: string | null) => {
+  if (!val) return null;
+  const t = String(val).trim();
+  return t.length > 0 ? t : null;
+};
+
 patientsRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
+    const reqTenant = normalizeTenant(req.user?.tenantId);
     const pt = await db
       .select()
       .from(patients)
       .where(eq(patients.id, req.params.id))
       .limit(1);
-    if (pt.length === 0) {
+    if (pt.length === 0 || normalizeTenant(pt[0].tenantId) !== reqTenant) {
       return res.status(404).json({ success: false, error: { message: "Patient not found" } });
     }
     res.json({ success: true, data: pt[0] });
@@ -89,6 +96,12 @@ patientsRouter.get("/:id", requireAuth, async (req, res, next) => {
 
 patientsRouter.put("/:id", requireAuth, async (req, res, next) => {
   try {
+    const reqTenant = normalizeTenant(req.user?.tenantId);
+    const existing = await db.select().from(patients).where(eq(patients.id, req.params.id)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== reqTenant) {
+      return res.status(404).json({ success: false, error: { message: "Patient not found" } });
+    }
+
     const updated = await db
       .update(patients)
       .set({
@@ -113,8 +126,9 @@ patientsRouter.put("/:id", requireAuth, async (req, res, next) => {
 
 patientsRouter.post("/:id/send-document", requireAuth, async (req, res, next) => {
   try {
+    const reqTenant = normalizeTenant(req.user?.tenantId);
     const pt = await db.select().from(patients).where(eq(patients.id, req.params.id)).limit(1);
-    if (pt.length === 0) {
+    if (pt.length === 0 || normalizeTenant(pt[0].tenantId) !== reqTenant) {
       return res.status(404).json({ success: false, error: { message: "Patient not found" } });
     }
     
@@ -152,8 +166,9 @@ patientsRouter.post("/:id/send-document", requireAuth, async (req, res, next) =>
 patientsRouter.delete("/:id", requireAuth, async (req, res, next) => {
   try {
     const patientId = req.params.id;
+    const reqTenant = normalizeTenant(req.user?.tenantId);
     const pt = await db.select().from(patients).where(eq(patients.id, patientId));
-    if (!pt || pt.length === 0) {
+    if (!pt || pt.length === 0 || normalizeTenant(pt[0].tenantId) !== reqTenant) {
       return res.status(404).json({ success: false, error: { message: "Không tìm thấy hồ sơ bệnh nhân" } });
     }
 

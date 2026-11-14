@@ -6,18 +6,91 @@ import { eq, and, gte, lte, or, like, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
 import { AppointmentQuerySchema, UpdateStatusSchema } from "../../../shared/appointment.js";
 import { NotFoundError, BadRequestError } from "../../core/errors.js";
-import { startOfDay, endOfDay, parseISO, format } from "date-fns";
+import { startOfDay, endOfDay, parseISO } from "date-fns";
 import { safeFormatDate } from "../../utils/dateFormat.js";
 import { sendWebPush, sendAppointmentStatusPush } from "../../services/notification.js";
 import { triggerWaitlistMatching } from "../../jobs/waitlistMatcher.js";
 import { generateRecall } from "../../jobs/recallGenerator.js";
 import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
+import { realtimeNotification } from "../../services/realtimeNotification.js";
 
 const appointmentRouter = Router();
 
 // Middleware yêu cầu đăng nhập cho toàn bộ Router này
 appointmentRouter.use(requireAuth);
+
+const HISTORY_STATUS_SET = new Set([
+  "COMPLETED",
+  "CANCEL_PATIENT",
+  "CANCEL_CLINIC",
+  "CANCELLED",
+  "NO_SHOW",
+]);
+
+const CANCELLED_STATUS_SET = new Set([
+  "CANCEL_PATIENT",
+  "CANCEL_CLINIC",
+  "CANCELLED",
+  "NO_SHOW",
+]);
+
+function normalizeTenant(val?: string | null): string | null {
+  if (!val) return null;
+  const trimmed = String(val).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getRequestTenantId(req: any): string | null {
+  return normalizeTenant(req.user?.tenantId);
+}
+
+function cleanSystemNotes(raw?: string | null): string {
+  if (!raw) return "";
+  return String(raw)
+    .replace(/\[Đặt lịch hộ qua SĐT[^\]]*\]\s*/gi, "")
+    .replace(/\[Đặt lịch hộ cho:[^\]]*\]\s*-?\s*/gi, "")
+    .replace(/\[Đặt lịch hộ[^\]]*\]\s*-?\s*/gi, "")
+    .replace(/\[Đặt cho người thân\]\s*-?\s*/gi, "")
+    .replace(/\[HỆ THỐNG\]:[^\n]*\n?/gi, "")
+    .replace(/^\s*[-–|]\s*/, "")
+    .trim();
+}
+
+function resolveMode(r: any): "self" | "relative" {
+  if (r.bookingFor === "relative") return "relative";
+  if (r.bookingFor === "self") return "self";
+  if (r.isProxyBooking === true) return "relative";
+  if (r.notes && (r.notes.includes("[Đặt lịch hộ") || r.notes.includes("[Đặt cho người thân]"))) {
+    return "relative";
+  }
+  if (r.patientNotes) {
+    try {
+      const parsed = JSON.parse(r.patientNotes);
+      if (parsed?.bookingFor === "relative") return "relative";
+      if (parsed?.bookingFor === "self") return "self";
+      if (parsed?.isProxyBooking === true) return "relative";
+      if (parsed?.text && (parsed.text.includes("[Đặt lịch hộ") || parsed.text.includes("[Đặt cho người thân]"))) {
+        return "relative";
+      }
+    } catch {
+      if (String(r.patientNotes).includes("[Đặt lịch hộ") || String(r.patientNotes).includes("[Đặt cho người thân]")) {
+        return "relative";
+      }
+    }
+  }
+  return "self";
+}
+
+function stripVietnameseAccents(str: string): string {
+  return String(str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
 
 // [M03, M06] Lấy danh sách Lịch hẹn cho Calendar (Receptionist / Dentist)
 appointmentRouter.get("/", requirePermission("appointment.view"), async (req, res, next) => {
@@ -38,46 +111,8 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       conditions.push(eq(appointments.status, query.status));
     }
     
-    // Check for pagination
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 0;
-
-    const cleanSystemNotes = (raw?: string | null) => {
-      if (!raw) return "";
-      return String(raw)
-        .replace(/\[Đặt lịch hộ qua SĐT[^\]]*\]\s*/gi, "")
-        .replace(/\[Đặt lịch hộ cho:[^\]]*\]\s*-?\s*/gi, "")
-        .replace(/\[Đặt lịch hộ[^\]]*\]\s*-?\s*/gi, "")
-        .replace(/\[Đặt cho người thân\]\s*-?\s*/gi, "")
-        .replace(/\[HỆ THỐNG\]:[^\n]*\n?/gi, "")
-        .replace(/^\s*[-–|]\s*/, "")
-        .trim();
-    };
-
-    const resolveMode = (r: any): "self" | "relative" => {
-      if (r.bookingFor === "relative") return "relative";
-      if (r.bookingFor === "self") return "self";
-      if (r.isProxyBooking === true) return "relative";
-      if (r.notes && (r.notes.includes("[Đặt lịch hộ") || r.notes.includes("[Đặt cho người thân]"))) {
-        return "relative";
-      }
-      if (r.patientNotes) {
-        try {
-          const parsed = JSON.parse(r.patientNotes);
-          if (parsed?.bookingFor === "relative") return "relative";
-          if (parsed?.bookingFor === "self") return "self";
-          if (parsed?.isProxyBooking === true) return "relative";
-          if (parsed?.text && (parsed.text.includes("[Đặt lịch hộ") || parsed.text.includes("[Đặt cho người thân]"))) {
-            return "relative";
-          }
-        } catch {
-          if (String(r.patientNotes).includes("[Đặt lịch hộ") || String(r.patientNotes).includes("[Đặt cho người thân]")) {
-            return "relative";
-          }
-        }
-      }
-      return "self";
-    };
 
     let queryBuilder = db
       .select({
@@ -88,6 +123,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         status: appointments.status,
         source: appointments.source,
         notes: appointments.notes,
+        cancelReason: (appointments as any).cancelReason,
         bookingFor: (appointments as any).bookingFor,
         isProxyBooking: (appointments as any).isProxyBooking,
         bookedForName: (appointments as any).bookedForName,
@@ -102,6 +138,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         providerName: providers.name,
         serviceId: services.id,
         serviceName: services.name,
+        servicePrice: services.price,
         customServiceName: appointments.customServiceName,
         serviceIds: appointments.serviceIds,
         durationMins: services.durationMins,
@@ -111,6 +148,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         reviewedAt: appointments.reviewedAt,
         isReviewHidden: appointments.isReviewHidden,
         isRatingHidden: appointments.isRatingHidden,
+        updatedAt: appointments.updatedAt,
       })
       .from(appointments)
       .leftJoin(patients, eq(appointments.patientId, patients.id))
@@ -119,19 +157,18 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(appointments.startAt);
 
-    const requestTenantId = req.user?.tenantId ? String(req.user.tenantId).trim() : null;
+    const requestTenantId = getRequestTenantId(req);
     const includeAllTenants = req.query.scope === "all" && !requestTenantId;
     const matchesCurrentTenant = (r: any) => {
       if (includeAllTenants) return true;
-      const rowTenantId = r.tenantId ? String(r.tenantId).trim() : null;
-      return rowTenantId === requestTenantId;
+      return normalizeTenant(r.tenantId) === requestTenantId;
     };
 
     const mapRow = (r: any) => {
       const mode = resolveMode(r);
       return {
         ...r,
-        tenantId: r.tenantId ? String(r.tenantId).trim() : null,
+        tenantId: normalizeTenant(r.tenantId),
         bookingFor: mode,
         isProxyBooking: mode === "relative",
         bookedForName: r.bookedForName || r.patientName,
@@ -164,6 +201,312 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         data: results,
       });
     }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// [M14] Lịch sử cuộc hẹn (Hoàn thành & Đã hủy / Không đến) theo thời gian & từng khách hàng
+appointmentRouter.get("/history", requirePermission("appointment.view"), async (req, res, next) => {
+  try {
+    const startDate = typeof req.query.startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.startDate)
+      ? req.query.startDate
+      : undefined;
+    const endDate = typeof req.query.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.endDate)
+      ? req.query.endDate
+      : undefined;
+    const statusFilter = typeof req.query.status === "string" ? req.query.status.trim().toUpperCase() : "ALL";
+    const patientIdFilter = typeof req.query.patientId === "string" ? req.query.patientId.trim() : "";
+    const customerPhoneFilter = typeof req.query.customerPhone === "string" ? req.query.customerPhone.replace(/\D/g, "") : "";
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const sortDir = req.query.sort === "asc" ? "asc" : "desc";
+    const includeCustomers = req.query.includeCustomers !== "false";
+
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const limitParam = req.query.limit !== undefined ? parseInt(req.query.limit as string, 10) : 25;
+    const limit = isNaN(limitParam) ? 25 : Math.max(0, limitParam);
+
+    const conditions = [];
+    if (startDate) {
+      conditions.push(gte(appointments.startAt, startOfDay(parseISO(startDate))));
+    }
+    if (endDate) {
+      conditions.push(lte(appointments.startAt, endOfDay(parseISO(endDate))));
+    }
+    if (patientIdFilter) {
+      conditions.push(eq(appointments.patientId, patientIdFilter));
+    }
+
+    const rawRows = await db
+      .select({
+        id: appointments.id,
+        tenantId: appointments.tenantId,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        status: appointments.status,
+        source: appointments.source,
+        notes: appointments.notes,
+        cancelReason: (appointments as any).cancelReason,
+        bookingFor: (appointments as any).bookingFor,
+        isProxyBooking: (appointments as any).isProxyBooking,
+        bookedForName: (appointments as any).bookedForName,
+        patientId: patients.id,
+        patientName: patients.fullName,
+        patientPhone: patients.phone,
+        patientNotes: patients.notes,
+        providerId: providers.id,
+        providerName: providers.name,
+        serviceId: services.id,
+        serviceName: services.name,
+        servicePrice: services.price,
+        customServiceName: appointments.customServiceName,
+        serviceIds: appointments.serviceIds,
+        durationMins: services.durationMins,
+        rating: appointments.rating,
+        reviewComment: appointments.reviewComment,
+        reviewTags: appointments.reviewTags,
+        reviewedAt: appointments.reviewedAt,
+        createdAt: appointments.createdAt,
+        updatedAt: appointments.updatedAt,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(providers, eq(appointments.providerId, providers.id))
+      .leftJoin(services, eq(appointments.serviceId, services.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const requestTenantId = getRequestTenantId(req);
+    const includeAllTenants = req.query.scope === "all" && !requestTenantId;
+
+    // Build service price lookup map so multi-service appointments sum exact price
+    const allClinicServices = await db.select().from(services);
+    const servicePriceMap = new Map<string, number>();
+    for (const s of allClinicServices as any[]) {
+      if (s?.id) {
+        servicePriceMap.set(s.id, Number(s.price) || 0);
+      }
+      if (s?.originalId && !servicePriceMap.has(s.originalId)) {
+        servicePriceMap.set(s.originalId, Number(s.price) || 0);
+      }
+    }
+
+    const searchNormalized = stripVietnameseAccents(search);
+    const searchDigits = search.replace(/\D/g, "");
+
+    let filteredRows = rawRows
+      .filter((r: any) => {
+        if (!includeAllTenants && normalizeTenant(r.tenantId) !== requestTenantId) {
+          return false;
+        }
+        const status = String(r.status || "").toUpperCase();
+        if (!HISTORY_STATUS_SET.has(status)) {
+          return false;
+        }
+        if (statusFilter === "COMPLETED") {
+          if (status !== "COMPLETED") return false;
+        } else if (statusFilter === "CANCELLED") {
+          if (!CANCELLED_STATUS_SET.has(status)) return false;
+        } else if (statusFilter !== "ALL" && status !== statusFilter) {
+          return false;
+        }
+        if (customerPhoneFilter) {
+          const phoneDigits = String(r.patientPhone || "").replace(/\D/g, "");
+          const tailTarget = customerPhoneFilter.length >= 9 ? customerPhoneFilter.slice(-9) : customerPhoneFilter;
+          if (!phoneDigits.includes(tailTarget)) return false;
+        }
+        return true;
+      })
+      .map((r: any) => {
+        const mode = resolveMode(r);
+        let calculatedPrice = Number(r.servicePrice) || 0;
+        if (Array.isArray(r.serviceIds) && r.serviceIds.length > 0) {
+          const multiSum = r.serviceIds.reduce((sum: number, sId: string) => {
+            return sum + (servicePriceMap.get(sId) || 0);
+          }, 0);
+          if (multiSum > 0 || r.serviceIds.some((sId: string) => servicePriceMap.has(sId))) {
+            calculatedPrice = multiSum;
+          }
+        }
+        return {
+          id: r.id,
+          tenantId: normalizeTenant(r.tenantId),
+          startAt: r.startAt,
+          endAt: r.endAt,
+          status: r.status,
+          source: r.source,
+          notes: cleanSystemNotes(r.notes),
+          cancelReason: r.cancelReason ? String(r.cancelReason).trim() : "",
+          bookingFor: mode,
+          isProxyBooking: mode === "relative",
+          bookedForName: r.bookedForName || r.patientName || "Khách hàng",
+          patientId: r.patientId || "",
+          patientName: r.patientName || "Khách vãng lai",
+          patientPhone: r.patientPhone || "",
+          providerId: r.providerId || "",
+          providerName: r.providerName || "",
+          serviceId: r.serviceId || "",
+          serviceName: r.customServiceName || r.serviceName || "Khám nha khoa",
+          serviceIds: r.serviceIds || [],
+          servicePrice: calculatedPrice,
+          durationMins: Number(r.durationMins) || 30,
+          rating: r.rating ?? null,
+          reviewComment: r.reviewComment || "",
+          reviewTags: Array.isArray(r.reviewTags) ? r.reviewTags : [],
+          reviewedAt: r.reviewedAt || null,
+          createdAt: r.createdAt || null,
+          updatedAt: r.updatedAt || null,
+        };
+      });
+
+    if (searchNormalized) {
+      filteredRows = filteredRows.filter((item: any) => {
+        const haystack = stripVietnameseAccents(
+          [
+            item.patientName,
+            item.bookedForName,
+            item.patientPhone,
+            item.serviceName,
+            item.providerName,
+            item.cancelReason,
+            item.notes,
+            item.id,
+          ].join(" ")
+        );
+        if (haystack.includes(searchNormalized)) return true;
+        if (searchDigits.length >= 3) {
+          const phoneDigits = String(item.patientPhone || "").replace(/\D/g, "");
+          if (phoneDigits.includes(searchDigits)) return true;
+        }
+        return false;
+      });
+    }
+
+    // Sort chronologically
+    filteredRows.sort((a: any, b: any) => {
+      const tA = a.startAt ? new Date(a.startAt).getTime() : 0;
+      const tB = b.startAt ? new Date(b.startAt).getTime() : 0;
+      if (tA !== tB) return sortDir === "asc" ? tA - tB : tB - tA;
+      const uA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const uB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return sortDir === "asc" ? uA - uB : uB - uA;
+    });
+
+    // Compute Summary & Per-Customer Groups
+    let completedCount = 0;
+    let cancelledCount = 0;
+    let noShowCount = 0;
+    let totalCompletedRevenue = 0;
+
+    const customerMap = new Map<
+      string,
+      {
+        customerKey: string;
+        patientId: string;
+        patientName: string;
+        patientPhone: string;
+        totalTransactions: number;
+        completedCount: number;
+        cancelledCount: number;
+        noShowCount: number;
+        totalCompletedRevenue: number;
+        latestAt: string;
+        earliestAt: string;
+        appointments: any[];
+      }
+    >();
+
+    for (const item of filteredRows) {
+      const st = String(item.status || "").toUpperCase();
+      if (st === "COMPLETED") {
+        completedCount++;
+        totalCompletedRevenue += Number(item.servicePrice) || 0;
+      } else if (st === "NO_SHOW") {
+        noShowCount++;
+        cancelledCount++;
+      } else if (CANCELLED_STATUS_SET.has(st)) {
+        cancelledCount++;
+      }
+
+      const cleanDigits = String(item.patientPhone || "").replace(/\D/g, "");
+      const customerKey = item.patientId
+        ? `pid:${item.patientId}`
+        : cleanDigits
+        ? `phone:${cleanDigits.slice(-9)}`
+        : `name:${stripVietnameseAccents(item.patientName)}`;
+
+      let group = customerMap.get(customerKey);
+      const itemTimeIso = item.startAt ? new Date(item.startAt).toISOString() : new Date().toISOString();
+      if (!group) {
+        group = {
+          customerKey,
+          patientId: item.patientId || "",
+          patientName: item.patientName,
+          patientPhone: item.patientPhone,
+          totalTransactions: 0,
+          completedCount: 0,
+          cancelledCount: 0,
+          noShowCount: 0,
+          totalCompletedRevenue: 0,
+          latestAt: itemTimeIso,
+          earliestAt: itemTimeIso,
+          appointments: [],
+        };
+        customerMap.set(customerKey, group);
+      }
+
+      group.totalTransactions += 1;
+      if (st === "COMPLETED") {
+        group.completedCount += 1;
+        group.totalCompletedRevenue += Number(item.servicePrice) || 0;
+      } else if (st === "NO_SHOW") {
+        group.noShowCount += 1;
+        group.cancelledCount += 1;
+      } else if (CANCELLED_STATUS_SET.has(st)) {
+        group.cancelledCount += 1;
+      }
+      if (new Date(itemTimeIso).getTime() > new Date(group.latestAt).getTime()) {
+        group.latestAt = itemTimeIso;
+      }
+      if (new Date(itemTimeIso).getTime() < new Date(group.earliestAt).getTime()) {
+        group.earliestAt = itemTimeIso;
+      }
+      group.appointments.push(item);
+    }
+
+    const totalTransactions = filteredRows.length;
+    const completionRate = totalTransactions > 0 ? Math.round((completedCount / totalTransactions) * 100) : 0;
+
+    const customerGroups = includeCustomers
+      ? Array.from(customerMap.values()).sort((a, b) => {
+          const tA = new Date(a.latestAt).getTime();
+          const tB = new Date(b.latestAt).getTime();
+          return sortDir === "asc" ? tA - tB : tB - tA;
+        })
+      : undefined;
+
+    const total = filteredRows.length;
+    const paginatedData = limit > 0 ? filteredRows.slice((page - 1) * limit, (page - 1) * limit + limit) : filteredRows;
+
+    res.json({
+      success: true,
+      summary: {
+        totalTransactions,
+        completedCount,
+        cancelledCount,
+        noShowCount,
+        completionRate,
+        totalCompletedRevenue,
+        uniqueCustomersCount: customerMap.size,
+      },
+      data: paginatedData,
+      ...(includeCustomers ? { customerGroups } : {}),
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -210,9 +553,12 @@ appointmentRouter.get("/lookup/:term", requirePermission("appointment.view"), as
       conditions.push(like(patients.fullName, `%${term}%`));
     }
 
-    const results = await db
+    const requestTenantId = getRequestTenantId(req);
+
+    const results = (await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         endAt: appointments.endAt,
         status: appointments.status,
@@ -229,8 +575,9 @@ appointmentRouter.get("/lookup/:term", requirePermission("appointment.view"), as
       .leftJoin(providers, eq(appointments.providerId, providers.id))
       .leftJoin(services, eq(appointments.serviceId, services.id))
       .where(or(...conditions))
-      .orderBy(desc(appointments.startAt))
-      .limit(10);
+      .orderBy(desc(appointments.startAt)))
+      .filter((r: any) => normalizeTenant(r.tenantId) === requestTenantId)
+      .slice(0, 10);
 
     res.json({
       success: true,
@@ -245,12 +592,16 @@ appointmentRouter.get("/lookup/:term", requirePermission("appointment.view"), as
 appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), async (req, res, next) => {
   try {
     const { id } = req.params;
+    const requestTenantId = getRequestTenantId(req);
+
     const results = await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         endAt: appointments.endAt,
         status: appointments.status,
+        cancelReason: (appointments as any).cancelReason,
         patientId: patients.id,
         patientName: patients.fullName,
         patientPhone: patients.phone,
@@ -270,7 +621,7 @@ appointmentRouter.get("/detail/:id", requirePermission("appointment.view"), asyn
       .where(eq(appointments.id, id))
       .limit(1);
 
-    if (results.length === 0) {
+    if (results.length === 0 || normalizeTenant(results[0].tenantId) !== requestTenantId) {
       return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
     }
 
@@ -502,8 +853,12 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
 appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const { startAt, endAt } = req.body;
+    const requestTenantId = getRequestTenantId(req);
 
     const oldApt = await db.select().from(appointments).where(eq(appointments.id, req.params.id)).limit(1);
+    if (oldApt.length === 0 || normalizeTenant(oldApt[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
     
     const updated = await db.update(appointments)
       .set({ 
@@ -519,10 +874,15 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
     // Trigger push notification to patient about rescheduled time
     sendAppointmentStatusPush(req.params.id, "RESCHEDULED", { newStartAt: startAt }).catch(console.error);
 
+    realtimeNotification.emitBookingUpdated({
+      id: updated[0].id,
+      status: updated[0].status,
+      startAt: updated[0].startAt,
+      tenantId: normalizeTenant(updated[0].tenantId),
+    });
+
     // Trigger waitlist since the old slot is now freed up
-    if (oldApt.length > 0) {
-      triggerWaitlistMatching(oldApt[0]).catch(console.error);
-    }
+    triggerWaitlistMatching(oldApt[0]).catch(console.error);
 
     res.json({ success: true, data: updated[0] });
   } catch (error) {
@@ -535,9 +895,10 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
   try {
     const appointmentId = req.params.id;
     const { status: nextStatus, cancelReason } = UpdateStatusSchema.parse(req.body);
+    const requestTenantId = getRequestTenantId(req);
 
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
-    if (existing.length === 0) {
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
@@ -554,8 +915,8 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     }
 
     const updateData: any = { status: nextStatus, updatedAt: new Date() };
-    if (cancelReason && nextStatus === "CANCEL_CLINIC") {
-      updateData.cancelReason = cancelReason;
+    if (cancelReason && (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT" || nextStatus === "NO_SHOW")) {
+      updateData.cancelReason = String(cancelReason).trim();
     }
     if (req.body.rating !== undefined) {
       updateData.rating = Math.min(5, Math.max(1, Number(req.body.rating)));
@@ -570,22 +931,21 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
 
     const appointment = updated[0];
 
+    realtimeNotification.emitBookingUpdated({
+      id: appointment.id,
+      status: appointment.status,
+      tenantId: normalizeTenant(appointment.tenantId),
+    });
+
     // Notification Engine, Web Push (VAPID), Waitlist & Recall Triggers
-    // 1. Send push notification for patient for ANY status update
     sendAppointmentStatusPush(appointment.id, nextStatus, { cancelReason }).catch(console.error);
 
-    // 2. Specific channel integrations
     if (nextStatus === "CONFIRMED") {
-      // Tự động gửi thông báo qua Telegram và Email cho bệnh nhân
       notifyPatientAppointment(appointment.id, "CONFIRMED").catch(console.error);
     } else if (nextStatus === "COMPLETED") {
-      // Trigger Recall Engine
       generateRecall(appointment).catch(console.error);
     } else if (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT") {
-      // Tự động thông báo hủy qua Telegram / Email cho bệnh nhân
       notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
-      
-      // Trigger Waitlist Engine
       triggerWaitlistMatching(appointment).catch(console.error);
     }
 
@@ -602,10 +962,16 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
 appointmentRouter.post("/:id/review", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
     const { rating, reviewComment, reviewTags } = req.body;
 
     if (rating === undefined || rating === null) {
       throw new BadRequestError("Vui lòng chọn số sao đánh giá (1-5 sao)");
+    }
+
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
     const numericRating = Math.min(5, Math.max(1, Number(rating)));
@@ -638,8 +1004,9 @@ appointmentRouter.post("/:id/review", requirePermission("appointment.update"), a
 appointmentRouter.patch("/:id/review/toggle-visibility", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
-    if (existing.length === 0) {
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
@@ -676,8 +1043,9 @@ appointmentRouter.patch("/:id/review/toggle-visibility", requirePermission("appo
 appointmentRouter.patch("/:id/review/toggle-rating-visibility", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
-    if (existing.length === 0) {
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
@@ -707,8 +1075,9 @@ appointmentRouter.patch("/:id/review/toggle-rating-visibility", requirePermissio
 appointmentRouter.delete("/:id/review", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
-    if (existing.length === 0) {
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
@@ -739,6 +1108,12 @@ appointmentRouter.delete("/:id/review", requirePermission("appointment.update"),
 appointmentRouter.post("/:id/notify-patient", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
     const { event = "CONFIRMED" } = req.body;
     const result = await notifyPatientAppointment(appointmentId, event as any);
     res.json({ success: true, data: result });
@@ -752,8 +1127,10 @@ appointmentRouter.post("/:id/notify-patient", requirePermission("appointment.upd
 appointmentRouter.post("/:id/remind", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
     const results = await db
       .select({
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         patientName: patients.fullName,
         telegramId: patients.telegramId,
@@ -767,7 +1144,7 @@ appointmentRouter.post("/:id/remind", requirePermission("appointment.update"), a
       .where(eq(appointments.id, appointmentId))
       .limit(1);
 
-    if (results.length === 0) {
+    if (results.length === 0 || normalizeTenant(results[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
@@ -779,12 +1156,12 @@ appointmentRouter.post("/:id/remind", requirePermission("appointment.update"), a
       });
     }
 
-    // Get clinic profile
     let clinicProfile = null;
     try {
-      const dbSettings = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-      if (dbSettings.length > 0) clinicProfile = dbSettings[0].value;
-    } catch(e) {}
+      const dbSettings = await db.select().from(settings).where(eq(settings.id, "clinicProfile"));
+      const matchedSetting = dbSettings.find((s: any) => normalizeTenant(s.tenantId) === requestTenantId) || dbSettings[0];
+      if (matchedSetting) clinicProfile = matchedSetting.value;
+    } catch {}
 
     const success = await sendPatientReminder(apt.telegramId, apt, clinicProfile);
     
@@ -804,6 +1181,12 @@ appointmentRouter.post("/:id/remind", requirePermission("appointment.update"), a
 appointmentRouter.put("/:id", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const { providerId, serviceId, startAt, endAt, notes } = req.body;
+    const requestTenantId = getRequestTenantId(req);
+
+    const existing = await db.select().from(appointments).where(eq(appointments.id, req.params.id)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
     
     const updated = await db.update(appointments)
       .set({
@@ -818,6 +1201,14 @@ appointmentRouter.put("/:id", requirePermission("appointment.update"), async (re
       .returning();
       
     if (updated.length === 0) throw new NotFoundError("Không tìm thấy lịch hẹn");
+
+    realtimeNotification.emitBookingUpdated({
+      id: updated[0].id,
+      status: updated[0].status,
+      startAt: updated[0].startAt,
+      tenantId: normalizeTenant(updated[0].tenantId),
+    });
+
     res.json({ success: true, data: updated[0] });
   } catch (error) {
     next(error);
@@ -828,14 +1219,27 @@ appointmentRouter.put("/:id", requirePermission("appointment.update"), async (re
 appointmentRouter.delete("/:id", requirePermission("appointment.update"), async (req, res, next) => {
   try {
     const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
+
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
     const { appointmentHolds, patientRecalls, auditLogs } = await import("../../db/schema.js");
     
-    // Xóa các bản ghi con trước để bảo toàn ràng buộc quan hệ
     await db.delete(appointmentHolds).where(eq(appointmentHolds.appointmentId, appointmentId));
     await db.delete(patientRecalls).where(eq(patientRecalls.appointmentId, appointmentId));
     await db.delete(auditLogs).where(eq(auditLogs.appointmentId, appointmentId));
 
     await db.delete(appointments).where(eq(appointments.id, appointmentId));
+
+    realtimeNotification.emitBookingUpdated({
+      id: appointmentId,
+      status: "DELETED",
+      tenantId: normalizeTenant(existing[0].tenantId),
+    });
+
     res.json({ success: true, message: "Đã xóa lịch hẹn an toàn" });
   } catch (error) {
     next(error);
@@ -843,3 +1247,4 @@ appointmentRouter.delete("/:id", requirePermission("appointment.update"), async 
 });
 
 export default appointmentRouter;
+

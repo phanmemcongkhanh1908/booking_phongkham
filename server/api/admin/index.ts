@@ -852,13 +852,17 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
 
         const effectiveSlug = clinicProfile.slug || (req.user as any)?.slug;
         if (effectiveSlug) {
-          const { syncClinicToFirestore } = await import("../../services/clinicFirestoreService.js");
+          const { syncClinicToFirestore, invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+          invalidateClinicSlugCache(effectiveSlug);
           syncClinicToFirestore(effectiveSlug, {
             ...clinicProfile,
             tenantId: myTenantId,
             slug: effectiveSlug
           }).catch(err => console.warn("[Firestore] Sync on setting update failed:", err));
         }
+      } else if ((req.user as any)?.slug) {
+        const { invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+        invalidateClinicSlugCache((req.user as any).slug);
       }
     }
     if (emailConfig !== undefined) {

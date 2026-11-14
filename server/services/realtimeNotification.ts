@@ -76,6 +76,16 @@ class RealtimeNotificationService extends EventEmitter {
     }
   }
 
+  public hasClientsForTenant(tenantId?: string | null): boolean {
+    const target = this.normalizeTenantId(tenantId);
+    for (const client of this.clients) {
+      if (this.normalizeTenantId(client.tenantId) === target) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public emitBookingCreated(payload: any) {
     this.emit('BOOKING_CREATED', payload);
     const bookingTenantId = this.normalizeTenantId(payload?.tenantId);

@@ -8,7 +8,68 @@ const DB_FILE = path.join(process.cwd(), "server", "data", "store.json");
 // In-memory cache of collections backed by persistent store.json
 let memoryStore: Record<string, Record<string, any>> = {};
 let isStoreLoaded = false;
-let saveTimeout: any = null;
+let saveTimeout: NodeJS.Timeout | null = null;
+let maxWaitTimeout: NodeJS.Timeout | null = null;
+let isDirty = false;
+let persistChain: Promise<void> = Promise.resolve();
+
+// Strict multi-tenant collections that MUST ALWAYS filter by tenantId when a clinic context is active
+const STRICT_TENANT_TABLES = new Set([
+  "appointments",
+  "patients",
+  "appointment_holds",
+  "patient_recalls",
+  "waitlist",
+  "audit_logs",
+]);
+
+// Active transaction undo log so rollback is O(modified rows) instead of O(entire database)
+type TxBackupEntry = { existed: boolean; value: any };
+let activeTxBackup: Map<string, Map<string, TxBackupEntry>> | null = null;
+let dirtyDuringTx = false;
+
+function cloneForRollback(val: any): any {
+  if (val === null || typeof val !== "object") return val;
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(val);
+    } catch {
+      // Fallback for non-cloneable edge objects
+    }
+  }
+  return JSON.parse(JSON.stringify(val));
+}
+
+function recordTxBackup(tableName: string, storeKey: string) {
+  if (!activeTxBackup) return;
+  let tableMap = activeTxBackup.get(tableName);
+  if (!tableMap) {
+    tableMap = new Map<string, TxBackupEntry>();
+    activeTxBackup.set(tableName, tableMap);
+  }
+  if (tableMap.has(storeKey)) return;
+
+  const tableObj = memoryStore[tableName];
+  if (tableObj && Object.prototype.hasOwnProperty.call(tableObj, storeKey)) {
+    tableMap.set(storeKey, { existed: true, value: cloneForRollback(tableObj[storeKey]) });
+  } else {
+    tableMap.set(storeKey, { existed: false, value: undefined });
+  }
+}
+
+function rollbackTxBackup() {
+  if (!activeTxBackup) return;
+  for (const [tableName, tableMap] of activeTxBackup.entries()) {
+    if (!memoryStore[tableName]) memoryStore[tableName] = {};
+    for (const [storeKey, entry] of tableMap.entries()) {
+      if (entry.existed) {
+        memoryStore[tableName][storeKey] = entry.value;
+      } else {
+        delete memoryStore[tableName][storeKey];
+      }
+    }
+  }
+}
 
 export function loadStore() {
   if (isStoreLoaded) return memoryStore;
@@ -19,7 +80,7 @@ export function loadStore() {
     }
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, "utf-8");
-      memoryStore = JSON.parse(raw);
+      memoryStore = raw.trim() ? JSON.parse(raw) : {};
     } else {
       memoryStore = {};
     }
@@ -31,35 +92,115 @@ export function loadStore() {
   return memoryStore;
 }
 
+function serializeStore(): string {
+  // Use fast compact JSON once dataset grows to keep disk I/O and memory overhead minimal
+  let approxDocs = 0;
+  for (const col in memoryStore) {
+    const t = memoryStore[col];
+    if (t && typeof t === "object") {
+      approxDocs += Object.keys(t).length;
+      if (approxDocs > 150) break;
+    }
+  }
+  return approxDocs > 150 ? JSON.stringify(memoryStore) : JSON.stringify(memoryStore, null, 2);
+}
+
 export function persistStore() {
   try {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    if (maxWaitTimeout) {
+      clearTimeout(maxWaitTimeout);
+      maxWaitTimeout = null;
+    }
     const dir = path.dirname(DB_FILE);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    // Atomic write via temp file + rename to prevent database corruption on unexpected exit/crash
-    const tempFile = `${DB_FILE}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
-    fs.writeFileSync(tempFile, JSON.stringify(memoryStore, null, 2), "utf-8");
+    const tempFile = `${DB_FILE}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    fs.writeFileSync(tempFile, serializeStore(), "utf-8");
     fs.renameSync(tempFile, DB_FILE);
+    isDirty = false;
   } catch (err) {
     console.error("[LocalStore] Failed to persist store.json:", err);
   }
 }
 
-function scheduleSave() {
-  if (saveTimeout) clearTimeout(saveTimeout);
-  persistStore();
+async function persistStoreAsync(): Promise<void> {
+  if (!isDirty) return;
+  const serialized = serializeStore();
+  isDirty = false;
+  persistChain = persistChain.then(async () => {
+    try {
+      const dir = path.dirname(DB_FILE);
+      await fs.promises.mkdir(dir, { recursive: true });
+      const tempFile = `${DB_FILE}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+      await fs.promises.writeFile(tempFile, serialized, "utf-8");
+      await fs.promises.rename(tempFile, DB_FILE);
+    } catch (err) {
+      isDirty = true;
+      console.error("[LocalStore] Failed async persist store.json:", err);
+    }
+  });
+  return persistChain;
 }
 
-// Ensure store is always persisted on process shutdown
-process.on('beforeExit', () => {
-  persistStore();
+export async function flushStore(): Promise<void> {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  if (maxWaitTimeout) {
+    clearTimeout(maxWaitTimeout);
+    maxWaitTimeout = null;
+  }
+  await persistStoreAsync();
+  await persistChain;
+}
+
+function scheduleSave() {
+  if (activeTxBackup) {
+    dirtyDuringTx = true;
+    return;
+  }
+  isDirty = true;
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    if (maxWaitTimeout) {
+      clearTimeout(maxWaitTimeout);
+      maxWaitTimeout = null;
+    }
+    void persistStoreAsync();
+  }, 80);
+  if (saveTimeout.unref) saveTimeout.unref();
+
+  if (!maxWaitTimeout) {
+    maxWaitTimeout = setTimeout(() => {
+      maxWaitTimeout = null;
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+      }
+      void persistStoreAsync();
+    }, 450);
+    if (maxWaitTimeout.unref) maxWaitTimeout.unref();
+  }
+}
+
+// Ensure store is always persisted cleanly on process shutdown
+process.on("beforeExit", () => {
+  if (isDirty) persistStore();
 });
-process.on('SIGINT', () => {
-  persistStore();
+process.on("SIGINT", () => {
+  if (isDirty) persistStore();
 });
-process.on('SIGTERM', () => {
-  persistStore();
+process.on("SIGTERM", () => {
+  if (isDirty) persistStore();
 });
 
 export const eq = (field: any, value: any) => ({ type: "eq", field, value });
@@ -70,7 +211,7 @@ export const asc = (field: any) => ({ type: "asc", field });
 export const sql = (strings: any, ...values: any[]) => ({ type: "sql", strings, values });
 export const count = () => ({ type: "count" });
 
-function resolveField(docData, fieldDef, joinsData = {}) {
+function resolveField(docData: any, fieldDef: any, joinsData: any = {}) {
   if (!fieldDef) return undefined;
   if (fieldDef._name && fieldDef._col) {
     if (docData._tableName === fieldDef._name) {
@@ -81,45 +222,59 @@ function resolveField(docData, fieldDef, joinsData = {}) {
     }
     return docData[fieldDef._col];
   }
-  return docData[fieldDef];
+  if (typeof fieldDef === "string") {
+    return docData[fieldDef];
+  }
+  return undefined;
 }
 
-function normalizeVal(v) {
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+
+function normalizeVal(v: any) {
   if (v instanceof Date) return v.getTime();
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+  if (typeof v === "string" && v.length >= 10 && ISO_DATE_RE.test(v)) {
     const d = Date.parse(v);
-    if (!isNaN(d)) return d;
+    if (!Number.isNaN(d)) return d;
   }
   return v;
 }
 
 function convertTimestamps(obj: any): any {
-  if (!obj || typeof obj !== "object") return obj;
+  if (obj === null || typeof obj !== "object") return obj;
   if (obj instanceof Date) return obj;
   if (typeof obj.toDate === "function") {
     return obj.toDate();
   }
   if (Array.isArray(obj)) {
-    return obj.map(convertTimestamps);
+    const arr = new Array(obj.length);
+    for (let i = 0; i < obj.length; i++) {
+      arr[i] = convertTimestamps(obj[i]);
+    }
+    return arr;
   }
   const res: any = {};
-  for (const [k, v] of Object.entries(obj)) {
-    res[k] = convertTimestamps(v);
+  for (const k in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      res[k] = convertTimestamps(obj[k]);
+    }
   }
   return res;
 }
 
-function removeUndefined(obj) {
+function removeUndefined(obj: any): any {
   if (obj === null || typeof obj !== "object") return obj;
   if (obj instanceof Date) return obj;
   if (typeof obj.toDate === "function") return obj;
   if (Array.isArray(obj)) {
     return obj.map(removeUndefined);
   }
-  const cleaned = {};
-  for (const [key, val] of Object.entries(obj)) {
-    if (val !== undefined) {
-      cleaned[key] = removeUndefined(val);
+  const cleaned: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleaned[key] = removeUndefined(val);
+      }
     }
   }
   return cleaned;
@@ -136,7 +291,53 @@ function normalizeSearchString(str: any): string {
     .trim();
 }
 
-function evaluateSingleCondition(docData, cond, joinsData = {}) {
+function extractEquiJoinPair(cond: any, joinTableName: string): { mainDef: any; joinDef: any } | null {
+  if (!cond) return null;
+  if (cond.type === "eq") {
+    const l = cond.field;
+    const r = cond.value;
+    if (l?._name && l?._col && r?._name && r?._col) {
+      if (r._name === joinTableName && l._name !== joinTableName) return { mainDef: l, joinDef: r };
+      if (l._name === joinTableName && r._name !== joinTableName) return { mainDef: r, joinDef: l };
+    }
+    return null;
+  }
+  if (cond.queryChunks) {
+    const chunks = cond.queryChunks;
+    if (
+      chunks.length === 3 &&
+      chunks[0]?.constructor?.name === "StringChunk" &&
+      chunks[0].value[0] === "(" &&
+      chunks[2]?.constructor?.name === "StringChunk" &&
+      chunks[2].value[0] === ")"
+    ) {
+      return extractEquiJoinPair(chunks[1], joinTableName);
+    }
+    let leftDef: any = null;
+    let rightDef: any = null;
+    let op = "";
+    for (const ch of chunks) {
+      if (ch && ch._name && ch._col) {
+        if (!leftDef) leftDef = ch;
+        else rightDef = ch;
+      } else if (ch?.constructor?.name === "StringChunk") {
+        const text = ch.value.join("").trim();
+        if (text) op = text;
+      }
+    }
+    if (op === "=" && leftDef && rightDef) {
+      if (rightDef._name === joinTableName && leftDef._name !== joinTableName) {
+        return { mainDef: leftDef, joinDef: rightDef };
+      }
+      if (leftDef._name === joinTableName && rightDef._name !== joinTableName) {
+        return { mainDef: rightDef, joinDef: leftDef };
+      }
+    }
+  }
+  return null;
+}
+
+function evaluateSingleCondition(docData: any, cond: any, joinsData: any = {}): boolean {
   if (!cond) return true;
 
   // Custom condition types
@@ -146,10 +347,10 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
     return normalizeVal(left) === normalizeVal(right);
   }
   if (cond.type === "and") {
-    return cond.args.every((c) => evaluateSingleCondition(docData, c, joinsData));
+    return cond.args.every((c: any) => evaluateSingleCondition(docData, c, joinsData));
   }
   if (cond.type === "or") {
-    return cond.args.some((c) => evaluateSingleCondition(docData, c, joinsData));
+    return cond.args.some((c: any) => evaluateSingleCondition(docData, c, joinsData));
   }
 
   // Drizzle ORM SQL condition
@@ -185,10 +386,10 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
       }
     }
 
-    let leftDef = null;
-    let rightDef = null;
+    let leftDef: any = null;
+    let rightDef: any = null;
     let op = "";
-    let val = undefined;
+    let val: any = undefined;
 
     for (const ch of chunks) {
       if (ch && ch._name && ch._col) {
@@ -198,13 +399,12 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
         const text = ch.value.join("").trim();
         if (text) {
           const lower = text.toLowerCase();
-          // Check for embedded NOT IN / IN clause: e.g. "NOT IN ('A', 'B')"
           const notInMatch = text.match(/not\s+in\s*\(([^)]+)\)/i);
           const inMatch = text.match(/\bin\s*\(([^)]+)\)/i);
           if (notInMatch) {
             op = "not in";
             val = notInMatch[1].split(",").map((s: string) => s.trim().replace(/^['"]|['"]$/g, ""));
-          } else if (inMatch && !notInMatch) {
+          } else if (inMatch) {
             op = "in";
             val = inMatch[1].split(",").map((s: string) => s.trim().replace(/^['"]|['"]$/g, ""));
           } else if (lower.includes("like")) {
@@ -241,13 +441,13 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
     if (op === "<=") return nDocVal <= nVal;
     if (op === "is null") return docVal == null;
     if (op === "is not null") return docVal != null;
-    
+
     if (op === "in") {
-      const targetArray = Array.isArray(rightVal) ? rightVal : (Array.isArray(val) ? val : [rightVal]);
+      const targetArray = Array.isArray(rightVal) ? rightVal : Array.isArray(val) ? val : [rightVal];
       return targetArray.map(normalizeVal).includes(nDocVal);
     }
     if (op === "not in") {
-      const targetArray = Array.isArray(rightVal) ? rightVal : (Array.isArray(val) ? val : [rightVal]);
+      const targetArray = Array.isArray(rightVal) ? rightVal : Array.isArray(val) ? val : [rightVal];
       return !targetArray.map(normalizeVal).includes(nDocVal);
     }
     if (op === "like") {
@@ -263,6 +463,28 @@ function evaluateSingleCondition(docData, cond, joinsData = {}) {
   return true;
 }
 
+function isRowVisibleForTenant(
+  tableName: string,
+  rawDoc: any,
+  tenantId: string | null | undefined,
+  isFullAdmin: boolean | undefined,
+  tenantHasCustomServices: boolean,
+  tenantHasCustomProviders: boolean
+): boolean {
+  if (isFullAdmin || !tenantId || tableName === "roles") return true;
+
+  if (STRICT_TENANT_TABLES.has(tableName)) {
+    return rawDoc.tenantId === tenantId;
+  }
+  if (tableName === "services") {
+    return tenantHasCustomServices ? rawDoc.tenantId === tenantId : !rawDoc.tenantId || rawDoc.tenantId === tenantId;
+  }
+  if (tableName === "providers") {
+    return tenantHasCustomProviders ? rawDoc.tenantId === tenantId : !rawDoc.tenantId || rawDoc.tenantId === tenantId;
+  }
+  return !rawDoc.tenantId || rawDoc.tenantId === tenantId;
+}
+
 class QueryBuilder {
   action: any;
   table: any;
@@ -272,6 +494,7 @@ class QueryBuilder {
   _limit: any;
   _offset: any;
   _orderBy: any;
+  _groupBy: any[];
   _selectFields: any;
   _returning: boolean;
   _onConflictNothing: boolean;
@@ -286,6 +509,7 @@ class QueryBuilder {
     this._limit = null;
     this._offset = null;
     this._orderBy = null;
+    this._groupBy = [];
     this._selectFields = null;
     this._returning = false;
     this._onConflictNothing = false;
@@ -317,11 +541,15 @@ class QueryBuilder {
     this._orderBy = ords[0];
     return this;
   }
+  groupBy(...cols: any[]) {
+    this._groupBy = cols;
+    return this;
+  }
   values(data: any) {
     this.data = data;
     return this;
   }
-  set(data) {
+  set(data: any) {
     this.data = data;
     return this;
   }
@@ -329,7 +557,7 @@ class QueryBuilder {
     this._onConflictNothing = true;
     return this;
   }
-  onConflictDoUpdate(config) {
+  onConflictDoUpdate(config: any) {
     this._onConflictUpdate = config;
     return this;
   }
@@ -337,16 +565,16 @@ class QueryBuilder {
     this._returning = true;
     return this;
   }
-  leftJoin(table, condition) {
+  leftJoin(table: any, condition: any) {
     this.joins.push({ table: table._name, condition, type: "left" });
     return this;
   }
-  innerJoin(table, condition) {
+  innerJoin(table: any, condition: any) {
     this.joins.push({ table: table._name, condition, type: "inner" });
     return this;
   }
 
-  async then(resolve, reject) {
+  async then(resolve: any, reject: any) {
     try {
       const res = await this.execute();
       resolve(res);
@@ -362,76 +590,119 @@ class QueryBuilder {
     if (this.action === "select") {
       loadStore();
       const tableData = memoryStore[tableName] || {};
-      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
-        ...convertTimestamps(d), 
-        id: d.id, 
-        _storeKey: key, 
-        _tableName: tableName 
-      }));
 
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
       const isFullAdmin = ctx?.isFullAdmin;
 
-      // Check if tenant has customized services or providers
       let tenantHasCustomServices = false;
       let tenantHasCustomProviders = false;
       if (!isFullAdmin && tenantId) {
         if (tableName === "services" && memoryStore["services"]) {
           const isFlagged = memoryStore["settings"]?.[`${tenantId}__services_customized`]?.value === true;
-          tenantHasCustomServices = isFlagged || Object.values(memoryStore["services"]).some((s: any) => s.tenantId === tenantId);
+          tenantHasCustomServices =
+            isFlagged || Object.values(memoryStore["services"]).some((s: any) => s.tenantId === tenantId);
         }
         if (tableName === "providers" && memoryStore["providers"]) {
           const isFlagged = memoryStore["settings"]?.[`${tenantId}__providers_customized`]?.value === true;
-          tenantHasCustomProviders = isFlagged || Object.values(memoryStore["providers"]).some((p: any) => p.tenantId === tenantId);
+          tenantHasCustomProviders =
+            isFlagged || Object.values(memoryStore["providers"]).some((p: any) => p.tenantId === tenantId);
         }
       }
 
-      let results = [];
-      for (const docData of docsData) {
-        if (!isFullAdmin && tenantId && tableName !== "roles") {
-          const strictTenantTables = ["appointments", "patients", "appointmentHolds", "recalls"];
-          if (strictTenantTables.includes(tableName)) {
-            if (docData.tenantId !== tenantId) {
-              continue;
-            }
-          } else if (tableName === "services") {
-            // If tenant has custom services, show ONLY tenant's services.
-            // If tenant has no custom services yet, show default template services (where tenantId is null/undefined)
-            if (tenantHasCustomServices) {
-              if (docData.tenantId !== tenantId) continue;
-            } else {
-              if (docData.tenantId && docData.tenantId !== tenantId) continue;
-            }
-          } else if (tableName === "providers") {
-            // Same isolation policy for providers/dentists
-            if (tenantHasCustomProviders) {
-              if (docData.tenantId !== tenantId) continue;
-            } else {
-              if (docData.tenantId && docData.tenantId !== tenantId) continue;
-            }
-          } else {
-            if (docData.tenantId && docData.tenantId !== tenantId) {
-              continue;
+      // 1. Pre-build each joined table ONCE per query (with O(1) EquiJoin hash index when applicable)
+      const preparedJoins = this.joins.map((join) => {
+        const joinData = memoryStore[join.table] || {};
+        const equiPair = extractEquiJoinPair(join.condition, join.table);
+
+        // Build O(1) indexed lookup map or fallback pre-converted array
+        let indexMap: Map<any, any> | null = null;
+        let preConvertedList: any[] | null = null;
+
+        if (equiPair) {
+          indexMap = new Map<any, any>();
+          const joinCol = equiPair.joinDef._col;
+          for (const k in joinData) {
+            if (!Object.prototype.hasOwnProperty.call(joinData, k)) continue;
+            const jd = joinData[k];
+            const rawKeyVal = jd[joinCol];
+            if (rawKeyVal !== undefined && rawKeyVal !== null) {
+              const normKey = normalizeVal(rawKeyVal);
+              const existing = indexMap.get(normKey);
+              // Prefer tenant-specific match over global fallback when duplicate keys exist
+              if (!existing || (tenantId && jd.tenantId === tenantId && existing.tenantId !== tenantId)) {
+                indexMap.set(normKey, {
+                  ...convertTimestamps(jd),
+                  id: jd.id,
+                  _storeKey: k,
+                  _tableName: join.table,
+                });
+              }
             }
           }
+        } else {
+          preConvertedList = [];
+          for (const k in joinData) {
+            if (!Object.prototype.hasOwnProperty.call(joinData, k)) continue;
+            const jd = joinData[k];
+            preConvertedList.push({
+              ...convertTimestamps(jd),
+              id: jd.id,
+              _storeKey: k,
+              _tableName: join.table,
+            });
+          }
         }
+
+        return {
+          ...join,
+          equiPair,
+          indexMap,
+          preConvertedList,
+        };
+      });
+
+      // 2. Filter outer table by tenant BEFORE expensive cloning/conversions
+      let results: any[] = [];
+      for (const key in tableData) {
+        if (!Object.prototype.hasOwnProperty.call(tableData, key)) continue;
+        const rawDoc = tableData[key];
+        if (
+          !isRowVisibleForTenant(
+            tableName,
+            rawDoc,
+            tenantId,
+            isFullAdmin,
+            tenantHasCustomServices,
+            tenantHasCustomProviders
+          )
+        ) {
+          continue;
+        }
+
+        const docData: any = {
+          ...convertTimestamps(rawDoc),
+          id: rawDoc.id,
+          _storeKey: key,
+          _tableName: tableName,
+        };
 
         const joinsData: any = {};
         let skip = false;
 
-        for (const join of this.joins) {
-          const joinData = memoryStore[join.table] || {};
-          const joinDocs = Object.entries(joinData).map(([k, jd]: [string, any]) => ({ 
-            ...convertTimestamps(jd), 
-            id: jd.id, 
-            _storeKey: k, 
-            _tableName: join.table 
-          }));
+        for (const join of preparedJoins) {
+          let matched: any = undefined;
+          if (join.equiPair && join.indexMap) {
+            const lookupSourceVal = resolveField(docData, join.equiPair.mainDef, joinsData);
+            if (lookupSourceVal !== undefined && lookupSourceVal !== null) {
+              matched = join.indexMap.get(normalizeVal(lookupSourceVal));
+            }
+          } else if (join.preConvertedList) {
+            matched = join.preConvertedList.find((jd) =>
+              evaluateSingleCondition(docData, join.condition, { [join.table]: jd })
+            );
+          }
 
-          const matched = joinDocs.find((jd) =>
-            evaluateSingleCondition(docData, join.condition, { [join.table]: jd })
-          );
           if (matched) {
             joinsData[join.table] = matched;
           } else if (join.type === "inner") {
@@ -443,16 +714,16 @@ class QueryBuilder {
         if (skip) continue;
 
         if (this.conditions.length > 0) {
-          const matchFilter = this.conditions.every((c) =>
-            evaluateSingleCondition(docData, c, joinsData)
-          );
+          const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c, joinsData));
           if (!matchFilter) continue;
         }
 
-        if (this._selectFields) {
+        if (this._groupBy && this._groupBy.length > 0) {
+          results.push({ docData, joinsData });
+        } else if (this._selectFields) {
           const mapped: any = {};
-          for (const [key, fieldDef] of Object.entries(this._selectFields)) {
-            mapped[key] = resolveField(docData, fieldDef, joinsData);
+          for (const [fKey, fieldDef] of Object.entries(this._selectFields)) {
+            mapped[fKey] = resolveField(docData, fieldDef, joinsData);
           }
           results.push(mapped);
         } else {
@@ -461,6 +732,50 @@ class QueryBuilder {
           delete cleanDoc._tableName;
           results.push(cleanDoc);
         }
+      }
+
+      // 3. Handle GROUP BY + aggregates (e.g. sql`count(...)` in analytics)
+      if (this._groupBy && this._groupBy.length > 0) {
+        const groups = new Map<string, { firstRow: any; count: number }>();
+        for (const entry of results) {
+          const groupKey = this._groupBy
+            .map((col: any) => String(resolveField(entry.docData, col, entry.joinsData) ?? "__NULL__"))
+            .join("||");
+          const existing = groups.get(groupKey);
+          if (existing) {
+            existing.count += 1;
+          } else {
+            groups.set(groupKey, { firstRow: entry, count: 1 });
+          }
+        }
+        const groupedResults: any[] = [];
+        for (const { firstRow, count: groupCount } of groups.values()) {
+          if (this._selectFields) {
+            const mapped: any = {};
+            for (const [fKey, fieldDef] of Object.entries(this._selectFields) as [string, any][]) {
+              const isCountAggregate =
+                fieldDef?.type === "count" ||
+                (fieldDef?.queryChunks &&
+                  fieldDef.queryChunks.some(
+                    (c: any) =>
+                      c?.constructor?.name === "StringChunk" &&
+                      String(c.value?.join?.("") || "").toLowerCase().includes("count")
+                  ));
+              if (isCountAggregate) {
+                mapped[fKey] = groupCount;
+              } else {
+                mapped[fKey] = resolveField(firstRow.docData, fieldDef, firstRow.joinsData);
+              }
+            }
+            groupedResults.push(mapped);
+          } else {
+            const cleanDoc = { ...firstRow.docData };
+            delete cleanDoc._storeKey;
+            delete cleanDoc._tableName;
+            groupedResults.push(cleanDoc);
+          }
+        }
+        results = groupedResults;
       }
 
       // Prioritize tenant-specific records over global fallback records if tenantId is active
@@ -492,9 +807,11 @@ class QueryBuilder {
 
         if (fieldDef) {
           results.sort((a, b) => {
-            const valA = resolveField(a, fieldDef);
-            const valB = resolveField(b, fieldDef);
+            const valA = normalizeVal(resolveField(a, fieldDef));
+            const valB = normalizeVal(resolveField(b, fieldDef));
             if (valA == null && valB == null) return 0;
+            if (valA == null) return dir;
+            if (valB == null) return -dir;
             return valA < valB ? -dir : valA > valB ? dir : 0;
           });
         }
@@ -515,17 +832,25 @@ class QueryBuilder {
       const isArray = Array.isArray(this.data);
       const items = isArray ? this.data : [this.data];
       const results = [];
-      
+
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
 
       for (const item of items) {
         const id = item.id || crypto.randomUUID();
         let docData = { ...item, id };
-        
+
         const effectiveTenantId = docData.tenantId || tenantId;
         if (effectiveTenantId && !docData.tenantId && tableName !== "roles") {
           docData.tenantId = effectiveTenantId;
+        }
+
+        const storeKey = tableName === "settings" && effectiveTenantId ? `${effectiveTenantId}__${id}` : id;
+        const alreadyExists = Object.prototype.hasOwnProperty.call(memoryStore[tableName], storeKey);
+
+        if (this._onConflictNothing && alreadyExists) {
+          results.push(memoryStore[tableName][storeKey]);
+          continue;
         }
 
         if (!docData.createdAt && tableName !== "settings") {
@@ -538,9 +863,7 @@ class QueryBuilder {
           docData = { ...docData, ...this._onConflictUpdate.set };
         }
         const cleaned = removeUndefined(docData);
-        const storeKey = (tableName === "settings" && effectiveTenantId)
-          ? `${effectiveTenantId}__${id}`
-          : id;
+        recordTxBackup(tableName, storeKey);
         memoryStore[tableName][storeKey] = cleaned;
         results.push(cleaned);
       }
@@ -552,36 +875,41 @@ class QueryBuilder {
       loadStore();
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
-      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
-        ...convertTimestamps(d), 
-        id: d.id, 
-        _storeKey: key, 
-        _tableName: tableName 
-      }));
-      
+
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
       const isFullAdmin = ctx?.isFullAdmin;
 
       const updated = [];
       const cleanedUpdate = removeUndefined(this.data);
-      for (const docData of docsData) {
+      for (const key in tableData) {
+        if (!Object.prototype.hasOwnProperty.call(tableData, key)) continue;
+        const rawDoc = tableData[key];
         if (!isFullAdmin && tenantId && tableName !== "roles") {
-          if (docData.tenantId !== tenantId) {
-             continue;
+          if (rawDoc.tenantId !== tenantId) {
+            continue;
           }
         }
+        const docData: any = {
+          ...convertTimestamps(rawDoc),
+          id: rawDoc.id,
+          _storeKey: key,
+          _tableName: tableName,
+        };
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
           const newDoc = { ...docData, ...cleanedUpdate };
           delete newDoc._tableName;
           const storeKey = newDoc._storeKey || docData.id;
           delete newDoc._storeKey;
+          recordTxBackup(tableName, storeKey);
           memoryStore[tableName][storeKey] = newDoc;
           updated.push(newDoc);
         }
       }
-      scheduleSave();
+      if (updated.length > 0) {
+        scheduleSave();
+      }
       return updated;
     }
 
@@ -589,35 +917,44 @@ class QueryBuilder {
       loadStore();
       if (!memoryStore[tableName]) memoryStore[tableName] = {};
       const tableData = memoryStore[tableName];
-      const docsData = Object.entries(tableData).map(([key, d]: [string, any]) => ({ 
-        ...convertTimestamps(d), 
-        id: d.id, 
-        _storeKey: key, 
-        _tableName: tableName 
-      }));
-      
+
       const ctx = appContext.getStore();
       const tenantId = ctx?.tenantId;
       const isFullAdmin = ctx?.isFullAdmin;
 
       const deleted = [];
-      for (const docData of docsData) {
+      const keysToDelete: { storeKey: string; cleanDoc: any }[] = [];
+      for (const key in tableData) {
+        if (!Object.prototype.hasOwnProperty.call(tableData, key)) continue;
+        const rawDoc = tableData[key];
         if (!isFullAdmin && tenantId && tableName !== "roles") {
-          if (docData.tenantId !== tenantId) {
-             continue;
+          if (rawDoc.tenantId !== tenantId) {
+            continue;
           }
         }
+        const docData: any = {
+          ...convertTimestamps(rawDoc),
+          id: rawDoc.id,
+          _storeKey: key,
+          _tableName: tableName,
+        };
         const matchFilter = this.conditions.every((c) => evaluateSingleCondition(docData, c));
         if (matchFilter) {
           const storeKey = docData._storeKey || docData.id;
-          delete memoryStore[tableName][storeKey];
           const cleanDoc = { ...docData };
           delete cleanDoc._storeKey;
           delete cleanDoc._tableName;
-          deleted.push(cleanDoc);
+          keysToDelete.push({ storeKey, cleanDoc });
         }
       }
-      scheduleSave();
+      for (const item of keysToDelete) {
+        recordTxBackup(tableName, item.storeKey);
+        delete memoryStore[tableName][item.storeKey];
+        deleted.push(item.cleanDoc);
+      }
+      if (deleted.length > 0) {
+        scheduleSave();
+      }
       return deleted;
     }
   }
@@ -630,21 +967,28 @@ export const db: any = {
   insert: (table?: any) => new QueryBuilder("insert", table),
   update: (table?: any) => new QueryBuilder("update", table),
   delete: (table?: any) => new QueryBuilder("delete", table),
-  transaction: async (cb: any, config?: { isolationLevel?: string }) => {
-    // Chain transaction execution to ensure serializable isolation across concurrent requests
+  transaction: async (cb: any, _config?: { isolationLevel?: string }) => {
     const runInLock = async () => {
       loadStore();
-      // Snapshot state for rollback support on error
-      const snapshot = JSON.stringify(memoryStore);
+      activeTxBackup = new Map<string, Map<string, TxBackupEntry>>();
+      dirtyDuringTx = false;
       try {
         const result = await cb(db);
+        const shouldSave = dirtyDuringTx;
+        activeTxBackup = null;
+        dirtyDuringTx = false;
+        if (shouldSave) {
+          scheduleSave();
+        }
         return result;
       } catch (err) {
-        // Rollback memoryStore on failure
         try {
-          memoryStore = JSON.parse(snapshot);
+          rollbackTxBackup();
         } catch (rollbackErr) {
           console.error("[LocalStore] Rollback error:", rollbackErr);
+        } finally {
+          activeTxBackup = null;
+          dirtyDuringTx = false;
         }
         throw err;
       }

@@ -380,7 +380,11 @@ usersRouter.put("/:id", requirePermission("user.create"), async (req, res, next)
 
         const effectiveSlug = slug || updatedUser.slug;
         if (effectiveSlug) {
-          const { syncClinicToFirestore } = await import('../../services/clinicFirestoreService.js');
+          const { syncClinicToFirestore, invalidateClinicSlugCache } = await import('../../services/clinicFirestoreService.js');
+          invalidateClinicSlugCache(effectiveSlug);
+          if (existingUsers[0].slug && existingUsers[0].slug !== effectiveSlug) {
+            invalidateClinicSlugCache(existingUsers[0].slug);
+          }
           syncClinicToFirestore(effectiveSlug, {
             ...clinicProfileData,
             tenantId: effectiveTenantId,
@@ -434,17 +438,31 @@ usersRouter.delete("/:id", requirePermission("user.create"), async (req, res, ne
       throw new BadRequestError("Không thể xóa tài khoản đang đăng nhập");
     }
 
-    // Clean up settings for this clinic tenant
+    // Clean up tenant-scoped resources if this was the last user in that clinic tenant
     if (targetUser[0].tenantId) {
+      const targetTenant = targetUser[0].tenantId;
       try {
-        const { settings } = await import("../../db/schema.js");
-        await db.delete(settings).where(eq(settings.tenantId, targetUser[0].tenantId));
+        const { settings, appointmentHolds, waitlist, patientRecalls, services, providers } = await import("../../db/schema.js");
+        const remainingTenantUsers = (await db.select().from(users).where(eq(users.tenantId, targetTenant)))
+          .filter((u: any) => u.id !== userId);
+        if (remainingTenantUsers.length === 0) {
+          await db.delete(settings).where(eq(settings.tenantId, targetTenant));
+          await db.delete(appointmentHolds).where(eq(appointmentHolds.tenantId, targetTenant));
+          await db.delete(waitlist).where(eq(waitlist.tenantId, targetTenant));
+          await db.delete(patientRecalls).where(eq(patientRecalls.tenantId, targetTenant));
+          await db.delete(services).where(eq(services.tenantId, targetTenant));
+          await db.delete(providers).where(eq(providers.tenantId, targetTenant));
+        }
       } catch (e) {
-        console.warn("[Users API] Could not clean up tenant settings on delete:", e);
+        console.warn("[Users API] Could not clean up tenant resources on delete:", e);
       }
     }
 
     await db.delete(users).where(eq(users.id, userId));
+    if (targetUser[0].slug) {
+      const { invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+      invalidateClinicSlugCache(targetUser[0].slug);
+    }
     res.json({ success: true, message: "Đã xóa tài khoản thành công" });
   } catch (error) {
     next(error);
