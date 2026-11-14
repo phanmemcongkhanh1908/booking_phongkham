@@ -12,7 +12,7 @@ const providers: Record<Provider, TTSProvider> = {
 };
 
 const CACHE_DIR = path.join(process.cwd(), ".cache", "tts");
-const MAX_CACHE_FILES = parseInt(process.env.TTS_CACHE_MAX_FILES || "1000", 10);
+const MAX_CACHE_FILES = parseInt(process.env.TTS_CACHE_MAX_FILES || "2500", 10);
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -52,6 +52,115 @@ export function getTtsStatus() {
   };
 }
 
+export interface OfflinePackItem {
+  key: string;
+  text: string;
+  category: "phrase" | "time" | "number" | "service" | "doctor" | "name";
+  url: string;
+}
+
+export function normalizeOfflineSpeechKey(text: string): string {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[.,!?;:"'()\[\]]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const CORE_ANNOUNCEMENT_PHRASES = [
+  "Thông báo: Có khách hàng mới đặt lịch.",
+  "Khách hàng",
+  "Dịch vụ",
+  "Bác sĩ",
+  "Thời gian hẹn",
+  "Nhắc nhở",
+  "Lịch hẹn của khách hàng",
+  "đặt dịch vụ",
+  "chưa được chốt lịch.",
+  "Quản lý phòng khám vui lòng kiểm tra và xác nhận ngay.",
+  "Hệ thống phát thanh thông báo phòng khám đang hoạt động tiêu chuẩn.",
+  "Nhạc hiệu và giọng đọc tiếng Việt rõ ràng, sẵn sàng phục vụ!",
+  "Kiểm tra gói giọng đọc tiếng Việt ngoại tuyến thành công.",
+  "không xác định",
+  "khám nha khoa",
+  "và",
+];
+
+const TIME_AND_DATE_WORDS = [
+  "giờ",
+  "phút",
+  "ngày",
+  "tháng",
+  "năm",
+  "lúc",
+  "hôm nay",
+  "lần",
+];
+
+const COMMON_VIETNAMESE_NAMES = [
+  "Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Huỳnh", "Phan", "Vũ", "Võ", "Đặng",
+  "Bùi", "Đỗ", "Hồ", "Ngô", "Dương", "Lý", "Văn", "Thị", "Minh", "Anh",
+  "Tuấn", "Dũng", "Hùng", "Linh", "Trang", "Hà", "Hương", "Thảo", "Phương", "Mai",
+  "Lan", "Hoa", "Ngọc", "Bảo", "Gia", "Khánh", "Đức", "Phúc", "Lộc", "Quân",
+  "Khoa", "Nam", "Huy", "Đạt", "Phong", "Hiếu", "Long", "Trung", "Sơn", "Thanh",
+  "Thành", "Hải", "Vinh", "Tú", "Trâm", "Nhi", "Vy", "Uyên", "Quỳnh", "Yến",
+  "Nhung", "Loan", "Nga", "Hạnh", "Huyền", "Phượng", "Chi", "Ngân", "My", "Khang",
+  "An", "Bình", "Cường", "Tâm", "Thúy", "Tùng", "Việt", "Quang", "Thái", "Tiến",
+  "Thịnh", "Toàn", "Hữu", "Quốc", "Duy", "Kiên", "Châu", "Thủy", "Vân", "Xuân",
+  "Thử nghiệm",
+];
+
+export function buildOfflineVoicePackManifest(options?: {
+  serviceNames?: string[];
+  providerNames?: string[];
+}) {
+  const seen = new Set<string>();
+  const items: OfflinePackItem[] = [];
+
+  const pushItem = (rawText: string, category: OfflinePackItem["category"]) => {
+    const clean = String(rawText || "").replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    const key = normalizeOfflineSpeechKey(clean);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    items.push({
+      key,
+      text: clean,
+      category,
+      url: `/api/tts/pack-clip?text=${encodeURIComponent(clean)}`,
+    });
+  };
+
+  for (const p of CORE_ANNOUNCEMENT_PHRASES) pushItem(p, "phrase");
+  for (const t of TIME_AND_DATE_WORDS) pushItem(t, "time");
+
+  for (let n = 0; n <= 59; n++) {
+    pushItem(String(n), "number");
+  }
+  const currentYear = new Date().getFullYear();
+  for (let y = currentYear; y <= currentYear + 2; y++) {
+    pushItem(String(y), "number");
+  }
+
+  for (const sName of options?.serviceNames || []) {
+    pushItem(sName, "service");
+  }
+  for (const pName of options?.providerNames || []) {
+    pushItem(pName, "doctor");
+  }
+
+  for (const name of COMMON_VIETNAMESE_NAMES) {
+    pushItem(name, "name");
+  }
+
+  return {
+    version: "vi-dental-pack-v1",
+    totalClips: items.length,
+    estimatedSizeKB: Math.round(items.length * 6.5),
+    items,
+  };
+}
+
 export async function generateAudio(text: string): Promise<string | null> {
   const active = getActiveProviders();
   if (active.length === 0) return null;
@@ -70,7 +179,6 @@ export async function generateAudio(text: string): Promise<string | null> {
   for (const provider of active) {
     try {
       await provider.generate(text, filePath);
-      console.log(`[TTS] Đã tạo audio bằng ${provider.name} cho text: "${text.substring(0, 30)}..."`);
       cleanUpCache();
       return `/api/tts/audio/${fileName}`;
     } catch (e) {

@@ -223,7 +223,7 @@ export function useAdminMobileNotifications() {
       await api.post('/notifications/admin/test-push', {
         endpoint: currentEndpoint || undefined,
       });
-      toast.success('Đã gửi thông báo đẩy thử nghiệm về điện thoại!', { icon: '🔔' });
+      toast.success('Đã gửi thông báo đẩy thử nghiệm tới thiết bị này!', { icon: '🔔' });
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Không thể gửi thông báo thử nghiệm.');
     } finally {

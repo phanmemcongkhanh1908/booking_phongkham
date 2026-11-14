@@ -524,97 +524,99 @@ export default function Dashboard() {
       
       {/* Admin Modern Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm print:hidden">
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <div className="flex h-16 items-center justify-between gap-2 sm:gap-3 lg:gap-4 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto">
           
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 shrink-0 max-w-[145px] lg:max-w-[180px]">
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl flex items-center justify-center text-white font-extrabold text-lg shadow-md shrink-0">
               {(clinicProfile?.clinicName || user?.clinicName || 'Dental Smart').charAt(0).toUpperCase()}
             </div>
             <div className="hidden sm:block min-w-0">
-              <h1 className="text-base font-bold text-slate-800 leading-tight truncate tracking-tight">
+              <h1 className="text-sm lg:text-base font-bold text-slate-800 leading-tight truncate tracking-tight">
                 {clinicProfile?.clinicName || user?.clinicName || 'Dental Smart'}
               </h1>
               {(clinicProfile?.doctorName || user?.doctorName) && (
-                <p className="text-xs text-slate-500 font-medium truncate">
+                <p className="text-[11px] text-slate-500 font-medium truncate">
                   BS. {clinicProfile?.doctorName || user?.doctorName}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Main Navigation (Desktop) - Flex centered without absolute to prevent collision */}
-          <nav className="hidden md:flex items-center justify-center space-x-1 lg:space-x-1.5 flex-1 min-w-0 px-1 sm:px-2">
-            {hasPermission('appointment.view') && (
-              <button 
-                onClick={() => setActiveTab('appointments')}
-                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
-                  activeTab === 'appointments' 
-                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
-                Lịch hẹn
-              </button>
-            )}
-            {hasPermission('appointment.view') && (
-              <button 
-                onClick={() => setActiveTab('history')}
-                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
-                  activeTab === 'history' 
-                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <History className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
-                Lịch sử
-              </button>
-            )}
-            {hasPermission('patient.view') && (
-              <button 
-                onClick={() => setActiveTab('patients')}
-                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
-                  activeTab === 'patients' 
-                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
-                Hồ sơ Bệnh án
-              </button>
-            )}
-            {!isSimpleMode && hasPermission('service.manage') && (
-              <button 
-                onClick={() => setActiveTab('services')}
-                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
-                  activeTab === 'services' 
-                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <LayoutList className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
-                Dịch vụ & Lịch
-              </button>
-            )}
-            {!isSimpleMode && hasPermission('analytics.view') && (
-              <button 
-                onClick={() => setActiveTab('analytics')}
-                className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 ${
-                  activeTab === 'analytics' 
-                    ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 xl:mr-2 shrink-0" />
-                Báo cáo
-              </button>
-            )}
+          {/* Main Navigation (Desktop) - Scroll-safe centered container preventing any left/right overlap */}
+          <nav className="hidden md:flex flex-1 min-w-0 overflow-x-auto no-scrollbar px-1">
+            <div className="flex items-center gap-1 lg:gap-1.5 mx-auto w-max">
+              {hasPermission('appointment.view') && (
+                <button 
+                  onClick={() => setActiveTab('appointments')}
+                  className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    activeTab === 'appointments' 
+                      ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 shrink-0" />
+                  Lịch hẹn
+                </button>
+              )}
+              {hasPermission('appointment.view') && (
+                <button 
+                  onClick={() => setActiveTab('history')}
+                  className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    activeTab === 'history' 
+                      ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 shrink-0" />
+                  Lịch sử
+                </button>
+              )}
+              {hasPermission('patient.view') && (
+                <button 
+                  onClick={() => setActiveTab('patients')}
+                  className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    activeTab === 'patients' 
+                      ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 shrink-0" />
+                  Bệnh án
+                </button>
+              )}
+              {!isSimpleMode && hasPermission('service.manage') && (
+                <button 
+                  onClick={() => setActiveTab('services')}
+                  className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    activeTab === 'services' 
+                      ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <LayoutList className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 shrink-0" />
+                  Dịch vụ
+                </button>
+              )}
+              {!isSimpleMode && hasPermission('analytics.view') && (
+                <button 
+                  onClick={() => setActiveTab('analytics')}
+                  className={`text-xs xl:text-sm font-semibold flex items-center px-2.5 xl:px-3 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    activeTab === 'analytics' 
+                      ? 'bg-teal-50 text-teal-700 font-bold shadow-2xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 xl:w-4 xl:h-4 mr-1.5 shrink-0" />
+                  Báo cáo
+                </button>
+              )}
+            </div>
           </nav>
 
           {/* Right Actions & User Menu */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-            {/* Quick Visit Public Booking Link - Expanded on large screens, compact icon on medium */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Quick Visit Public Booking Link */}
             {(() => {
               const activeSlug = user?.slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug');
               const publicUrl = activeSlug ? `/b/${activeSlug}?mode=customer` : '/book?mode=customer';
@@ -624,11 +626,11 @@ export default function Dashboard() {
                     href={publicUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold shadow-2xs transition-all shrink-0"
+                    className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-800 text-xs font-semibold shadow-2xs transition-all shrink-0"
                     title="Mở trang đặt lịch trực tuyến của phòng khám trong tab mới"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                    <span className="truncate max-w-[130px]">
+                    <span className="truncate max-w-[108px]">
                       {activeSlug ? `b/${activeSlug}` : 'Trang đặt lịch'}
                     </span>
                   </a>
@@ -645,27 +647,31 @@ export default function Dashboard() {
               );
             })()}
 
-            {/* Mobile / Desktop Notification & Broadcast Quick Setup Button */}
+            {/* Single Unified Notification & Broadcast Settings Button */}
             <button
               type="button"
               onClick={() => {
                 ServerSpeechEngine.unlockAudio();
                 setShowMobileNotifModal(true);
               }}
-              className={`relative p-2 rounded-full transition-colors flex items-center gap-1.5 border cursor-pointer ${
+              className={`relative p-2 rounded-full transition-colors flex items-center gap-1.5 border cursor-pointer shrink-0 ${
                 autoplayBlocked
-                  ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse px-2.5'
                   : isPushSubscribed && audioEnabled
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                   : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
-              title="Thông báo & Phát thanh trên điện thoại"
-              aria-label="Cài đặt thông báo điện thoại"
+              title="Cài đặt Thông báo & Phát thanh"
+              aria-label="Cài đặt Thông báo & Phát thanh"
             >
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden lg:inline text-xs font-bold pr-1">
-                {autoplayBlocked ? 'Bật loa' : 'TB Điện thoại'}
-              </span>
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+              {autoplayBlocked ? (
+                <span className="text-xs font-bold whitespace-nowrap">Bật loa</span>
+              ) : (
+                <span className="hidden 2xl:inline text-xs font-bold pr-1 whitespace-nowrap">
+                  Thông báo
+                </span>
+              )}
               <span
                 className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                   autoplayBlocked ? 'bg-amber-500' : isPushSubscribed ? 'bg-emerald-500' : 'bg-slate-400'
@@ -676,24 +682,24 @@ export default function Dashboard() {
             {/* Quick QR Scanner */}
             <button 
               onClick={() => setShowScanner(true)}
-              className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-colors hidden sm:flex"
+              className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-colors hidden sm:flex shrink-0 cursor-pointer"
               title="Quét mã QR"
             >
               <QrCode className="w-5 h-5" />
             </button>
             
             {/* User Dropdown Container */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button 
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 p-1.5 pr-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                className="flex items-center gap-2 p-1 sm:p-1.5 sm:pr-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm shrink-0">
                   {user?.username ? user.username.charAt(0).toUpperCase() : <UserCircle2 className="w-5 h-5" />}
                 </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-xs font-bold text-slate-700 leading-tight max-w-[100px] truncate">{user?.username || user?.email}</p>
-                  <p className="text-[10px] font-medium text-slate-500 leading-tight">{user?.role === 'role-admin' || user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</p>
+                <div className="hidden sm:block text-left min-w-0">
+                  <p className="text-xs font-bold text-slate-700 leading-tight max-w-[90px] truncate">{user?.username || user?.email}</p>
+                  <p className="text-[10px] font-medium text-slate-500 leading-tight whitespace-nowrap">{user?.role === 'role-admin' || user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</p>
                 </div>
               </button>
 
@@ -733,8 +739,8 @@ export default function Dashboard() {
                       )}
                     </div>
 
-                    <div className="p-2 border-t border-slate-50 flex flex-col gap-1">
-                      {user?.tenantId && (
+                    {user?.tenantId && (
+                      <div className="p-2 border-t border-slate-50 flex flex-col gap-1">
                         <div className="px-1">
                           <button 
                             type="button"
@@ -778,50 +784,8 @@ export default function Dashboard() {
                             </div>
                           </button>
                         </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          ServerSpeechEngine.unlockAudio();
-                          setShowMobileNotifModal(true);
-                        }}
-                        className="flex items-center justify-between px-3 py-2 text-sm font-medium text-teal-700 bg-teal-50/70 hover:bg-teal-100/80 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center">
-                          <Smartphone className="w-4 h-4 mr-3 text-teal-600" />
-                          Cài App &amp; Thông báo ĐT
-                        </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPushSubscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {isPushSubscribed ? 'Đã bật' : 'Cài đặt'}
-                        </span>
-                      </button>
-
-                      <button 
-                        onClick={() => {
-                          if (!audioEnabled) {
-                            ServerSpeechEngine.unlockAudio();
-                            TTSQueueManager.clearAutoplayBlocked();
-                            setAudioEnabled(true);
-                            useBroadcastStore.getState().setEnabled(true);
-                          } else {
-                            TTSQueueManager.clear();
-                            setAudioEnabled(false);
-                            useBroadcastStore.getState().setEnabled(false);
-                          }
-                        }}
-                        className="flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-colors"
-                      >
-                        <div className="flex items-center">
-                          {audioEnabled ? <Volume2 className="w-4 h-4 mr-3 text-emerald-500" /> : <VolumeX className="w-4 h-4 mr-3 text-slate-400" />}
-                          Âm thanh thông báo
-                        </div>
-                        <div className={`w-8 h-4 rounded-full relative transition-colors ${audioEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                          <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${audioEnabled ? 'left-4.5' : 'left-0.5'}`}></div>
-                        </div>
-                      </button>
-                    </div>
+                      </div>
+                    )}
 
                     <div className="p-2 border-t border-slate-50">
                       <button 
@@ -1916,7 +1880,7 @@ export default function Dashboard() {
 
       <IdleTimeoutManager />
 
-      {/* Mobile Notification, Broadcast & Home Screen Install Drawer Modal */}
+      {/* Unified Notification, Broadcast & Device Setup Modal */}
       {showMobileNotifModal && (
         <div
           role="dialog"
@@ -1926,16 +1890,16 @@ export default function Dashboard() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg max-h-[90dvh] bg-slate-50 rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
+            className="w-full max-w-2xl max-h-[90dvh] bg-slate-50 rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
           >
             <div className="bg-white px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
-                  <Smartphone className="w-5 h-5" />
+                  <Bell className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">
-                    Thông báo &amp; Phát thanh trên Điện thoại
+                    Trung tâm Thông báo &amp; Phát thanh
                   </h3>
                   <p className="text-xs text-slate-500 truncate">
                     {clinicProfile?.clinicName || user?.clinicName || 'Trang Quản Trị Phòng Khám'}

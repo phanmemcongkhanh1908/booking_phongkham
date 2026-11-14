@@ -1,5 +1,6 @@
 import { useVoiceStore } from '../../store/voiceStore';
 import { BrowserSpeechEngine } from './BrowserSpeechEngine';
+import { OfflineVoicePackService } from './OfflineVoicePackService';
 
 export interface SpeakOptions {
   playChime?: boolean;
@@ -229,8 +230,24 @@ export class ServerSpeechEngine {
       }
     }
 
-    // Helper: Try Offline/Browser Vietnamese Voice (strictly Vietnamese, never broken English accent)
+    // Helper: Try In-App Offline Voice Pack first (or OS Vietnamese voice) without network dependency
     const tryOfflineVietnamese = async (): Promise<SpeakResult> => {
+      if (OfflineVoicePackService.isInstalled()) {
+        this.unlockAudio();
+        const packRes = await OfflineVoicePackService.speakOffline(
+          text,
+          playVolume,
+          this.audioCtx,
+          () => myGen !== this.activeGeneration
+        );
+        if (myGen !== this.activeGeneration) {
+          return { played: false, cancelled: true, engineUsed: 'none' };
+        }
+        if (packRes.played && ((packRes.coverage ?? 0) >= 0.75 || !BrowserSpeechEngine.hasVietnameseVoice())) {
+          return { played: true, engineUsed: 'browser_offline' };
+        }
+      }
+
       const res = await BrowserSpeechEngine.speakVietnamese(text, {
         requireVietnameseVoice: true,
       });
@@ -244,6 +261,21 @@ export class ServerSpeechEngine {
       if (res.spoken) {
         return { played: true, engineUsed: 'browser_offline' };
       }
+
+      // Final offline attempt if pack was partially matched even with low threshold
+      if (OfflineVoicePackService.isInstalled()) {
+        this.unlockAudio();
+        const packRetry = await OfflineVoicePackService.speakOffline(
+          text,
+          playVolume,
+          this.audioCtx,
+          () => myGen !== this.activeGeneration
+        );
+        if (packRetry.played) {
+          return { played: true, engineUsed: 'browser_offline' };
+        }
+      }
+
       return { played: false, engineUsed: 'none' };
     };
 
@@ -442,12 +474,54 @@ export class ServerSpeechEngine {
     });
   }
 
+  public static async testOfflineVoice(
+    playChime: boolean = true,
+    preferredVoiceURI?: string
+  ): Promise<{ ok: boolean; source?: 'offline_pack' | 'os_voice' }> {
+    this.cancel();
+    const myGen = this.activeGeneration;
+    this.unlockAudio();
+
+    if (playChime) {
+      const chime = await this.playChimeDetailed(myGen);
+      if (chime.cancelled || chime.autoplayBlocked) {
+        return { ok: false };
+      }
+      await this.waitMs(200, myGen);
+    }
+
+    const { volume } = useVoiceStore.getState();
+    const playVolume = Math.max(0.1, Math.min(1.0, volume || 0.9));
+
+    if (OfflineVoicePackService.isInstalled()) {
+      const res = await OfflineVoicePackService.speakOffline(
+        'Kiểm tra gói giọng đọc tiếng Việt ngoại tuyến thành công.',
+        playVolume,
+        this.audioCtx,
+        () => myGen !== this.activeGeneration
+      );
+      if (res.played) {
+        return { ok: true, source: 'offline_pack' };
+      }
+    }
+
+    const osRes = await BrowserSpeechEngine.speakVietnamese(
+      'Kiểm tra giọng đọc tiếng Việt ngoại tuyến trên thiết bị của bạn.',
+      { requireVietnameseVoice: true, preferredVoiceURI }
+    );
+    if (osRes.spoken) {
+      return { ok: true, source: 'os_voice' };
+    }
+    return { ok: false };
+  }
+
   public static getGenerationId(): number {
     return this.activeGeneration;
   }
 
   public static cancel() {
     this.activeGeneration++;
+    OfflineVoicePackService.stop();
 
     if (this.chimeTimer) {
       clearTimeout(this.chimeTimer);

@@ -189,7 +189,7 @@ export default function BroadcastAlertBar() {
                 )}
                 <span className="truncate font-semibold">
                   {autoplayBlocked
-                    ? 'Điện thoại tạm khóa loa tự động'
+                    ? 'Thiết bị tạm khóa loa tự động'
                     : isPlaying
                     ? 'Đang phát nhạc hiệu & giọng đọc...'
                     : 'Phát thanh Tiếng Việt sẵn sàng'}
