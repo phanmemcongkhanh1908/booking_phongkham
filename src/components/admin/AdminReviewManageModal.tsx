@@ -41,6 +41,22 @@ export default function AdminReviewManageModal({
   const isHidden = Boolean(appointment.isReviewHidden);
   const isRatingHidden = Boolean(appointment.isRatingHidden);
   const rating = Number(appointment.rating) || 5;
+  const serviceRatingEntries: Array<{ id: string; name: string; score: number }> = (() => {
+    if (!appointment.serviceRatings || typeof appointment.serviceRatings !== 'object') return [];
+    const itemsMap = new Map<string, string>();
+    if (Array.isArray(appointment.serviceItems)) {
+      for (const it of appointment.serviceItems) {
+        if (it?.id && it?.name) itemsMap.set(it.id, it.name);
+      }
+    }
+    return Object.entries(appointment.serviceRatings)
+      .map(([sId, rawVal]) => ({
+        id: sId,
+        name: itemsMap.get(sId) || 'Dịch vụ đã đặt',
+        score: Number(rawVal),
+      }))
+      .filter((x) => Number.isFinite(x.score) && x.score >= 1 && x.score <= 5);
+  })();
 
   const handleToggleVisibility = async () => {
     setLoadingAction('toggle');
@@ -49,12 +65,12 @@ export default function AdminReviewManageModal({
         isReviewHidden: !isHidden
       });
       if (res.data?.success) {
-        toast.success(res.data.message || (isHidden ? 'Đã hiện đánh giá công khai' : 'Đã ẩn đánh giá khỏi trang công khai'));
+        toast.success(res.data.message || (isHidden ? 'Đã hiện nhận xét đánh giá công khai' : 'Đã ẩn nhận xét đánh giá khỏi trang công khai'));
         onSuccess();
         onClose();
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Không thể cập nhật trạng thái hiển thị đánh giá');
+      toast.error(err.response?.data?.error?.message || 'Không thể cập nhật trạng thái hiển thị nhận xét');
     } finally {
       setLoadingAction(null);
     }
@@ -96,7 +112,7 @@ export default function AdminReviewManageModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 my-8">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/70">
@@ -106,7 +122,7 @@ export default function AdminReviewManageModal({
             </div>
             <div>
               <h3 className="font-extrabold text-slate-800 text-base">Quản lý Đánh giá Bệnh nhân</h3>
-              <p className="text-xs text-slate-500">Ẩn / Hiện trên trang công khai hoặc gỡ bỏ đánh giá</p>
+              <p className="text-xs text-slate-500">Ẩn / Hiện riêng điểm sao hoặc nội dung nhận xét</p>
             </div>
           </div>
           <button 
@@ -132,8 +148,8 @@ export default function AdminReviewManageModal({
               )}
             </div>
             <div className="flex items-center justify-between text-slate-600">
-              <span className="flex items-center gap-1.5 truncate max-w-[240px]">
-                <Stethoscope className="w-3.5 h-3.5 text-slate-400" />
+              <span className="flex items-center gap-1.5 truncate max-w-[260px]">
+                <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 {appointment.serviceName || appointment.customServiceName || 'Dịch vụ khám'}
               </span>
               {appointment.startAt && (
@@ -153,11 +169,11 @@ export default function AdminReviewManageModal({
                   {[1, 2, 3, 4, 5].map((s) => (
                     <Star
                       key={s}
-                      className={`w-5 h-5 ${s <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`}
+                      className={`w-5 h-5 ${s <= Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`}
                     />
                   ))}
                 </div>
-                <span className="font-extrabold text-sm text-slate-800">
+                <span className="font-extrabold text-sm text-slate-800 tabular-nums">
                   {rating}/5 Sao
                 </span>
                 {isRatingHidden ? (
@@ -173,19 +189,33 @@ export default function AdminReviewManageModal({
                 )}
               </div>
 
-              {/* Review status pill */}
+              {/* Review status */}
               {isHidden ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
                   <EyeOff className="w-3.5 h-3.5 text-amber-700" />
-                  Đang ẨN ĐÁNH GIÁ
+                  Đang ẨN NHẬN XÉT
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                  Đang HIỆN CÔNG KHAI
+                  Đang HIỆN NHẬN XÉT
                 </span>
               )}
             </div>
+
+            {serviceRatingEntries.length > 1 && (
+              <div className="bg-white/80 rounded-xl border border-amber-200/70 p-2.5 space-y-1">
+                <span className="text-[11px] font-bold text-slate-600 block">
+                  Điểm sao chi tiết theo dịch vụ:
+                </span>
+                {serviceRatingEntries.map((entry) => (
+                  <div key={entry.id} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-700 truncate pr-2">{entry.name}</span>
+                    <span className="font-bold text-amber-700 tabular-nums shrink-0">{entry.score}/5 ★</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {appointment.reviewTags && appointment.reviewTags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
@@ -209,21 +239,21 @@ export default function AdminReviewManageModal({
             )}
 
             {appointment.reviewedAt && (
-              <p className="text-[11px] text-slate-400 text-right">
+              <p className="text-[11px] text-slate-400 text-right tabular-nums">
                 Đánh giá lúc: {format(new Date(appointment.reviewedAt), 'dd/MM/yyyy HH:mm')}
               </p>
             )}
           </div>
 
-          {/* Visibility Info Banners */}
+          {/* Decoupled Visibility Info Banners */}
           <div className="space-y-2">
             {isHidden ? (
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-900 leading-relaxed">
                 <EyeOff className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Đánh giá này đang bị ẩn toàn bộ</p>
-                  <p className="text-amber-700 mt-0.5">
-                    Đánh giá không xuất hiện trên trang đặt lịch công khai và danh sách phản hồi khách hàng.
+                  <p className="font-bold">Nội dung nhận xét đang bị ẨN</p>
+                  <p className="text-amber-800 mt-0.5">
+                    Bình luận và thẻ nhận xét không hiển thị trên trang đặt lịch công khai. (Điểm sao vẫn được tính trung bình nếu chưa bấm Ẩn điểm sao).
                   </p>
                 </div>
               </div>
@@ -231,9 +261,9 @@ export default function AdminReviewManageModal({
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-900 leading-relaxed">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Nội dung đánh giá đang hiển thị công khai</p>
+                  <p className="font-bold">Nội dung nhận xét đang HIỆN công khai</p>
                   <p className="text-emerald-700 mt-0.5">
-                    Đánh giá xuất hiện trên trang phòng khám và widget độ uy tín để tạo niềm tin cho bệnh nhân mới.
+                    Nhận xét xuất hiện trong mục đánh giá dịch vụ và widget uy tín để bệnh nhân mới tham khảo.
                   </p>
                 </div>
               </div>
@@ -243,14 +273,14 @@ export default function AdminReviewManageModal({
               <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200 flex items-start gap-2 text-xs text-purple-900 leading-relaxed">
                 <EyeOff className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold">Điểm sao ({rating}★) đang bị ẨN:</span> Điểm này không xuất hiện công khai và không tính vào điểm sao trung bình của phòng khám.
+                  <span className="font-bold">Điểm sao ({rating}★) đang bị ẨN:</span> Điểm này bị ẩn trên giao diện công khai và được loại trừ khỏi điểm sao trung bình của dịch vụ/phòng khám.
                 </div>
               </div>
             ) : (
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-2 text-xs text-slate-700 leading-relaxed">
                 <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold">Điểm sao ({rating}★) đang HIỆN:</span> Điểm sao được hiển thị và tính vào điểm trung bình uy tín của dịch vụ/phòng khám.
+                  <span className="font-bold">Điểm sao ({rating}★) đang HIỆN:</span> Điểm sao được hiển thị và tính vào điểm trung bình thực tế của dịch vụ/phòng khám.
                 </div>
               </div>
             )}
@@ -334,7 +364,7 @@ export default function AdminReviewManageModal({
               <span>{isRatingHidden ? 'Hiện điểm sao' : 'Ẩn điểm sao'}</span>
             </button>
 
-            {/* Nút Ẩn / Hiện Toàn Bộ Đánh Giá */}
+            {/* Nút Ẩn / Hiện Nhận xét */}
             <button
               type="button"
               disabled={loadingAction === 'toggle'}
@@ -352,7 +382,7 @@ export default function AdminReviewManageModal({
               ) : (
                 <EyeOff className="w-3.5 h-3.5" />
               )}
-              <span>{isHidden ? 'Hiện đánh giá' : 'Ẩn đánh giá'}</span>
+              <span>{isHidden ? 'Hiện nhận xét' : 'Ẩn nhận xét'}</span>
             </button>
           </div>
         </div>

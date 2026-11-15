@@ -41,7 +41,10 @@ interface HistoryTransaction extends BookingHistoryItem {
   durationMins?: number;
   cancelReason?: string;
   rating?: number | null;
+  serviceRatings?: Record<string, number> | null;
   reviewComment?: string;
+  isReviewHidden?: boolean;
+  isRatingHidden?: boolean;
   updatedAt?: string | null;
 }
 
@@ -848,9 +851,15 @@ export default function AppointmentHistoryView() {
                             {(item.notes || (item.rating && item.rating > 0)) && (
                               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 pt-0.5">
                                 {item.rating && item.rating > 0 && (
-                                  <span className="inline-flex items-center gap-1 font-semibold text-amber-700 tabular-nums">
+                                  <span className="inline-flex flex-wrap items-center gap-1 font-semibold text-amber-700 tabular-nums">
                                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
                                     {item.rating}/5
+                                    {item.isRatingHidden && (
+                                      <span className="text-[11px] font-medium text-purple-700">(Đã ẩn sao)</span>
+                                    )}
+                                    {item.isReviewHidden && (
+                                      <span className="text-[11px] font-medium text-amber-700">(Đã ẩn nhận xét)</span>
+                                    )}
                                     {item.reviewComment && (
                                       <span className="font-normal text-slate-600">
                                         — &ldquo;{item.reviewComment}&rdquo;
@@ -1012,8 +1021,11 @@ export default function AppointmentHistoryView() {
                         {item.cancelReason ? (
                           <span className="text-rose-700 font-medium">{item.cancelReason}</span>
                         ) : item.rating ? (
-                          <span className="text-amber-700 font-semibold">
-                            {item.rating}/5★{item.reviewComment ? ` — ${item.reviewComment}` : ''}
+                          <span className="text-amber-700 font-semibold tabular-nums">
+                            {item.rating}/5★
+                            {item.isRatingHidden ? ' (Đã ẩn sao)' : ''}
+                            {item.isReviewHidden ? ' (Đã ẩn nhận xét)' : ''}
+                            {item.reviewComment ? ` — ${item.reviewComment}` : ''}
                           </span>
                         ) : (
                           <span className="text-slate-500">{item.notes || '—'}</span>

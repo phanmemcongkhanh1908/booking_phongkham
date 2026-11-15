@@ -12,7 +12,7 @@ import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import ClinicReputationWidget from '../../components/ClinicReputationWidget';
 import GoogleCalendarSyncCard from './components/GoogleCalendarSyncCard';
 import { useBookingStore } from '../../store/booking';
-import { fetchClinicSettings } from '../../services/clinicResolver';
+import { fetchClinicSettings, invalidateClinicCache } from '../../services/clinicResolver';
 import CustomerBookingHistoryModal, { BookingHistoryItem, resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 
 interface AppointmentData {
@@ -21,6 +21,9 @@ interface AppointmentData {
   endAt: string;
   status: string;
   serviceId: string;
+  serviceIds?: string[] | null;
+  serviceItems?: Array<{ id: string; name: string }> | null;
+  serviceRatings?: Record<string, number> | null;
   serviceName: string;
   providerName: string | null;
   patientName: string;
@@ -109,6 +112,7 @@ export default function MyBooking() {
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [reviewModalApt, setReviewModalApt] = useState<AppointmentData | null>(null);
+  const [reputationRefreshKey, setReputationRefreshKey] = useState(0);
   const [allBookingHistory, setAllBookingHistory] = useState<BookingHistoryItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   
@@ -119,6 +123,7 @@ export default function MyBooking() {
         return {
           ...a,
           rating: updatedData?.rating || reviewModalApt.rating || 5,
+          serviceRatings: updatedData?.serviceRatings || reviewModalApt.serviceRatings,
           reviewComment: updatedData?.reviewComment !== undefined ? updatedData.reviewComment : reviewModalApt.reviewComment,
           reviewTags: updatedData?.reviewTags || reviewModalApt.reviewTags,
           reviewedAt: updatedData?.reviewedAt || new Date().toISOString()
@@ -126,6 +131,8 @@ export default function MyBooking() {
       }
       return a;
     }));
+    invalidateClinicCache();
+    setReputationRefreshKey(k => k + 1);
   };
   
   const handleCancel = async (id: string) => {
@@ -359,7 +366,7 @@ export default function MyBooking() {
             
             <PushNotificationPrompt phone={searchPhone || verifiedPhone} />
 
-            <ClinicReputationWidget variant="compact" />
+            <ClinicReputationWidget variant="compact" refreshKey={reputationRefreshKey} />
 
             {appointments.map(apt => {
               const mappedStatus = STATUS_ALIASES[apt.status] || apt.status;
@@ -469,6 +476,24 @@ export default function MyBooking() {
                                 Chỉnh sửa
                               </button>
                             </div>
+
+                            {apt.serviceRatings && Object.keys(apt.serviceRatings).length > 1 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {Object.entries(apt.serviceRatings).map(([sId, score]) => {
+                                  const matchedItem = (apt.serviceItems || []).find((item) => item.id === sId);
+                                  const sName = matchedItem?.name || sId;
+                                  return (
+                                    <span
+                                      key={sId}
+                                      className="inline-flex items-center gap-1 text-[11px] bg-white/90 border border-amber-200/70 text-slate-700 px-2 py-0.5 rounded-lg font-medium"
+                                    >
+                                      <span>{sName}:</span>
+                                      <strong className="text-amber-600 tabular-nums">{score}★</strong>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {apt.reviewTags && apt.reviewTags.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">

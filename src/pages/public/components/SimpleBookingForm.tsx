@@ -6,13 +6,14 @@ import { format, addDays, startOfToday, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { 
   Stethoscope, Calendar as CalendarIcon, Clock, User, Users, Phone, Mail, FileText, Send, Loader2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, CalendarCheck,
-  ChevronLeft, ChevronRight, CalendarDays, CalendarClock
+  ChevronLeft, ChevronRight, CalendarDays, CalendarClock, Star, MessageSquareText
 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 import { PWAInstallBanner } from './PWAInstallBanner';
 import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
+import ServiceReviewsModal from '../../../components/ServiceReviewsModal';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -24,6 +25,16 @@ interface Service {
   price: number;
   description?: string;
   showPrice?: boolean;
+  showRating?: boolean;
+  showReviews?: boolean;
+  ratingStats?: {
+    averageRating?: number | null;
+    ratedCount?: number;
+    visibleReviewsCount?: number;
+    showRating?: boolean;
+    showReviews?: boolean;
+    ratingDistribution?: Record<number, number>;
+  };
 }
 
 interface Slot {
@@ -73,6 +84,7 @@ export default function SimpleBookingForm() {
   const [lastServiceId, setLastServiceId] = useState<string | null>(null);
   const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [reviewsModalService, setReviewsModalService] = useState<Service | null>(null);
   const checkTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +92,8 @@ export default function SimpleBookingForm() {
   
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const clinicProfile = useBookingStore(s => s.clinicProfile);
+  const storeTenantId = useBookingStore(s => s.tenantId);
+  const activeSlug = slug || getActiveRouteClinicSlug() || undefined;
   const setStepStore = useBookingStore(s => s.setStep);
   const setAppointmentSuccess = useBookingStore(s => s.setAppointmentSuccess);
 
@@ -118,13 +132,18 @@ export default function SimpleBookingForm() {
   const hasFallbackFetchedRef = useRef(false);
 
   useEffect(() => {
+    const publicParams = {
+      ...(activeSlug ? { slug: activeSlug } : {}),
+      ...(storeTenantId ? { tenantId: storeTenantId } : {}),
+    };
+
     if (bundleServices && bundleServices.length > 0) {
       setServices(bundleServices as Service[]);
       setLoadingServices(false);
     } else if (!bundleLoading && !hasFallbackFetchedRef.current) {
       hasFallbackFetchedRef.current = true;
       // Fallback
-      api.get('/public/services')
+      api.get('/public/services', { params: publicParams })
         .then(res => {
           if (res.data?.success && Array.isArray(res.data.data)) {
             setServices(res.data.data);
@@ -137,7 +156,29 @@ export default function SimpleBookingForm() {
     } else if (!bundleLoading && bundleServices && bundleServices.length === 0) {
       setLoadingServices(false);
     }
-  }, [bundleServices, bundleLoading]);
+  }, [bundleServices, bundleLoading, activeSlug, storeTenantId]);
+
+  // Silent background revalidation so live star scores & visibility toggles stay fresh immediately
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/public/services', {
+        params: {
+          ...(activeSlug ? { slug: activeSlug } : {}),
+          ...(storeTenantId ? { tenantId: storeTenantId } : {}),
+        },
+      })
+      .then((res) => {
+        if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          setServices(res.data.data);
+          setLoadingServices(false);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSlug, storeTenantId]);
 
   useEffect(() => {
     // 2. Fetch Slots when services or date changes
@@ -402,12 +443,21 @@ export default function SimpleBookingForm() {
             ) : (
               services.map(svc => {
                 const isSelected = selectedServiceIds.includes(svc.id);
+                const canShowRating = svc.showRating !== false && Number(svc.ratingStats?.ratedCount || 0) > 0;
+                const canShowReviews = svc.showReviews !== false && Number(svc.ratingStats?.visibleReviewsCount || 0) > 0;
                 return (
-                  <button
+                  <div
                     key={svc.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleToggleService(svc.id)}
-                    className={`group relative flex items-center justify-between w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-200 outline-none text-left cursor-pointer active:scale-[0.99] select-none ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleToggleService(svc.id);
+                      }
+                    }}
+                    className={`group relative flex items-center justify-between w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-200 outline-none text-left cursor-pointer active:scale-[0.99] select-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
                       isSelected 
                         ? 'bg-teal-50/90 border-2 border-teal-600 shadow-sm shadow-teal-600/10' 
                         : 'bg-white hover:bg-slate-50/80 border border-slate-200 hover:border-teal-300 shadow-2xs'
@@ -446,6 +496,31 @@ export default function SimpleBookingForm() {
                             </span>
                           )}
                         </div>
+
+                        {(canShowRating || canShowReviews) && (
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {canShowRating && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[10px] sm:text-[11px] font-bold text-amber-800 tabular-nums">
+                                <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                                <span>{Number(svc.ratingStats?.averageRating || 0).toFixed(1)}</span>
+                                <span className="text-amber-700/80 font-medium">({svc.ratingStats?.ratedCount})</span>
+                              </span>
+                            )}
+                            {canShowReviews && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReviewsModalService(svc);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 border border-slate-200/80 hover:border-teal-200 text-[10px] sm:text-[11px] font-semibold transition-colors cursor-pointer"
+                              >
+                                <MessageSquareText className="w-3 h-3 shrink-0" />
+                                <span>Xem nhận xét ({svc.ratingStats?.visibleReviewsCount})</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -463,7 +538,7 @@ export default function SimpleBookingForm() {
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}
@@ -979,6 +1054,14 @@ export default function SimpleBookingForm() {
         customerName={formData.fullName}
         customerPhone={formData.phone}
         appointments={bookingHistory}
+      />
+
+      <ServiceReviewsModal
+        isOpen={!!reviewsModalService}
+        onClose={() => setReviewsModalService(null)}
+        service={reviewsModalService}
+        clinicSlug={activeSlug}
+        tenantId={storeTenantId}
       />
     </div>
   );

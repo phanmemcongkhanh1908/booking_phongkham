@@ -29,12 +29,13 @@ import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarnin
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone, History } from 'lucide-react';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone, History, Eye, EyeOff, MessageSquareText } from 'lucide-react';
 import AppointmentReviewModal from '../../components/AppointmentReviewModal';
 import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
 import { resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 import MobileNotificationControls from '../../components/admin/MobileNotificationControls';
 import { useAdminManifestBinding, useAdminMobileNotifications } from '../../hooks/useAdminMobileNotifications';
+import { invalidateClinicCache } from '../../services/clinicResolver';
 
 export default function Dashboard() {
   const { logout, user } = useAuthStore((state) => state);
@@ -48,6 +49,8 @@ export default function Dashboard() {
   const [checkingQuota, setCheckingQuota] = useState(false);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
+  const [clinicServices, setClinicServices] = useState<any[]>([]);
+  const [togglingServiceVis, setTogglingServiceVis] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -268,11 +271,57 @@ export default function Dashboard() {
     }
   };
 
+  const fetchClinicServices = async () => {
+    try {
+      const res = await api.get('/admin/services');
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setClinicServices(res.data.data);
+      }
+    } catch (error: any) {
+      if (error?.response?.status !== 401) {
+        console.error('Failed to load clinic services', error);
+      }
+    }
+  };
+
+  const handleToggleServiceReviewVisibility = async (
+    svc: any,
+    field: 'showRating' | 'showReviews'
+  ) => {
+    const currentVal = field === 'showRating' ? svc.showRating !== false : svc.showReviews !== false;
+    const nextVal = !currentVal;
+    const key = `${svc.id}:${field}`;
+    setTogglingServiceVis(key);
+    try {
+      const res = await api.patch(`/admin/services/${svc.id}/review-visibility`, {
+        [field]: nextVal,
+      });
+      if (res.data?.success) {
+        invalidateClinicCache();
+        toast.success(
+          field === 'showRating'
+            ? nextVal
+              ? `Đã bật hiển thị sao cho "${svc.name}"`
+              : `Đã ẩn điểm sao cho "${svc.name}"`
+            : nextVal
+              ? `Đã bật hiển thị nhận xét cho "${svc.name}"`
+              : `Đã ẩn nhận xét cho "${svc.name}"`
+        );
+        fetchClinicServices();
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Không thể cập nhật trạng thái hiển thị dịch vụ');
+    } finally {
+      setTogglingServiceVis(null);
+    }
+  };
+
   useEffect(() => {
     knownAppointmentIds.current.clear();
     isInitialLoad.current = true;
     fetchAppointments();
     fetchPatients();
+    fetchClinicServices();
   }, [user?.id, user?.tenantId]);
 
   const notifiedApptsRef = useRef<Set<string>>(new Set());
@@ -481,11 +530,32 @@ export default function Dashboard() {
       const hasReview = Boolean(apt.rating && apt.rating > 0);
       if (!hasReview) return false;
 
-      // Filter by service
+      // Filter by service (supports clinicService.id / originalId / name as well as multi-service arrays)
       if (reviewServiceFilter !== 'ALL') {
-        const matchesService = 
-          apt.serviceId === reviewServiceFilter || 
-          (Array.isArray(apt.serviceIds) && apt.serviceIds.includes(reviewServiceFilter)) ||
+        const selectedSvcObj = clinicServices.find(
+          (s) => s.id === reviewServiceFilter || s.originalId === reviewServiceFilter || s.name === reviewServiceFilter
+        );
+        const candidateTokens = Array.from(
+          new Set(
+            [
+              reviewServiceFilter,
+              selectedSvcObj?.id,
+              selectedSvcObj?.originalId,
+              selectedSvcObj?.name,
+            ]
+              .filter(Boolean)
+              .map((x) => String(x).trim())
+          )
+        );
+        const aptSvcIds = [
+          apt.serviceId,
+          ...(Array.isArray(apt.serviceIds) ? apt.serviceIds : []),
+        ].filter(Boolean);
+        const matchesService =
+          candidateTokens.some((tok) => aptSvcIds.includes(tok)) ||
+          (selectedSvcObj?.name &&
+            typeof apt.serviceName === 'string' &&
+            apt.serviceName.toLowerCase().includes(selectedSvcObj.name.toLowerCase())) ||
           apt.serviceName === reviewServiceFilter ||
           apt.customServiceName === reviewServiceFilter;
         if (!matchesService) return false;
@@ -1180,58 +1250,149 @@ export default function Dashboard() {
                     </button>
                   </div>
 
-                  {/* Secondary Toolbar for REVIEWS Filter: Service & Visibility */}
+                  {/* Secondary Toolbar & Per-Service Star Management for REVIEWS Filter */}
                   {statusFilter === 'REVIEWS' && (
-                    <div className="p-3 bg-gradient-to-r from-amber-50/80 to-orange-50/50 border border-amber-200/80 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-1.5 font-bold text-amber-950">
-                          <Star className="w-4 h-4 fill-amber-400 text-amber-600" />
-                          <span>Quản lý Đánh giá:</span>
+                    <div className="space-y-3 animate-in fade-in duration-200">
+                      <div className="p-3 bg-gradient-to-r from-amber-50/80 to-orange-50/50 border border-amber-200/80 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                            <Star className="w-4 h-4 fill-amber-400 text-amber-600" />
+                            <span>Quản lý Đánh giá:</span>
+                          </div>
+
+                          {/* Filter by Service */}
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-slate-600 font-medium">Dịch vụ:</label>
+                            <select
+                              value={reviewServiceFilter}
+                              onChange={(e) => setReviewServiceFilter(e.target.value)}
+                              className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            >
+                              <option value="ALL">Tất cả dịch vụ</option>
+                              {clinicServices.length > 0
+                                ? clinicServices.map((svc) => (
+                                    <option key={svc.id} value={svc.id}>
+                                      {svc.name}
+                                    </option>
+                                  ))
+                                : Array.from(
+                                    new Set(
+                                      appointments
+                                        .filter((a) => a.rating && a.rating > 0)
+                                        .map((a) => a.serviceName || a.customServiceName || 'Dịch vụ khám')
+                                    )
+                                  ).map((sName) => (
+                                    <option key={sName} value={sName}>
+                                      {sName}
+                                    </option>
+                                  ))}
+                            </select>
+                          </div>
+
+                          {/* Filter by Visibility */}
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-slate-600 font-medium">Trạng thái:</label>
+                            <select
+                              value={reviewVisibilityFilter}
+                              onChange={(e) => setReviewVisibilityFilter(e.target.value as any)}
+                              className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                            >
+                              <option value="ALL">Tất cả đánh giá</option>
+                              <option value="VISIBLE">Đang hiện công khai</option>
+                              <option value="HIDDEN_REVIEW">Đã ẩn nhận xét</option>
+                              <option value="HIDDEN_RATING">Đã ẩn điểm sao</option>
+                            </select>
+                          </div>
                         </div>
 
-                        {/* Filter by Service */}
-                        <div className="flex items-center gap-1.5">
-                          <label className="text-slate-600 font-medium">Dịch vụ:</label>
-                          <select
-                            value={reviewServiceFilter}
-                            onChange={(e) => setReviewServiceFilter(e.target.value)}
-                            className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                          >
-                            <option value="ALL">Tất cả dịch vụ</option>
-                            {Array.from(
-                              new Set(
-                                appointments
-                                  .filter(a => a.rating && a.rating > 0)
-                                  .map(a => a.serviceName || a.customServiceName || 'Dịch vụ khám')
-                              )
-                            ).map(sName => (
-                              <option key={sName} value={sName}>{sName}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Filter by Visibility */}
-                        <div className="flex items-center gap-1.5">
-                          <label className="text-slate-600 font-medium">Trạng thái:</label>
-                          <select
-                            value={reviewVisibilityFilter}
-                            onChange={(e) => setReviewVisibilityFilter(e.target.value as any)}
-                            className="bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                          >
-                            <option value="ALL">Tất cả đánh giá</option>
-                            <option value="VISIBLE">Đang hiện công khai</option>
-                            <option value="HIDDEN_REVIEW">Đã ẩn đánh giá</option>
-                            <option value="HIDDEN_RATING">Đã ẩn điểm sao</option>
-                          </select>
+                        <div className="flex items-center gap-2 text-slate-500 text-[11px] tabular-nums">
+                          <span>Tìm thấy <strong>{displayedAppointments.length}</strong> đánh giá</span>
+                          <span className="hidden sm:inline text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-lg font-medium">
+                            Bấm vào nút điểm sao (★) từng lịch để ẩn/hiện riêng lẻ
+                          </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-slate-500 text-[11px]">
-                        <span>Tìm thấy <strong>{displayedAppointments.length}</strong> đánh giá</span>
-                        <span className="hidden sm:inline text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-lg font-medium">
-                          💡 Bấm vào điểm sao (★) để mở bảng ẩn/hiện hoặc xóa
-                        </span>
-                      </div>
+                      {/* Per-Service Rating Summary & Visibility Matrix */}
+                      {clinicServices.length > 0 && (
+                        <div className="p-3.5 bg-white border border-slate-200 rounded-2xl space-y-2.5">
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="font-bold text-slate-800">
+                              Điểm sao &amp; Tùy chọn Ẩn/Hiện theo từng Dịch vụ
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Áp dụng trực tiếp lên trang đặt lịch khách hàng
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                            {clinicServices.map((svc) => {
+                              const rStats = svc.ratingStats || {};
+                              const avg = rStats.actualAverageRating;
+                              const ratedCount = Number(rStats.ratedCount || 0);
+                              const totalSubmitted = Number(rStats.totalSubmittedReviews || 0);
+                              const visibleComments = Number(rStats.visibleReviewsCount || 0);
+                              const showRating = svc.showRating !== false;
+                              const showReviews = svc.showReviews !== false;
+
+                              return (
+                                <div
+                                  key={svc.id}
+                                  className="p-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 flex flex-col justify-between gap-2"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="text-xs font-bold text-slate-800 line-clamp-1">
+                                      {svc.name}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-700 shrink-0 tabular-nums">
+                                      <Star
+                                        className={`w-3.5 h-3.5 ${
+                                          ratedCount > 0 ? 'fill-amber-400 text-amber-500' : 'text-slate-300'
+                                        }`}
+                                      />
+                                      {avg != null ? Number(avg).toFixed(1) : '—'}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] text-slate-500 tabular-nums">
+                                    {totalSubmitted > 0
+                                      ? `${ratedCount} sao công khai · ${visibleComments} nhận xét`
+                                      : 'Chưa có lượt đánh giá'}
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60">
+                                    <button
+                                      type="button"
+                                      disabled={togglingServiceVis === `${svc.id}:showRating`}
+                                      onClick={() => handleToggleServiceReviewVisibility(svc, 'showRating')}
+                                      className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer ${
+                                        showRating
+                                          ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      {showRating ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                      <span>{showRating ? 'Hiện sao' : 'Ẩn sao'}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={togglingServiceVis === `${svc.id}:showReviews`}
+                                      onClick={() => handleToggleServiceReviewVisibility(svc, 'showReviews')}
+                                      className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer ${
+                                        showReviews
+                                          ? 'bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100'
+                                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      <MessageSquareText className="w-3 h-3" />
+                                      <span>{showReviews ? 'Hiện nhận xét' : 'Ẩn nhận xét'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1790,7 +1951,9 @@ export default function Dashboard() {
           if (completeReviewModalData.appointment?.id) {
             useBroadcastStore.getState().dismissAppointment(completeReviewModalData.appointment.id);
           }
+          invalidateClinicCache();
           fetchAppointments();
+          fetchClinicServices();
         }}
         onCompleteWithoutReview={() => {
           if (completeReviewModalData.appointment?.id) {
@@ -1804,7 +1967,11 @@ export default function Dashboard() {
         isOpen={manageReviewModalData.isOpen}
         onClose={() => setManageReviewModalData({ isOpen: false, appointment: null })}
         appointment={manageReviewModalData.appointment}
-        onSuccess={() => fetchAppointments()}
+        onSuccess={() => {
+          invalidateClinicCache();
+          fetchAppointments();
+          fetchClinicServices();
+        }}
         onEditReview={(apt) => setCompleteReviewModalData({ isOpen: true, appointment: apt })}
       />
 

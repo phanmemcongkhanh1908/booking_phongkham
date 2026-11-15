@@ -83,10 +83,15 @@ publicRouter.use(async (req, res, next) => {
 
 publicRouter.get("/services", async (req, res, next) => {
   try {
+    const ctxTenant = appContext.getStore()?.tenantId || null;
     const allServices = await db.select().from(services);
     // Filter active services in memory to gracefully handle older records where isActive might be missing
     const activeServices = allServices.filter((s: any) => s.isActive !== false);
-    res.json({ success: true, data: activeServices });
+    const { enrichServicesWithReviewStats } = await import("../../services/reviewAggregation.js");
+    const enriched = await enrichServicesWithReviewStats(activeServices, ctxTenant, {
+      includeHidden: false,
+    });
+    res.json({ success: true, data: enriched });
   } catch (error) {
     next(error);
   }
@@ -950,6 +955,7 @@ async function buildBookingHistoryList(patientIds: string[], patientRows: any[])
       startAt: appointments.startAt,
       endAt: appointments.endAt,
       serviceId: appointments.serviceId,
+      serviceIds: appointments.serviceIds,
       serviceName: services.name,
       customServiceName: appointments.customServiceName,
       providerName: providers.name,
@@ -959,14 +965,26 @@ async function buildBookingHistoryList(patientIds: string[], patientRows: any[])
       bookedForName: (appointments as any).bookedForName,
       cancelReason: appointments.cancelReason,
       rating: appointments.rating,
+      serviceRatings: (appointments as any).serviceRatings,
       reviewComment: appointments.reviewComment,
       reviewTags: appointments.reviewTags,
       reviewedAt: appointments.reviewedAt,
+      isReviewHidden: appointments.isReviewHidden,
+      isRatingHidden: appointments.isRatingHidden,
     })
     .from(appointments)
     .leftJoin(services, eq(appointments.serviceId, services.id))
     .leftJoin(providers, eq(appointments.providerId, providers.id))
     .where(inArray(appointments.patientId, patientIds));
+
+  const allServices = await db.select().from(services);
+  const serviceNameMap = new Map<string, string>();
+  for (const s of allServices as any[]) {
+    if (s?.id && s?.name) serviceNameMap.set(s.id, s.name);
+    if (s?.originalId && s?.name && !serviceNameMap.has(s.originalId)) {
+      serviceNameMap.set(s.originalId, s.name);
+    }
+  }
 
   const ptMap = new Map(patientRows.map((p: any) => [p.id, p]));
   return rawList
@@ -974,9 +992,28 @@ async function buildBookingHistoryList(patientIds: string[], patientRows: any[])
       const pt = ptMap.get(r.patientId);
       const mode = resolveAppointmentMode(r, pt);
       const targetName = r.bookedForName || pt?.fullName || "Khách hàng";
+      const normalizedIds = Array.from(
+        new Set(
+          [
+            r.serviceId,
+            ...(Array.isArray(r.serviceIds) ? r.serviceIds : []),
+          ].filter(Boolean)
+        )
+      );
+      const serviceItems = normalizedIds.map((sId) => ({
+        id: sId,
+        name: serviceNameMap.get(sId) || r.serviceName || "Dịch vụ nha khoa",
+      }));
+      const resolvedMultiName =
+        serviceItems.length > 1
+          ? serviceItems.map((item) => item.name).join(" + ")
+          : serviceItems[0]?.name || r.serviceName;
+
       return {
         ...r,
-        serviceName: r.customServiceName || r.serviceName || "Khám nha khoa",
+        serviceIds: normalizedIds,
+        serviceItems,
+        serviceName: r.customServiceName || resolvedMultiName || "Khám nha khoa",
         patientName: targetName,
         bookedForName: targetName,
         bookingFor: mode,
@@ -1275,12 +1312,17 @@ publicRouter.post("/shorten", async (req, res, next) => {
 });
 
 // Bệnh nhân gửi đánh giá sao sau khi hoàn tất ca khám
-publicRouter.post("/appointments/:id/review", async (req, res, next) => {
+publicRouter.post("/appointments/:id/review", patientVerifyLimiter, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { rating, reviewComment, reviewTags, phone } = req.body;
+    const { rating, serviceRatings: rawServiceRatings, reviewComment, reviewTags, phone, bookingCode } = req.body || {};
 
-    if (rating === undefined || rating === null) {
+    const hasServiceRatingsInput =
+      rawServiceRatings &&
+      typeof rawServiceRatings === "object" &&
+      Object.keys(rawServiceRatings).length > 0;
+
+    if ((rating === undefined || rating === null) && !hasServiceRatingsInput) {
       return res.status(400).json({ success: false, error: { message: "Vui lòng chọn số sao đánh giá (1-5 sao)" } });
     }
 
@@ -1291,31 +1333,83 @@ publicRouter.post("/appointments/:id/review", async (req, res, next) => {
 
     const apt = aptList[0];
 
-    // Optional phone check for security if provided
-    if (phone) {
-      const cleanPhone = phone.replace(/\D/g, '');
+    // Enforce multi-tenant isolation if tenant context is set
+    const ctxTenant = appContext.getStore()?.tenantId || null;
+    if (ctxTenant && apt.tenantId && String(apt.tenantId).trim() !== String(ctxTenant).trim()) {
+      return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn tại phòng khám này" } });
+    }
+
+    // Only allow reviewing appointments that are COMPLETED
+    if (String(apt.status || "").toUpperCase() !== "COMPLETED") {
+      return res.status(400).json({
+        success: false,
+        error: { message: "Chỉ có thể đánh giá sao sau khi lịch hẹn đã hoàn tất khám." }
+      });
+    }
+
+    // Mandatory ownership verification via phone OR matching booking code
+    const cleanPhone = String(phone || "").replace(/\D/g, "");
+    const cleanCode = String(bookingCode || "").trim();
+    const isCodeVerified = Boolean(cleanCode && (cleanCode === apt.id || apt.id.toLowerCase().startsWith(cleanCode.toLowerCase())));
+
+    if (!cleanPhone && !isCodeVerified) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "Vui lòng xác thực bằng số điện thoại đặt lịch trước khi gửi đánh giá." }
+      });
+    }
+
+    if (cleanPhone) {
       const ptList = await db.select().from(patients).where(eq(patients.id, apt.patientId)).limit(1);
       if (ptList.length > 0 && ptList[0].phone) {
-        const ptCleanPhone = ptList[0].phone.replace(/\D/g, '');
-        if (cleanPhone !== ptCleanPhone) {
+        const ptCleanPhone = String(ptList[0].phone).replace(/\D/g, "");
+        const tailInput = cleanPhone.length >= 9 ? cleanPhone.slice(-9) : cleanPhone;
+        const tailStored = ptCleanPhone.length >= 9 ? ptCleanPhone.slice(-9) : ptCleanPhone;
+        if (!tailInput || !tailStored || tailInput !== tailStored) {
           return res.status(403).json({ success: false, error: { message: "Số điện thoại không khớp với lịch hẹn này" } });
         }
       }
     }
 
-    const numericRating = Math.min(5, Math.max(1, Math.round(Number(rating))));
+    const { normalizeServiceRatingsMap, computeOverallRatingFromMap, clampRatingValue } = await import(
+      "../../services/reviewAggregation.js"
+    );
 
-    const updated = await db.update(appointments).set({
-      rating: numericRating,
-      reviewComment: reviewComment ? String(reviewComment).trim() : "",
-      reviewTags: Array.isArray(reviewTags) ? reviewTags : [],
-      reviewedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(appointments.id, id)).returning();
+    const registeredServiceIds = Array.from(
+      new Set(
+        [
+          apt.serviceId,
+          ...(Array.isArray(apt.serviceIds) ? apt.serviceIds : []),
+        ].filter(Boolean).map((x: any) => String(x).trim())
+      )
+    );
+
+    const explicitNumericRating = clampRatingValue(rating);
+    const normalizedServiceRatings = normalizeServiceRatingsMap(
+      rawServiceRatings,
+      registeredServiceIds,
+      explicitNumericRating
+    );
+
+    const finalOverallRating = computeOverallRatingFromMap(
+      normalizedServiceRatings,
+      explicitNumericRating
+    );
+
+    const updated = await appContext.run({ tenantId: apt.tenantId || ctxTenant || null, isFullAdmin: !apt.tenantId && !ctxTenant }, async () => {
+      return await db.update(appointments).set({
+        rating: finalOverallRating,
+        serviceRatings: normalizedServiceRatings,
+        reviewComment: reviewComment ? String(reviewComment).trim().slice(0, 500) : "",
+        reviewTags: Array.isArray(reviewTags) ? reviewTags.slice(0, 10) : [],
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(appointments.id, id)).returning();
+    });
 
     res.json({
       success: true,
-      message: "Cảm ơn bạn đã gửi đánh giá! Ý kiến của bạn giúp nha khoa không ngừng nâng cao chất lượng phục vụ.",
+      message: "Cảm ơn bạn đã gửi đánh giá! Dữ liệu điểm sao dịch vụ đã được ghi nhận.",
       data: updated[0]
     });
   } catch (error) {
@@ -1323,10 +1417,10 @@ publicRouter.post("/appointments/:id/review", async (req, res, next) => {
   }
 });
 
-// Lấy danh sách đánh giá công khai & thống kê độ uy tín nha khoa
+// Lấy danh sách đánh giá công khai & thống kê độ uy tín nha khoa / từng dịch vụ
 publicRouter.get("/reviews", async (req, res, next) => {
   try {
-    let targetTenantId = (req.query.tenantId || req.headers["x-tenant-id"]) as string | undefined;
+    let targetTenantId = (req.query.tenantId || req.headers["x-tenant-id"] || appContext.getStore()?.tenantId) as string | undefined;
     const rawClinicSlug = (req.query.clinic || req.query.slug || "") as string;
     if (!targetTenantId && rawClinicSlug) {
       const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
@@ -1336,138 +1430,19 @@ publicRouter.get("/reviews", async (req, res, next) => {
       }
     }
 
-    const apts = await db.select({
-      id: appointments.id,
-      rating: appointments.rating,
-      reviewComment: appointments.reviewComment,
-      reviewTags: appointments.reviewTags,
-      reviewedAt: appointments.reviewedAt,
-      isReviewHidden: appointments.isReviewHidden,
-      isRatingHidden: appointments.isRatingHidden,
-      tenantId: appointments.tenantId,
-      startAt: appointments.startAt,
-      serviceId: services.id,
-      serviceName: services.name,
-      providerName: providers.name,
-      patientName: patients.fullName,
-    })
-    .from(appointments)
-    .leftJoin(services, eq(appointments.serviceId, services.id))
-    .leftJoin(providers, eq(appointments.providerId, providers.id))
-    .leftJoin(patients, eq(appointments.patientId, patients.id));
+    const serviceId = typeof req.query.serviceId === "string" ? req.query.serviceId.trim() : undefined;
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit || "20"), 10) || 20));
 
-    const realReviews = apts
-      .filter((a: any) => {
-        if (!a.rating || a.rating <= 0) return false;
-        if (a.isReviewHidden === true) return false;
-        if (targetTenantId && a.tenantId !== targetTenantId) return false;
-        if (req.query.serviceId && a.serviceId !== req.query.serviceId) return false;
-        return true;
-      })
-      .map((a: any) => {
-        // Mask patient name for privacy: "Nguyễn Văn An" -> "Nguyễn V. A."
-        let maskedName = "Khách hàng thân thiết";
-        if (a.patientName) {
-          const parts = a.patientName.trim().split(/\s+/);
-          if (parts.length > 1) {
-            maskedName = `${parts[0]} ${parts.slice(1).map((p: string) => p[0].toUpperCase() + ".").join(" ")}`;
-          } else {
-            maskedName = parts[0];
-          }
-        }
-        const isRatingHidden = a.isRatingHidden === true;
-        return {
-          id: a.id,
-          rating: isRatingHidden ? null : a.rating,
-          isRatingHidden,
-          hideRating: isRatingHidden,
-          comment: a.reviewComment || "",
-          tags: a.reviewTags || [],
-          serviceId: a.serviceId,
-          serviceName: a.serviceName || "Dịch vụ nha khoa",
-          providerName: a.providerName || "Bác sĩ chuyên khoa",
-          patientName: maskedName,
-          date: a.reviewedAt || a.startAt,
-          verified: true
-        };
-      });
-
-    // Curated high-reputation baseline testimonials if real reviews count is small
-    const curatedReviews = [
-      {
-        id: "cr-1",
-        rating: 5,
-        isRatingHidden: false,
-        hideRating: false,
-        comment: "Bác sĩ làm việc rất nhẹ nhàng và tận tâm, lúc làm răng không hề đau như mình tưởng. Phòng khám cực kỳ sạch sẽ, chuẩn vô trùng!",
-        tags: ["Bác sĩ tận tâm & êm ái", "Cơ sở vật chất hiện đại", "Không đau"],
-        serviceId: "srv-curated-1",
-        serviceName: "Cạo vôi răng & Đánh bóng",
-        providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
-        patientName: "Trần T. H.",
-        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        verified: true
-      },
-      {
-        id: "cr-2",
-        rating: 5,
-        isRatingHidden: false,
-        hideRating: false,
-        comment: "Trám răng thẩm mỹ màu tiệp với răng thật 100%, ăn nhai rất chắc chắn. Bác sĩ tư vấn kỹ và không hề vẽ thêm chi phí.",
-        tags: ["Chi phí minh bạch, hợp lý", "Tư vấn tận tình, rõ ràng"],
-        serviceId: "srv-curated-2",
-        serviceName: "Trám răng thẩm mỹ",
-        providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
-        patientName: "Nguyễn H. M.",
-        date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        verified: true
-      },
-      {
-        id: "cr-3",
-        rating: 5,
-        isRatingHidden: false,
-        hideRating: false,
-        comment: "Đặt lịch hẹn trước qua web đến nơi được tiếp đón ngay, không phải ngồi chờ. Nhân viên lễ tân và bác sĩ đều rất nhiệt tình.",
-        tags: ["Đúng giờ, không chờ đợi", "Tiếp đón thân thiện, chu đáo"],
-        serviceId: "srv-curated-3",
-        serviceName: "Khám tổng quát & Tư vấn",
-        providerName: "Bác sĩ Chuyên khoa Răng Hàm Mặt",
-        patientName: "Lê V. D.",
-        date: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-        verified: true
-      }
-    ];
-
-    const allReviews = [...realReviews, ...curatedReviews].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    // Calculate stats only on reviews where rating is not hidden
-    const ratedReviews = allReviews.filter((r: any) => typeof r.rating === 'number' && r.rating > 0);
-    const totalCount = allReviews.length;
-    const avgRating = ratedReviews.length > 0 
-      ? Number((ratedReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / ratedReviews.length).toFixed(1))
-      : 5.0;
-
-    const fiveStarCount = ratedReviews.filter((r: any) => r.rating === 5).length;
-    const satisfactionRate = ratedReviews.length > 0 ? Math.round((fiveStarCount / ratedReviews.length) * 100) : 99;
+    const { getPublicReviewsSummary } = await import("../../services/reviewAggregation.js");
+    const summaryData = await getPublicReviewsSummary({
+      tenantId: targetTenantId || null,
+      serviceId: serviceId || null,
+      limit,
+    });
 
     res.json({
       success: true,
-      data: {
-        stats: {
-          averageRating: avgRating,
-          totalReviews: totalCount + 120, // baseline trust multiplier
-          verifiedReviewsCount: totalCount,
-          satisfactionRate: `${satisfactionRate}%`,
-          ratingDistribution: {
-            5: ratedReviews.filter((r: any) => r.rating === 5).length,
-            4: ratedReviews.filter((r: any) => r.rating === 4).length,
-            3: ratedReviews.filter((r: any) => r.rating === 3).length,
-            2: ratedReviews.filter((r: any) => r.rating === 2).length,
-            1: ratedReviews.filter((r: any) => r.rating === 1).length,
-          }
-        },
-        reviews: allReviews.slice(0, 10)
-      }
+      data: summaryData,
     });
   } catch (error) {
     next(error);

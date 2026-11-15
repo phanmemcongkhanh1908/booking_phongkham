@@ -522,7 +522,16 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
   await appContext.run({ tenantId }, async () => {
     try {
       const allServices = await db.select().from(services);
-      activeServices = allServices.filter((s: any) => s.isActive !== false);
+      const filteredServices = allServices.filter((s: any) => s.isActive !== false);
+      try {
+        const { enrichServicesWithReviewStats } = await import("./reviewAggregation.js");
+        activeServices = await enrichServicesWithReviewStats(filteredServices, tenantId, {
+          includeHidden: false,
+        });
+      } catch (statsErr) {
+        console.warn("[ClinicBundle] Error enriching service review stats:", statsErr);
+        activeServices = filteredServices;
+      }
 
       const allProviders = await db.select().from(providers);
       activeProviders = allProviders.filter((p: any) => p.isActive !== false);

@@ -18,12 +18,15 @@ import {
   Plus,
   X,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Star,
+  MessageSquareText
 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
-import { getClinicBasePath } from '../../../services/clinicResolver';
+import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
+import ServiceReviewsModal from '../../../components/ServiceReviewsModal';
 
 interface Service {
   id: string;
@@ -32,6 +35,16 @@ interface Service {
   price: number;
   description?: string;
   showPrice?: boolean;
+  showRating?: boolean;
+  showReviews?: boolean;
+  ratingStats?: {
+    averageRating?: number | null;
+    ratedCount?: number;
+    visibleReviewsCount?: number;
+    showRating?: boolean;
+    showReviews?: boolean;
+    ratingDistribution?: Record<number, number>;
+  };
   isHot?: boolean;
   isFree?: boolean;
   tags?: string[];
@@ -46,8 +59,10 @@ export default function ServiceSelection() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [reviewsModalService, setReviewsModalService] = useState<Service | null>(null);
   
   const selectedServices = useBookingStore(state => state.selectedServices);
+  const storeTenantId = useBookingStore(state => state.tenantId);
   const setService = useBookingStore(state => state.setService);
   const setSelectedServices = useBookingStore(state => state.setSelectedServices);
   const toggleServiceItem = useBookingStore(state => state.toggleServiceItem);
@@ -56,9 +71,15 @@ export default function ServiceSelection() {
   const navigate = useNavigate();
   const location = useLocation();
   const basePath = getClinicBasePath(slug, location.pathname);
+  const activeSlug = slug || getActiveRouteClinicSlug() || undefined;
 
   // Sync services from Clinic Settings Service Layer immediately
   const hasFallbackFetchedRef = useRef(false);
+
+  const getPublicServicesParams = () => ({
+    ...(activeSlug ? { slug: activeSlug } : {}),
+    ...(storeTenantId ? { tenantId: storeTenantId } : {}),
+  });
 
   useEffect(() => {
     if (bundleServices && bundleServices.length > 0) {
@@ -73,11 +94,28 @@ export default function ServiceSelection() {
     }
   }, [bundleServices, bundleLoading]);
 
+  // Silent background revalidation so live star scores & visibility toggles stay fresh immediately
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/public/services', { params: getPublicServicesParams() })
+      .then((res) => {
+        if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          setServices(res.data.data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSlug, storeTenantId]);
+
   const fetchServices = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/public/services');
+      const res = await api.get('/public/services', { params: getPublicServicesParams() });
       if (res.data?.success && Array.isArray(res.data.data)) {
         setServices(res.data.data);
       } else {
@@ -385,6 +423,35 @@ export default function ServiceSelection() {
                   <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mt-1">
                     {svc.description || 'Quy trình vô trùng y khoa khép kín, được thực hiện bởi bác sĩ giàu kinh nghiệm.'}
                   </p>
+
+                  {((svc.showRating !== false && Number(svc.ratingStats?.ratedCount || 0) > 0) ||
+                    (svc.showReviews !== false && Number(svc.ratingStats?.visibleReviewsCount || 0) > 0)) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-2">
+                      {svc.showRating !== false && Number(svc.ratingStats?.ratedCount || 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-800 tabular-nums">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                          <span>{Number(svc.ratingStats?.averageRating || 0).toFixed(1)}</span>
+                          <span className="text-amber-700/80 font-medium">
+                            ({svc.ratingStats?.ratedCount})
+                          </span>
+                        </span>
+                      )}
+
+                      {svc.showReviews !== false && Number(svc.ratingStats?.visibleReviewsCount || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReviewsModalService(svc);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 border border-slate-200/80 hover:border-teal-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                        >
+                          <MessageSquareText className="w-3 h-3 shrink-0" />
+                          <span>Xem {svc.ratingStats?.visibleReviewsCount} nhận xét</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Row: Duration + Price + Quick Actions */}
@@ -514,6 +581,14 @@ export default function ServiceSelection() {
           </div>
         </aside>
       )}
+
+      <ServiceReviewsModal
+        isOpen={!!reviewsModalService}
+        onClose={() => setReviewsModalService(null)}
+        service={reviewsModalService}
+        clinicSlug={activeSlug}
+        tenantId={storeTenantId}
+      />
     </div>
   );
 }

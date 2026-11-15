@@ -3,7 +3,8 @@ import { db, loadStore, persistStore } from "../../db/index.js";
 import { services, providers, settings, appointments, patients, users } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
-import { BadRequestError, ForbiddenError } from "../../core/errors.js";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../../core/errors.js";
+import { enrichServicesWithReviewStats } from "../../services/reviewAggregation.js";
 
 const adminRouter = Router();
 
@@ -13,7 +14,12 @@ adminRouter.use(requireAuth);
 adminRouter.get("/services", async (req, res, next) => {
   try {
     const allServices = await db.select().from(services).orderBy(services.name);
-    res.json({ success: true, data: allServices });
+    const enrichedServices = await enrichServicesWithReviewStats(
+      allServices as any[],
+      req.user?.tenantId || null,
+      { includeHidden: true }
+    );
+    res.json({ success: true, data: enrichedServices });
   } catch (error) {
     next(error);
   }
@@ -44,6 +50,9 @@ adminRouter.post("/services", requirePermission("service.manage"), async (req, r
       showPrice: Boolean(req.body.showPrice),
       isHot: Boolean(req.body.isHot),
       isFree: Boolean(req.body.isFree),
+      tags: Array.isArray(req.body.tags) ? req.body.tags : undefined,
+      showRating: req.body.showRating !== undefined ? Boolean(req.body.showRating) : true,
+      showReviews: req.body.showReviews !== undefined ? Boolean(req.body.showReviews) : true,
       isActive: true,
       tenantId: tenantId || undefined,
     }).returning();
@@ -63,7 +72,7 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
     if (isNaN(durationMins) || durationMins <= 0) throw new BadRequestError("Thời lượng khám không hợp lệ");
     if (price !== null && price < 0) throw new BadRequestError("Giá tiền không hợp lệ");
 
-    const updateFields = {
+    const updateFields: Record<string, any> = {
       name: req.body.name,
       description: req.body.description,
       durationMins,
@@ -76,6 +85,16 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
       isFree: Boolean(req.body.isFree),
       updatedAt: new Date().toISOString()
     };
+
+    if (Array.isArray(req.body.tags)) {
+      updateFields.tags = req.body.tags;
+    }
+    if (req.body.showRating !== undefined) {
+      updateFields.showRating = Boolean(req.body.showRating);
+    }
+    if (req.body.showReviews !== undefined) {
+      updateFields.showReviews = Boolean(req.body.showReviews);
+    }
 
     if (tenantId) {
       const store = loadStore();
@@ -109,7 +128,10 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
       } else {
         // Tenant already has custom services: find and update
         for (const [key, s] of Object.entries(store["services"] as Record<string, any>)) {
-          if (s.tenantId === tenantId && (s.id === serviceId || s.originalId === serviceId || key.endsWith(serviceId))) {
+          if (
+            s.tenantId === tenantId &&
+            (s.id === serviceId || s.originalId === serviceId || key === serviceId || key === `${tenantId}_${serviceId}`)
+          ) {
             store["services"][key] = { ...s, ...updateFields };
             persistStore();
             return res.json({ success: true, data: store["services"][key] });
@@ -120,6 +142,112 @@ adminRouter.put("/services/:id", requirePermission("service.manage"), async (req
 
     const updated = await db.update(services).set(updateFields).where(eq(services.id, serviceId)).returning();
     res.json({ success: true, data: updated[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Toggle per-service star rating & public reviews visibility
+adminRouter.patch("/services/:id/review-visibility", async (req, res, next) => {
+  try {
+    const permissions = req.user?.permissions || [];
+    const canManage =
+      req.user?.role === "admin" ||
+      permissions.includes("*") ||
+      permissions.includes("all") ||
+      permissions.includes("service.manage") ||
+      permissions.includes("appointment.update");
+    if (!canManage) {
+      throw new ForbiddenError("Bạn không có quyền quản lý hiển thị đánh giá dịch vụ");
+    }
+
+    const serviceId = req.params.id;
+    const tenantId = req.user?.tenantId || null;
+    const { showRating, showReviews } = req.body || {};
+
+    if (showRating === undefined && showReviews === undefined) {
+      throw new BadRequestError("Vui lòng cung cấp tùy chọn hiển thị sao hoặc nhận xét");
+    }
+
+    const patchFields: Record<string, any> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (showRating !== undefined) patchFields.showRating = Boolean(showRating);
+    if (showReviews !== undefined) patchFields.showReviews = Boolean(showReviews);
+
+    let updatedService: any = null;
+
+    if (tenantId) {
+      const store = loadStore();
+      if (!store["services"]) store["services"] = {};
+      const allServices = Object.values(store["services"] || {});
+      const hasCustom = allServices.some((s: any) => s.tenantId === tenantId);
+
+      if (!hasCustom) {
+        const templateServices = allServices.filter((s: any) => !s.tenantId);
+        for (const t of templateServices) {
+          const newId = `${tenantId}_${t.id}`;
+          const isTarget = t.id === serviceId;
+          const serviceObj = {
+            ...t,
+            ...(isTarget ? patchFields : {}),
+            id: newId,
+            originalId: t.id,
+            tenantId,
+            createdAt: t.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          store["services"][newId] = serviceObj;
+          if (isTarget) updatedService = serviceObj;
+        }
+        if (!store["settings"]) store["settings"] = {};
+        store["settings"][`${tenantId}__services_customized`] = {
+          id: "services_customized",
+          tenantId,
+          value: true,
+        };
+        if (!updatedService) {
+          throw new NotFoundError("Không tìm thấy dịch vụ cần cập nhật");
+        }
+        persistStore();
+      } else {
+        for (const [key, s] of Object.entries(store["services"] as Record<string, any>)) {
+          if (
+            s.tenantId === tenantId &&
+            (s.id === serviceId || s.originalId === serviceId || key === serviceId || key === `${tenantId}_${serviceId}`)
+          ) {
+            store["services"][key] = { ...s, ...patchFields };
+            updatedService = store["services"][key];
+            break;
+          }
+        }
+        if (!updatedService) {
+          throw new NotFoundError("Không tìm thấy dịch vụ cần cập nhật");
+        }
+        persistStore();
+      }
+    } else {
+      const existing = await db.select().from(services).where(eq(services.id, serviceId)).limit(1);
+      if (existing.length === 0) {
+        throw new NotFoundError("Không tìm thấy dịch vụ cần cập nhật");
+      }
+      const updated = await db
+        .update(services)
+        .set(patchFields)
+        .where(eq(services.id, serviceId))
+        .returning();
+      updatedService = updated[0];
+    }
+
+    const enrichedList = await enrichServicesWithReviewStats([updatedService], tenantId, {
+      includeHidden: true,
+    });
+
+    res.json({
+      success: true,
+      data: enrichedList[0],
+      message: "Đã cập nhật trạng thái hiển thị đánh giá dịch vụ",
+    });
   } catch (error) {
     next(error);
   }

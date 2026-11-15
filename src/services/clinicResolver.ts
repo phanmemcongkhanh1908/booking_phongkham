@@ -41,6 +41,19 @@ export interface ClinicBundleData {
     isHot?: boolean;
     isFree?: boolean;
     isActive?: boolean;
+    tags?: string[];
+    showRating?: boolean;
+    showReviews?: boolean;
+    ratingStats?: {
+      averageRating?: number | null;
+      actualAverageRating?: number | null;
+      ratedCount?: number;
+      totalSubmittedReviews?: number;
+      visibleReviewsCount?: number;
+      showRating?: boolean;
+      showReviews?: boolean;
+      ratingDistribution?: Record<number, number>;
+    };
   }>;
   providers: Array<{
     id: string;

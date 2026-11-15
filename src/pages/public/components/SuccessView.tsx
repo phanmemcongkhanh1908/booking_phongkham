@@ -18,7 +18,8 @@ import {
   ShieldCheck, 
   Stethoscope, 
   Share2, 
-  CalendarPlus 
+  CalendarPlus,
+  Star
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toPng } from "html-to-image";
@@ -473,6 +474,30 @@ export default function SuccessView() {
       </div>
 
       <PushNotificationPrompt phone={patientPhone || ''} />
+
+      {/* Post-visit Service Star Rating Callout */}
+      <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-600 flex items-center justify-center shrink-0 border border-amber-300/50">
+            <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+          </div>
+          <div className="space-y-0.5">
+            <p className="text-xs sm:text-sm font-bold text-slate-900">
+              Đánh giá sao dịch vụ sau khi hoàn tất khám
+            </p>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Sau khi hoàn thành buổi khám cho đợt đăng ký này, bạn có thể chấm sao từng dịch vụ và gửi nhận xét tại mục <strong>Tra cứu &amp; Quản lý lịch</strong>.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleViewMyBookings}
+          className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-800 border border-amber-300/80 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer shrink-0"
+        >
+          Mở lịch hẹn của tôi
+        </button>
+      </div>
       
       {/* Action Navigation */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">

@@ -14,6 +14,11 @@ import { generateRecall } from "../../jobs/recallGenerator.js";
 import { getProviderOccupiedSlots, isSlotConflict } from "../../core/scheduling.js";
 import { notifyPatientAppointment } from "../../services/patientNotification.js";
 import { realtimeNotification } from "../../services/realtimeNotification.js";
+import {
+  normalizeServiceRatingsMap,
+  computeOverallRatingFromMap,
+  clampRatingValue,
+} from "../../services/reviewAggregation.js";
 
 const appointmentRouter = Router();
 
@@ -143,6 +148,7 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         serviceIds: appointments.serviceIds,
         durationMins: services.durationMins,
         rating: appointments.rating,
+        serviceRatings: (appointments as any).serviceRatings,
         reviewComment: appointments.reviewComment,
         reviewTags: appointments.reviewTags,
         reviewedAt: appointments.reviewedAt,
@@ -164,8 +170,35 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
       return normalizeTenant(r.tenantId) === requestTenantId;
     };
 
+    const allClinicServices = await db.select().from(services);
+    const serviceLookupMap = new Map<string, any>();
+    for (const s of allClinicServices as any[]) {
+      if (s?.id) serviceLookupMap.set(s.id, s);
+      if (s?.originalId && !serviceLookupMap.has(s.originalId)) {
+        serviceLookupMap.set(s.originalId, s);
+      }
+    }
+
     const mapRow = (r: any) => {
       const mode = resolveMode(r);
+      const idList: string[] = Array.isArray(r.serviceIds) && r.serviceIds.length > 0
+        ? r.serviceIds
+        : r.serviceId
+          ? [r.serviceId]
+          : [];
+      const serviceItems = idList
+        .map((sId: string) => {
+          const found = serviceLookupMap.get(sId);
+          return found ? { id: sId, name: found.name } : null;
+        })
+        .filter(Boolean) as Array<{ id: string; name: string }>;
+
+      const resolvedServiceName = r.customServiceName
+        ? r.customServiceName
+        : serviceItems.length > 1
+          ? serviceItems.map((item) => item.name).join(" + ")
+          : r.serviceName || serviceItems[0]?.name || "Khám nha khoa";
+
       return {
         ...r,
         tenantId: normalizeTenant(r.tenantId),
@@ -173,7 +206,9 @@ appointmentRouter.get("/", requirePermission("appointment.view"), async (req, re
         isProxyBooking: mode === "relative",
         bookedForName: r.bookedForName || r.patientName,
         notes: cleanSystemNotes(r.notes),
-        serviceName: r.customServiceName || r.serviceName,
+        serviceName: resolvedServiceName,
+        serviceItems,
+        serviceRatings: r.serviceRatings || null,
       };
     };
 
@@ -263,9 +298,12 @@ appointmentRouter.get("/history", requirePermission("appointment.view"), async (
         serviceIds: appointments.serviceIds,
         durationMins: services.durationMins,
         rating: appointments.rating,
+        serviceRatings: (appointments as any).serviceRatings,
         reviewComment: appointments.reviewComment,
         reviewTags: appointments.reviewTags,
         reviewedAt: appointments.reviewedAt,
+        isReviewHidden: appointments.isReviewHidden,
+        isRatingHidden: appointments.isRatingHidden,
         createdAt: appointments.createdAt,
         updatedAt: appointments.updatedAt,
       })
@@ -278,15 +316,18 @@ appointmentRouter.get("/history", requirePermission("appointment.view"), async (
     const requestTenantId = getRequestTenantId(req);
     const includeAllTenants = req.query.scope === "all" && !requestTenantId;
 
-    // Build service price lookup map so multi-service appointments sum exact price
+    // Build service price & name lookup maps so multi-service appointments sum exact price and expose serviceItems
     const allClinicServices = await db.select().from(services);
     const servicePriceMap = new Map<string, number>();
+    const serviceObjMap = new Map<string, any>();
     for (const s of allClinicServices as any[]) {
       if (s?.id) {
         servicePriceMap.set(s.id, Number(s.price) || 0);
+        serviceObjMap.set(s.id, s);
       }
       if (s?.originalId && !servicePriceMap.has(s.originalId)) {
         servicePriceMap.set(s.originalId, Number(s.price) || 0);
+        serviceObjMap.set(s.originalId, s);
       }
     }
 
@@ -327,6 +368,24 @@ appointmentRouter.get("/history", requirePermission("appointment.view"), async (
             calculatedPrice = multiSum;
           }
         }
+        const idList: string[] = Array.isArray(r.serviceIds) && r.serviceIds.length > 0
+          ? r.serviceIds
+          : r.serviceId
+            ? [r.serviceId]
+            : [];
+        const serviceItems = idList
+          .map((sId: string) => {
+            const found = serviceObjMap.get(sId);
+            return found ? { id: sId, name: found.name } : null;
+          })
+          .filter(Boolean) as Array<{ id: string; name: string }>;
+
+        const resolvedServiceName = r.customServiceName
+          ? r.customServiceName
+          : serviceItems.length > 1
+            ? serviceItems.map((it) => it.name).join(" + ")
+            : r.serviceName || serviceItems[0]?.name || "Khám nha khoa";
+
         return {
           id: r.id,
           tenantId: normalizeTenant(r.tenantId),
@@ -345,14 +404,18 @@ appointmentRouter.get("/history", requirePermission("appointment.view"), async (
           providerId: r.providerId || "",
           providerName: r.providerName || "",
           serviceId: r.serviceId || "",
-          serviceName: r.customServiceName || r.serviceName || "Khám nha khoa",
+          serviceName: resolvedServiceName,
           serviceIds: r.serviceIds || [],
+          serviceItems,
           servicePrice: calculatedPrice,
           durationMins: Number(r.durationMins) || 30,
           rating: r.rating ?? null,
+          serviceRatings: r.serviceRatings || null,
           reviewComment: r.reviewComment || "",
           reviewTags: Array.isArray(r.reviewTags) ? r.reviewTags : [],
           reviewedAt: r.reviewedAt || null,
+          isReviewHidden: r.isReviewHidden === true,
+          isRatingHidden: r.isRatingHidden === true,
           createdAt: r.createdAt || null,
           updatedAt: r.updatedAt || null,
         };
@@ -905,7 +968,7 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     const currentStatus = existing[0].status;
 
     // Bỏ qua nếu trạng thái không thay đổi và không có dữ liệu đánh giá / lý do hủy
-    if (currentStatus === nextStatus && req.body.rating === undefined && !cancelReason) {
+    if (currentStatus === nextStatus && req.body.rating === undefined && req.body.serviceRatings === undefined && !cancelReason) {
       return res.json({ success: true, data: existing[0] });
     }
 
@@ -918,8 +981,20 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     if (cancelReason && (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT" || nextStatus === "NO_SHOW")) {
       updateData.cancelReason = String(cancelReason).trim();
     }
-    if (req.body.rating !== undefined) {
-      updateData.rating = Math.min(5, Math.max(1, Number(req.body.rating)));
+    if (req.body.rating !== undefined || req.body.serviceRatings !== undefined) {
+      const targetServiceIds = Array.from(
+        new Set(
+          [existing[0].serviceId, ...(Array.isArray(existing[0].serviceIds) ? existing[0].serviceIds : [])]
+            .filter(Boolean)
+            .map((s) => String(s))
+        )
+      );
+      const explicitRating = clampRatingValue(req.body.rating);
+      const serviceRatingsMap = normalizeServiceRatingsMap(req.body.serviceRatings, targetServiceIds, explicitRating);
+      const overallRating = computeOverallRatingFromMap(serviceRatingsMap, explicitRating);
+
+      updateData.rating = overallRating;
+      updateData.serviceRatings = serviceRatingsMap;
       updateData.reviewComment = req.body.reviewComment ? String(req.body.reviewComment).trim() : "";
       updateData.reviewTags = Array.isArray(req.body.reviewTags) ? req.body.reviewTags : [];
       updateData.reviewedAt = new Date();
@@ -963,21 +1038,31 @@ appointmentRouter.post("/:id/review", requirePermission("appointment.update"), a
   try {
     const appointmentId = req.params.id;
     const requestTenantId = getRequestTenantId(req);
-    const { rating, reviewComment, reviewTags } = req.body;
-
-    if (rating === undefined || rating === null) {
-      throw new BadRequestError("Vui lòng chọn số sao đánh giá (1-5 sao)");
-    }
+    const { rating, serviceRatings, reviewComment, reviewTags } = req.body;
 
     const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
     if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
       throw new NotFoundError("Không tìm thấy lịch hẹn");
     }
 
-    const numericRating = Math.min(5, Math.max(1, Number(rating)));
+    const targetServiceIds = Array.from(
+      new Set(
+        [existing[0].serviceId, ...(Array.isArray(existing[0].serviceIds) ? existing[0].serviceIds : [])]
+          .filter(Boolean)
+          .map((s) => String(s))
+      )
+    );
+    const explicitRating = clampRatingValue(rating);
+    const serviceRatingsMap = normalizeServiceRatingsMap(serviceRatings, targetServiceIds, explicitRating);
+    if (explicitRating === null && Object.keys(serviceRatingsMap).length === 0) {
+      throw new BadRequestError("Vui lòng chọn số sao đánh giá (1-5 sao)");
+    }
+
+    const overallRating = computeOverallRatingFromMap(serviceRatingsMap, explicitRating);
     const updated = await db.update(appointments)
       .set({
-        rating: numericRating,
+        rating: overallRating,
+        serviceRatings: serviceRatingsMap,
         reviewComment: reviewComment ? String(reviewComment).trim() : "",
         reviewTags: Array.isArray(reviewTags) ? reviewTags : [],
         reviewedAt: new Date(),
@@ -1084,6 +1169,7 @@ appointmentRouter.delete("/:id/review", requirePermission("appointment.update"),
     const updated = await db.update(appointments)
       .set({
         rating: null,
+        serviceRatings: {},
         reviewComment: null,
         reviewTags: [],
         reviewedAt: null,
