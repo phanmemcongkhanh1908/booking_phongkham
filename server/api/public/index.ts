@@ -1544,4 +1544,77 @@ publicRouter.get("/admin-manifest.webmanifest", (req, res) => {
   });
 });
 
+// Runtime Google OAuth Client ID configuration (public identifier, synced across all browsers/devices)
+publicRouter.get("/google-oauth-config", async (req, res, next) => {
+  try {
+    let targetTenantId = (req.query.tenantId || req.headers["x-tenant-id"] || appContext.getStore()?.tenantId || "")
+      .toString()
+      .trim() || null;
+
+    const rawClinicSlug = (req.query.clinic || req.query.slug || req.query.clinicSlug || "")
+      .toString()
+      .trim();
+
+    if (!targetTenantId && rawClinicSlug) {
+      try {
+        const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+        const matched = await findClinicBySlug(rawClinicSlug);
+        if (matched?.tenantId) {
+          targetTenantId = matched.tenantId;
+        }
+      } catch {
+        // Ignore lookup error and fall back cleanly
+      }
+    }
+
+    const allSettings = await db.select().from(settings);
+    const tenantConfig = targetTenantId
+      ? allSettings.find(
+          (s: any) =>
+            (s.id === "google_oauth_client_id" || s.key === "google_oauth_client_id") &&
+            s.tenantId === targetTenantId &&
+            typeof s.value === "string" &&
+            s.value.trim().length > 0
+        )
+      : null;
+
+    const globalConfig = allSettings.find(
+      (s: any) =>
+        (s.id === "google_oauth_client_id" || s.key === "google_oauth_client_id") &&
+        !s.tenantId &&
+        typeof s.value === "string" &&
+        s.value.trim().length > 0
+    );
+
+    const envClientId = (
+      process.env.VITE_GOOGLE_CLIENT_ID ||
+      process.env.GOOGLE_CLIENT_ID ||
+      process.env.GOOGLE_OAUTH_CLIENT_ID ||
+      ""
+    ).trim();
+
+    const savedTenantClientId = tenantConfig?.value ? String(tenantConfig.value).trim() : "";
+    const savedGlobalClientId = globalConfig?.value ? String(globalConfig.value).trim() : "";
+
+    const clientId = savedTenantClientId || savedGlobalClientId || envClientId || "";
+    const source = savedTenantClientId
+      ? "tenant_setting"
+      : savedGlobalClientId
+        ? "global_setting"
+        : envClientId
+          ? "server_env"
+          : "none";
+
+    res.json({
+      success: true,
+      data: {
+        clientId,
+        source,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default publicRouter;

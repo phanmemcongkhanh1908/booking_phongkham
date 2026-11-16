@@ -445,6 +445,21 @@ export default function Settings() {
         });
         return;
       }
+      const isOriginMismatch =
+        err?.code === 'origin_mismatch' ||
+        err?.code === 'idpiframe_initialization_failed' ||
+        (typeof err?.message === 'string' && (
+          err.message.toLowerCase().includes('origin_mismatch') ||
+          err.message.toLowerCase().includes('400')
+        ));
+      if (isOriginMismatch) {
+        setIsOriginHelpOpen(true);
+        setGoogleStatusMsg({
+          type: 'error',
+          text: 'Google báo lỗi "origin_mismatch" (400) do tên miền hiện tại chưa được khai báo trên Google Cloud Console. Vui lòng xem hướng dẫn khắc phục vừa mở.'
+        });
+        return;
+      }
       console.error('Google connect error:', err);
       setGoogleStatusMsg({
         type: 'error',

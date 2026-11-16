@@ -15,6 +15,7 @@ import {
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { useGoogleAuthStore } from '../../../store/googleAuthStore';
+import api from '../../../services/api';
 
 interface GoogleOriginHelpModalProps {
   isOpen: boolean;
@@ -30,6 +31,8 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
   const [copiedClientId, setCopiedClientId] = useState(false);
   const [inputClientId, setInputClientId] = useState(customClientId || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [savingServer, setSavingServer] = useState(false);
+  const [serverSyncNote, setServerSyncNote] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -42,23 +45,45 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
   };
 
   const handleCopyClientId = () => {
+    if (!activeClientId) return;
     navigator.clipboard.writeText(activeClientId);
     setCopiedClientId(true);
     setTimeout(() => setCopiedClientId(false), 2500);
   };
 
-  const handleSaveClientId = (e: React.FormEvent) => {
+  const handleSaveClientId = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCustomClientId(inputClientId);
+    const trimmed = inputClientId.trim();
+    setCustomClientId(trimmed);
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setSavingServer(true);
+    setServerSyncNote(null);
+    try {
+      await api.put('/admin/google-oauth-config', { clientId: trimmed });
+      setServerSyncNote('Đã đồng bộ lên máy chủ (tự động áp dụng trên mọi trình duyệt & điện thoại).');
+    } catch {
+      setServerSyncNote('Đã lưu trên trình duyệt này.');
+    } finally {
+      setSavingServer(false);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    }
   };
 
-  const handleResetClientId = () => {
+  const handleResetClientId = async () => {
     setInputClientId('');
     setCustomClientId('');
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setSavingServer(true);
+    setServerSyncNote(null);
+    try {
+      await api.put('/admin/google-oauth-config', { clientId: '' });
+      setServerSyncNote('Đã khôi phục mặc định trên máy chủ.');
+    } catch {
+      setServerSyncNote('Đã khôi phục mặc định trên trình duyệt này.');
+    } finally {
+      setSavingServer(false);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    }
   };
 
   return (
@@ -132,6 +157,38 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
               * Lưu ý: Không có dấu gạch chéo (/) ở cuối địa chỉ.
             </p>
           </div>
+
+          {/* Active Client ID diagnostic box */}
+          {activeClientId && (
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-800">
+                Client ID đang hoạt động hiện tại:
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 font-mono text-[11px] bg-indigo-50/70 border border-indigo-200 rounded-xl px-3 py-2 text-indigo-950 select-all break-all">
+                  {activeClientId}
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleCopyClientId}
+                  variant="outline"
+                  className="gap-1.5 text-xs font-semibold border-slate-300 bg-white hover:bg-slate-50 shrink-0 px-3 py-2 rounded-xl h-auto"
+                >
+                  {copiedClientId ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">Đã chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Solution 1: Add origin to Google Cloud Console */}
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-3">
@@ -213,16 +270,18 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Button
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl h-auto shadow-xs"
+                    disabled={savingServer}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl h-auto shadow-xs disabled:opacity-60"
                   >
                     <Key className="w-3.5 h-3.5 mr-1" />
-                    Lưu Client ID này
+                    {savingServer ? 'Đang lưu...' : 'Lưu Client ID này'}
                   </Button>
 
                   {customClientId && (
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={savingServer}
                       onClick={handleResetClientId}
                       className="text-xs text-slate-600 hover:text-rose-600 border-slate-300 px-3 py-2 rounded-xl h-auto"
                       title="Khôi phục về Client ID mặc định của hệ thống"
@@ -239,11 +298,49 @@ export const GoogleOriginHelpModal: React.FC<GoogleOriginHelpModalProps> = ({
                   </span>
                 )}
               </div>
+              {serverSyncNote && (
+                <p className="text-[11px] text-emerald-700 font-medium">{serverSyncNote}</p>
+              )}
             </form>
 
             <div className="pt-2 text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-              <strong>Mẹo triển khai Render:</strong> Bạn cũng có thể thiết lập biến môi trường <code className="text-indigo-700 font-mono font-semibold">VITE_GOOGLE_CLIENT_ID</code> trong mục <em>Environment Variables</em> trên Render để hệ thống tự động nhận diện vĩnh viễn.
+              <strong>Mẹo triển khai Render:</strong> Bạn cũng có thể thiết lập biến môi trường <code className="text-indigo-700 font-mono font-semibold">VITE_GOOGLE_CLIENT_ID</code> trong mục <em>Environment Variables</em> trên Render để hệ thống tự động nhận diện vĩnh viễn trên mọi trình duyệt.
             </div>
+          </div>
+
+          {/* Solution 3: OAuth Consent Screen Testing / Test Users */}
+          <div className="border border-rose-200/90 rounded-2xl p-4 bg-rose-50/40 space-y-2.5">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+              <span className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs">3</span>
+              <span>Khắc phục lỗi "chưa hoàn tất quy trình xác minh của Google" (Test Users)</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Nếu Google hiển thị thông báo ứng dụng đang ở <strong>giai đoạn kiểm thử</strong> và chỉ người kiểm thử được phê duyệt mới truy cập được:
+            </p>
+            <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-600 ml-1">
+              <li className="leading-relaxed">
+                Mở{' '}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials/consent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-rose-700 hover:text-rose-900 font-semibold underline inline-flex items-center gap-1"
+                >
+                  Google Cloud → OAuth consent screen
+                  <ExternalLink className="w-3 h-3 inline" />
+                </a>
+                .
+              </li>
+              <li className="leading-relaxed">
+                Ở mục <strong>Test users (Người dùng thử nghiệm)</strong>, bấm <strong>+ Add users</strong> và thêm địa chỉ Gmail bạn muốn dùng để sao lưu phòng khám, sau đó bấm <strong>Save</strong>.
+              </li>
+              <li className="leading-relaxed">
+                Hoặc bấm <strong>Publish App</strong> (chuyển từ <em>Testing</em> sang <em>In production</em>) nếu muốn cho phép bất kỳ tài khoản Gmail phòng khám nào tự kết nối mà không cần thêm từng email trước.
+              </li>
+              <li className="leading-relaxed">
+                Khi đã bật <strong>In production</strong> (chưa xác minh Google Verification), lần đầu kết nối Drive/Sheets trên một tài khoản Gmail mới sẽ hiện bảng cảnh báo <em>"Google chưa xác minh ứng dụng này"</em> — chỉ cần bấm <strong>Nâng cao (Advanced) → Đi tới trang web (không an toàn) → Cho phép</strong> để hoàn tất.
+              </li>
+            </ol>
           </div>
         </div>
 

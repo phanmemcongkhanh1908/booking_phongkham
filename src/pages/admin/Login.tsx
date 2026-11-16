@@ -96,6 +96,8 @@ export default function Login() {
   const [isOriginHelpOpen, setIsOriginHelpOpen] = useState(false);
 
   const connectGoogle = useGoogleAuthStore(state => state.connect);
+  const initGoogleAuth = useGoogleAuthStore(state => state.init);
+  const syncServerClientId = useGoogleAuthStore(state => state.syncServerClientId);
   const setAuth = useAuthStore(state => state.setAuth);
   const navigate = useNavigate();
 
@@ -111,11 +113,14 @@ export default function Login() {
     }
   }, [effectiveSlug]);
 
-  // Tự động gửi request ping đánh thức máy chủ và kiểm tra cấu hình đăng nhập Gmail của phòng khám
+  // Tự động gửi request ping đánh thức máy chủ, đồng bộ OAuth Client ID và kiểm tra cấu hình đăng nhập Gmail của phòng khám
   useEffect(() => {
     fetch('/api/health').catch(() => {});
+    const unsub = initGoogleAuth();
+    void syncServerClientId(effectiveSlug || undefined);
     fetchGoogleLoginStatus();
-  }, [effectiveSlug]);
+    return () => unsub();
+  }, [effectiveSlug, initGoogleAuth, syncServerClientId]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

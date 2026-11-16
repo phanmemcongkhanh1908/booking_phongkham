@@ -179,6 +179,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     const unsub = initGoogleAuth();
+    if (user?.tenantId || user?.slug) {
+      void useGoogleAuthStore.getState().syncServerClientId(user.tenantId || user.slug);
+    }
     api.get('/admin/settings').then(res => {
       if (res.data.data) {
         if (res.data.data.clinicProfile) {
@@ -191,7 +194,7 @@ export default function Dashboard() {
       }
     }).catch(console.error);
     return () => unsub();
-  }, [initGoogleAuth]);
+  }, [initGoogleAuth, user?.tenantId, user?.slug]);
 
 
 

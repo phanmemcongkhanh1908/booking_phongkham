@@ -56,12 +56,25 @@ interface GoogleAuthState {
   
   // Custom Google Client ID (for custom domains like Render, Vercel, etc.)
   customClientId: string | null;
+  serverClientId: string | null;
   activeClientId: string;
   setCustomClientId: (clientId: string) => void;
+  syncServerClientId: (clinicSlugOrTenant?: string) => Promise<string>;
 }
 
 const STORAGE_KEY_CONFIG = 'dental_google_backup_meta';
 const CUSTOM_CLIENT_ID_KEY = 'dental_google_custom_client_id';
+const SESSION_TOKEN_KEY = 'dental_google_access_token';
+const AUTH_METHOD_KEY = 'dental_google_auth_method';
+
+const RENDER_PROD_HOSTS = new Set([
+  'booking-phongkham.onrender.com',
+  'www.booking-phongkham.onrender.com',
+]);
+
+// OAuth Client ID thuộc Google Cloud Project "Booking-phongkham" cho tên miền Render
+const RENDER_DEFAULT_GOOGLE_CLIENT_ID =
+  '330071367512-mfo4q3vr1iof1ou4tv6i1ohbsg7al61s.apps.googleusercontent.com';
 
 const getEnv = (key: string): string => {
   try {
@@ -71,29 +84,100 @@ const getEnv = (key: string): string => {
   }
 };
 
-const getInitialClientId = (): string => {
-  try {
-    const saved = localStorage.getItem(CUSTOM_CLIENT_ID_KEY);
-    if (saved && saved.trim()) return saved.trim();
-  } catch (e) {}
-  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID');
-  if (envClientId) {
-    return envClientId.trim();
+const getDefaultDomainClientId = (): string => {
+  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID').trim();
+  if (envClientId) return envClientId;
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname.toLowerCase();
+    if (RENDER_PROD_HOSTS.has(hostname)) {
+      return RENDER_DEFAULT_GOOGLE_CLIENT_ID;
+    }
   }
-  return firebaseConfig.oAuthClientId || '';
+
+  return (firebaseConfig.oAuthClientId || '').trim();
+};
+
+const resolveActiveClientId = (
+  customClientId?: string | null,
+  serverClientId?: string | null
+): string => {
+  const custom = (customClientId || '').trim();
+  if (custom) return custom;
+
+  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID').trim();
+  if (envClientId) return envClientId;
+
+  const srv = (serverClientId || '').trim();
+  if (srv) return srv;
+
+  return getDefaultDomainClientId();
+};
+
+const isFirebaseProjectClientId = (clientId: string): boolean => {
+  const fbId = (firebaseConfig.oAuthClientId || '').trim();
+  return Boolean(fbId && clientId === fbId);
+};
+
+const ensureGsiScriptLoaded = async (timeoutMs = 3500): Promise<boolean> => {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).google?.accounts?.oauth2) return true;
+
+  return new Promise<boolean>((resolve) => {
+    const startTime = Date.now();
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src*="accounts.google.com/gsi/client"]'
+    );
+
+    if (!existingScript) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    const timer = window.setInterval(() => {
+      if ((window as any).google?.accounts?.oauth2) {
+        window.clearInterval(timer);
+        resolve(true);
+      } else if (Date.now() - startTime >= timeoutMs) {
+        window.clearInterval(timer);
+        resolve(Boolean((window as any).google?.accounts?.oauth2));
+      }
+    }, 80);
+  });
 };
 
 // In-memory token cache backed by sessionStorage to survive page reloads (F5) within browser tab
 const getStoredSessionToken = (): string | null => {
   try {
     if (typeof window !== 'undefined' && window.sessionStorage) {
-      return sessionStorage.getItem('dental_google_access_token') || null;
+      return sessionStorage.getItem(SESSION_TOKEN_KEY) || null;
+    }
+  } catch (e) {}
+  return null;
+};
+
+const getStoredAuthMethod = (): 'gsi' | 'firebase' | null => {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const val = sessionStorage.getItem(AUTH_METHOD_KEY);
+      if (val === 'gsi' || val === 'firebase') return val;
+    }
+    const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.authMethod === 'gsi' || parsed?.authMethod === 'firebase') {
+        return parsed.authMethod;
+      }
     }
   } catch (e) {}
   return null;
 };
 
 let inMemoryAccessToken: string | null = getStoredSessionToken();
+let serverConfigPromise: Promise<string> | null = null;
 
 export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
   // Read saved non-sensitive metadata from localStorage (never secrets/tokens)
@@ -107,11 +191,8 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     console.error('Failed to read saved google meta:', e);
   }
 
-  const envClientId = getEnv('VITE_GOOGLE_CLIENT_ID');
-  const initialActiveClientId = (savedCustomClientId && savedCustomClientId.trim()) 
-    || envClientId 
-    || firebaseConfig.oAuthClientId 
-    || '';
+  const normalizedCustom = savedCustomClientId ? savedCustomClientId.trim() : null;
+  const initialActiveClientId = resolveActiveClientId(normalizedCustom, null);
 
   const initialToken = inMemoryAccessToken || getStoredSessionToken();
   const isInitiallyLinked = !!(initialToken || savedMeta.user?.email);
@@ -127,7 +208,8 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     driveFolderId: savedMeta.driveFolderId || null,
     lastSyncAt: savedMeta.lastSyncAt || null,
     warningDismissed: false,
-    customClientId: savedCustomClientId ? savedCustomClientId.trim() : null,
+    customClientId: normalizedCustom,
+    serverClientId: null,
     activeClientId: initialActiveClientId,
 
     setCustomClientId: (clientId: string) => {
@@ -139,15 +221,60 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           localStorage.removeItem(CUSTOM_CLIENT_ID_KEY);
         }
       } catch (e) {}
-      const active = trimmed || getEnv('VITE_GOOGLE_CLIENT_ID') || firebaseConfig.oAuthClientId || '';
-      set({ 
-        customClientId: trimmed || null, 
-        activeClientId: active 
+      const active = resolveActiveClientId(trimmed || null, get().serverClientId);
+      set({
+        customClientId: trimmed || null,
+        activeClientId: active,
       });
     },
 
+    syncServerClientId: async (clinicSlugOrTenant?: string) => {
+      if (serverConfigPromise && !clinicSlugOrTenant) {
+        return serverConfigPromise;
+      }
+
+      const fetchTask = (async () => {
+        try {
+          const qs = new URLSearchParams();
+          if (clinicSlugOrTenant) {
+            if (clinicSlugOrTenant.startsWith('tenant_')) {
+              qs.set('tenantId', clinicSlugOrTenant);
+            } else {
+              qs.set('clinic', clinicSlugOrTenant);
+            }
+          }
+          const url = `/api/public/google-oauth-config${qs.toString() ? `?${qs.toString()}` : ''}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const payload = await res.json();
+            const srvClientId = typeof payload?.data?.clientId === 'string'
+              ? payload.data.clientId.trim()
+              : '';
+            const active = resolveActiveClientId(get().customClientId, srvClientId || null);
+            set({
+              serverClientId: srvClientId || null,
+              activeClientId: active,
+            });
+            return active;
+          }
+        } catch (err) {
+          console.warn('[Google Auth] Could not sync runtime OAuth config from server:', err);
+        }
+        return get().activeClientId;
+      })();
+
+      if (!clinicSlugOrTenant) {
+        serverConfigPromise = fetchTask;
+      }
+      return fetchTask;
+    },
+
     init: () => {
-      // Listen to Firebase Auth state
+      // Preload GSI script & sync runtime server Client ID early so click handler stays synchronous
+      void ensureGsiScriptLoaded();
+      void get().syncServerClientId();
+
+      // Listen to Firebase Auth state (only applies if connected via Firebase popup)
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
         if (firebaseUser) {
           const userProfile: GoogleUserProfile = {
@@ -158,13 +285,20 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           };
           set({
             user: userProfile,
-            isConnected: !!inMemoryAccessToken,
+            isConnected: !!(inMemoryAccessToken || userProfile.email),
           });
         } else {
-          // If signed out of Firebase, clear memory token
+          // CRITICAL: GSI token flow does not create a Firebase Auth user.
+          // Do NOT wipe GSI tokens or disconnect state when Firebase reports null.
+          const authMethod = getStoredAuthMethod();
+          const currentState = get();
+          if (authMethod === 'gsi' || (!authMethod && (inMemoryAccessToken || currentState.user?.email))) {
+            return;
+          }
           inMemoryAccessToken = null;
           set({
             accessToken: null,
+            user: null,
             isConnected: false,
           });
         }
@@ -174,18 +308,26 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     },
 
     connect: async (options?: { prompt?: string }) => {
+      if (get().isConnecting) {
+        const inProgressErr = new Error('Đang mở cửa sổ kết nối Google, vui lòng hoàn tất trong cửa sổ hiện tại.');
+        (inProgressErr as any).code = 'auth/cancelled-popup-request';
+        (inProgressErr as any).isCancelled = true;
+        throw inProgressErr;
+      }
       set({ isConnecting: true, error: null });
 
-      const handleSuccess = (token: string, userProfile: GoogleUserProfile) => {
+      const handleSuccess = (token: string, userProfile: GoogleUserProfile, method: 'gsi' | 'firebase') => {
         inMemoryAccessToken = token;
         try {
           if (typeof window !== 'undefined' && window.sessionStorage) {
-            sessionStorage.setItem('dental_google_access_token', token);
+            sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+            sessionStorage.setItem(AUTH_METHOD_KEY, method);
           }
           const prev = JSON.parse(localStorage.getItem(STORAGE_KEY_CONFIG) || '{}');
           localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
             ...prev,
             user: userProfile,
+            authMethod: method,
             connectedAt: new Date().toISOString()
           }));
         } catch(e) {}
@@ -202,10 +344,19 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
         return { accessToken: token, user: userProfile };
       };
 
+      const clientIdToUse =
+        get().activeClientId ||
+        resolveActiveClientId(get().customClientId, get().serverClientId);
+
+      // Ensure GSI script is available before deciding path (prevents accidental Firebase fallback when GSI loads slowly)
+      let winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
+      if (!winGoogle?.accounts?.oauth2 && clientIdToUse) {
+        await ensureGsiScriptLoaded(3500);
+        winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
+      }
+
       // 1. Primary: Google Identity Services (GSI token client)
       // Directly handles popup and tokens with Drive & Sheets scopes without relying on iframe cookies
-      const winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
-      const clientIdToUse = get().activeClientId || getInitialClientId();
       if (winGoogle?.accounts?.oauth2 && clientIdToUse) {
         try {
           console.log('[Google Auth] Connecting via Google Identity Services (GSI) with clientId:', clientIdToUse);
@@ -251,6 +402,15 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
                     return reject(err);
                   }
 
+                  const errStr = `${resp.error || ''} ${resp.error_description || ''}`.toLowerCase();
+                  if (errStr.includes('origin_mismatch') || errStr.includes('redirect_uri_mismatch')) {
+                    const originErr = new Error(
+                      'Tên miền hiện tại chưa khớp với Authorized JavaScript origins trên Google Cloud Console (Lỗi 400: origin_mismatch).'
+                    );
+                    (originErr as any).code = 'origin_mismatch';
+                    return reject(originErr);
+                  }
+
                   console.error('[Google Auth] Lỗi phản hồi OAuth từ Google GSI:', resp);
                   return reject(new Error(resp.error_description || resp.error));
                 }
@@ -286,6 +446,21 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
                 }
               },
               error_callback: (err: any) => {
+                if (err?.type === 'popup_closed') {
+                  console.info('[Google Auth] Cửa sổ popup Google GSI đã được đóng bởi người dùng.');
+                  const cancelErr = new Error('Cửa sổ đăng nhập Google đã được đóng.');
+                  (cancelErr as any).code = 'auth/popup-closed-by-user';
+                  (cancelErr as any).isCancelled = true;
+                  return reject(cancelErr);
+                }
+
+                if (err?.type === 'popup_failed_to_open') {
+                  console.warn('[Google Auth] Trình duyệt đã chặn popup Google GSI.');
+                  const blockedErr = new Error('Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup trên thanh địa chỉ hoặc thử mở ở tab mới.');
+                  (blockedErr as any).code = 'auth/popup-blocked';
+                  return reject(blockedErr);
+                }
+
                 const isDenied = 
                   err?.type === 'access_denied' ||
                   err?.error === 'access_denied' ||
@@ -298,7 +473,7 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
                     timestamp: new Date().toISOString(),
                     reason: 'Email Google chưa được thêm vào Admin Whitelist hoặc Test Users.'
                   });
-                  const accessErr = new Error('Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email vào Admin Whitelist.');
+                  const accessErr = new Error('Tài khoản Google bị từ chối truy cập (access_denied). Vui lòng thêm email vào Admin Whitelist hoặc Test Users trên Google Cloud Console.');
                   (accessErr as any).code = 'auth/access-denied';
                   (accessErr as any).isAccessDenied = true;
                   (accessErr as any).rawDetails = err;
@@ -312,9 +487,9 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
             tokenClient.requestAccessToken({ prompt: options?.prompt || 'consent' });
           });
 
-          return handleSuccess(gsiResult.accessToken, gsiResult.user);
+          return handleSuccess(gsiResult.accessToken, gsiResult.user, 'gsi');
         } catch (gsiErr: any) {
-          if (gsiErr?.isCancelled || gsiErr?.code === 'auth/popup-closed-by-user') {
+          if (gsiErr?.isCancelled || gsiErr?.code === 'auth/popup-closed-by-user' || gsiErr?.code === 'auth/cancelled-popup-request') {
             set({ isConnecting: false, error: null });
             throw gsiErr;
           }
@@ -323,16 +498,28 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
             console.error('[Google Auth][ACCESS_DENIED] Dừng luồng xác thực vì bị Google từ chối quyền (access_denied):', gsiErr);
             set({ 
               isConnecting: false, 
-              error: 'Tài khoản Google bị từ chối truy cập (access_denied). Email cần được thêm vào danh sách Admin Whitelist.' 
+              error: 'Tài khoản Google bị từ chối truy cập (access_denied). Email cần được thêm vào danh sách Admin Whitelist hoặc Test Users.' 
             });
             throw gsiErr;
           }
 
-          console.warn('[Google Auth] GSI connection error, falling back to Firebase Auth Popup:', gsiErr);
+          // Do not spawn a second Firebase Auth popup when GSI already ran — it opens duplicate error popups.
+          const errMessage = gsiErr?.message || 'Không thể kết nối Google OAuth từ tên miền này. Vui lòng kiểm tra Authorized JavaScript origins hoặc Client ID.';
+          set({ isConnecting: false, error: errMessage });
+          throw gsiErr;
         }
       }
 
-      // 2. Secondary: Firebase Auth Popup
+      // If we are on a custom/Render Client ID (not AI Studio's internal Firebase project),
+      // never fall back to gen-lang-client Firebase Auth popup when GSI script was blocked.
+      if (clientIdToUse && !isFirebaseProjectClientId(clientIdToUse)) {
+        const gsiBlockedMsg =
+          'Không tải được thư viện đăng nhập Google (accounts.google.com/gsi/client). Vui lòng tắt trình chặn quảng cáo/khiên bảo mật trình duyệt hoặc tải lại trang rồi thử lại.';
+        set({ isConnecting: false, error: gsiBlockedMsg });
+        throw new Error(gsiBlockedMsg);
+      }
+
+      // 2. Secondary: Firebase Auth Popup (only for AI Studio / localhost using Firebase's own Client ID)
       try {
         console.log('[Google Auth] Connecting via Firebase Auth popup...');
         const result = await signInWithPopup(auth, provider);
@@ -350,7 +537,7 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
           uid: result.user.uid,
         };
 
-        return handleSuccess(token, userProfile);
+        return handleSuccess(token, userProfile, 'firebase');
       } catch (err: any) {
         const isClosedByUser = 
           err?.code === 'auth/popup-closed-by-user' || 
@@ -443,6 +630,13 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     },
 
     disconnect: async () => {
+      const tokenToRevoke = inMemoryAccessToken;
+      try {
+        const winGoogle = typeof window !== 'undefined' ? (window as any).google : undefined;
+        if (tokenToRevoke && winGoogle?.accounts?.oauth2?.revoke) {
+          winGoogle.accounts.oauth2.revoke(tokenToRevoke, () => {});
+        }
+      } catch (e) {}
       try {
         await signOut(auth);
       } catch (e) {
@@ -451,7 +645,8 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
       inMemoryAccessToken = null;
       try {
         if (typeof window !== 'undefined' && window.sessionStorage) {
-          sessionStorage.removeItem('dental_google_access_token');
+          sessionStorage.removeItem(SESSION_TOKEN_KEY);
+          sessionStorage.removeItem(AUTH_METHOD_KEY);
         }
         localStorage.removeItem(STORAGE_KEY_CONFIG);
       } catch(e) {}

@@ -1043,6 +1043,51 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
   }
 });
 
+// Lưu Google OAuth Client ID tùy chỉnh lên máy chủ (đồng bộ cho mọi trình duyệt/thiết bị)
+adminRouter.put("/google-oauth-config", requireAuth, async (req, res, next) => {
+  try {
+    const permissions = req.user?.permissions || [];
+    const canManage =
+      req.user?.role === "admin" ||
+      permissions.includes("*") ||
+      permissions.includes("all") ||
+      permissions.includes("setting.manage");
+    if (!canManage) {
+      throw new ForbiddenError("Bạn không có quyền cập nhật Google OAuth Client ID.");
+    }
+
+    const rawClientId = typeof req.body?.clientId === "string" ? req.body.clientId.trim() : "";
+    if (rawClientId && !rawClientId.endsWith(".apps.googleusercontent.com")) {
+      throw new BadRequestError("Client ID không hợp lệ. Định dạng đúng phải kết thúc bằng .apps.googleusercontent.com");
+    }
+
+    const myTenantId = req.user?.tenantId || null;
+    await db.insert(settings)
+      .values({
+        id: "google_oauth_client_id",
+        key: "google_oauth_client_id",
+        value: rawClientId,
+        tenantId: myTenantId,
+      })
+      .onConflictDoUpdate({
+        target: settings.id,
+        set: { value: rawClientId },
+      });
+
+    persistStore();
+
+    res.json({
+      success: true,
+      data: { clientId: rawClientId },
+      message: rawClientId
+        ? "Đã lưu Google OAuth Client ID lên máy chủ (áp dụng cho mọi trình duyệt)."
+        : "Đã khôi phục Google OAuth Client ID mặc định trên máy chủ.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Test gửi email từ Admin Settings
 adminRouter.post("/settings/test-email", requireAuth, async (req, res, next) => {
   try {
