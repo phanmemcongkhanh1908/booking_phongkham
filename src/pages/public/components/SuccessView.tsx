@@ -340,7 +340,7 @@ export default function SuccessView() {
               {/* Location info */}
               {address && (
                 <a
-                  href={buildGoogleMapsDirectionsUrl(address)}
+                  href={buildGoogleMapsDirectionsUrl(address, clinicProfile?.latitude, clinicProfile?.longitude)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-start gap-2 text-xs text-slate-600 hover:text-teal-700 px-1 pt-1 transition-colors group"

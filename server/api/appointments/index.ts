@@ -750,6 +750,10 @@ appointmentRouter.post("/next", requirePermission("appointment.create"), async (
       source: "CLINIC"
     }).returning();
 
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(newAppointment[0].id))
+      .catch(() => {});
+
     res.json({ success: true, data: newAppointment[0] });
   } catch (error) {
     next(error);
@@ -906,6 +910,10 @@ appointmentRouter.post("/quick", requirePermission("appointment.create"), async 
       notifyPatientAppointment(bookingResult.id, "CONFIRMED").catch(console.error);
     }
 
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(bookingResult.id))
+      .catch(() => {});
+
     res.json({ success: true, data: bookingResult });
   } catch (error) {
     next(error);
@@ -946,6 +954,10 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
 
     // Trigger waitlist since the old slot is now freed up
     triggerWaitlistMatching(oldApt[0]).catch(console.error);
+
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(updated[0].id))
+      .catch(() => {});
 
     res.json({ success: true, data: updated[0] });
   } catch (error) {
@@ -1031,6 +1043,10 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
       notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
       triggerWaitlistMatching(appointment).catch(console.error);
     }
+
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(appointment.id))
+      .catch(() => {});
 
     res.json({
       success: true,
@@ -1423,6 +1439,10 @@ appointmentRouter.put("/:id", requirePermission("appointment.update"), async (re
       tenantId: normalizeTenant(updated[0].tenantId),
     });
 
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(updated[0].id))
+      .catch(() => {});
+
     res.json({ success: true, data: updated[0] });
   } catch (error) {
     next(error);
@@ -1453,6 +1473,10 @@ appointmentRouter.delete("/:id", requirePermission("appointment.update"), async 
       status: "DELETED",
       tenantId: normalizeTenant(existing[0].tenantId),
     });
+
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ deleteAppointmentFromFirestore }) => deleteAppointmentFromFirestore(appointmentId))
+      .catch(() => {});
 
     res.json({ success: true, message: "Đã xóa lịch hẹn an toàn" });
   } catch (error) {

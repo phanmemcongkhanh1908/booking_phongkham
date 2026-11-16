@@ -523,6 +523,11 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       .then(({ sendAdminNewBookingPush }) => sendAdminNewBookingPush(bookingResult.id))
       .catch(console.error);
 
+    // Sync appointment to Firestore so 1-hour reminder queries see it immediately
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(bookingResult.id))
+      .catch(() => {});
+
     // Fast local DB lookup for response metadata + background async TTS & SSE dispatch
     let aptDetailPayload: any = null;
     const targetTenantSnapshot = bookingResult.tenantId || (req.body as any).tenantId || targetTenantId || null;
@@ -1426,6 +1431,10 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
       .then(({ triggerWaitlistMatching }) => triggerWaitlistMatching(apts[0]))
       .catch(console.error);
 
+    import('../../services/appointmentFirestoreService.js')
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(id))
+      .catch(() => {});
+
     import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
       realtimeNotification.emitBookingUpdated({
         id,
@@ -1489,6 +1498,10 @@ publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
     // Send Push Notification (VAPID) to patient
     sendAppointmentStatusPush(id, 'RESCHEDULED', { newStartAt: startAt }).catch(console.error);
     notifyPatientAppointment(id, 'RESCHEDULED').catch(console.error);
+
+    import('../../services/appointmentFirestoreService.js')
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(id))
+      .catch(() => {});
 
     import('../../services/realtimeNotification.js').then(({ realtimeNotification }) => {
       realtimeNotification.emitBookingUpdated({
@@ -1636,6 +1649,10 @@ publicRouter.post("/appointments/:id/review", patientVerifyLimiter, async (req, 
       invalidateClinicSlugCache();
     } catch {}
 
+    import("../../services/appointmentFirestoreService.js")
+      .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(apt.id))
+      .catch(() => {});
+
     try {
       const { realtimeNotification } = await import("../../services/realtimeNotification.js");
       const [ptRows, svcRows] = await Promise.all([
@@ -1779,7 +1796,7 @@ publicRouter.get("/admin-manifest.webmanifest", (req, res) => {
         purpose: "any",
       },
       {
-        src: "/pwa-512x512.png",
+        src: "/pwa-maskable-512x512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
@@ -1791,6 +1808,206 @@ publicRouter.get("/admin-manifest.webmanifest", (req, res) => {
       },
     ],
   });
+});
+
+function buildClinicShortName(rawName: string): string {
+  const cleaned = rawName.replace(/^nha\s+khoa\s+/i, "").trim() || rawName.trim();
+  if (!cleaned) return "Đặt Lịch";
+  if (cleaned.length <= 12) return cleaned;
+  const words = cleaned.split(/\s+/);
+  let acc = "";
+  for (const w of words) {
+    const candidate = acc ? `${acc} ${w}` : w;
+    if (candidate.length <= 12) acc = candidate;
+    else break;
+  }
+  return acc || cleaned.slice(0, 12);
+}
+
+// Dynamic Per-Clinic Web App Manifest for Customer Booking PWA (Android / iOS / PC)
+publicRouter.get("/clinic-manifest.webmanifest", async (req, res) => {
+  const rawSlug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+  let clinicName = typeof req.query.name === "string" ? req.query.name.trim() : "";
+
+  if (!clinicName && rawSlug) {
+    try {
+      const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+      const matched = await findClinicBySlug(rawSlug);
+      if (matched?.clinicName) {
+        clinicName = String(matched.clinicName).trim();
+      }
+    } catch {
+      // Fallback safely
+    }
+  }
+
+  const startUrl = rawSlug
+    ? `/booking/${encodeURIComponent(rawSlug)}?mode=customer`
+    : "/";
+  const fullName = clinicName
+    ? `${clinicName} - Đặt Lịch Khám`
+    : "Dental Smart - Đặt Lịch Khám Nha Khoa";
+  const shortName = clinicName ? buildClinicShortName(clinicName) : "Đặt Lịch";
+
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  res.json({
+    id: startUrl,
+    name: fullName,
+    short_name: shortName,
+    description: clinicName
+      ? `Đặt lịch khám trực tuyến tại ${clinicName}`
+      : "Đặt lịch hẹn khám nha khoa nhanh chóng, tiện lợi",
+    start_url: startUrl,
+    scope: "/",
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: "#0d9488",
+    orientation: "portrait-primary",
+    icons: [
+      {
+        src: "/pwa-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-maskable-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  });
+});
+
+// Auto-create Windows Desktop Shortcut Script (.bat with UTF-16LE Encoded PowerShell)
+publicRouter.get("/pc-shortcut-script", (req, res) => {
+  const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+  const rawName = typeof req.query.name === "string" ? req.query.name.trim() : "Dat Lich Phong Kham";
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+    }
+  } catch {
+    return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+  }
+
+  const displayTitle = rawName.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Dat Lich Phong Kham";
+  const asciiFilenameBase =
+    displayTitle
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "Dat_Lich_Kham";
+
+  const targetUrl = parsedUrl.toString();
+  const faviconUrl = `${parsedUrl.origin}/favicon.ico`;
+
+  // Escape single quotes for PowerShell single-quoted literals
+  const psEscape = (val: string) => val.replace(/'/g, "''");
+
+  const psScript = `
+$ErrorActionPreference = 'Stop'
+$desktop = [Environment]::GetFolderPath('Desktop')
+if (-not $desktop -or -not (Test-Path $desktop)) {
+  $desktop = Join-Path $env:USERPROFILE 'Desktop'
+}
+$appUrl = '${psEscape(targetUrl)}'
+$appName = '${psEscape(displayTitle)}'
+$iconDir = Join-Path $env:LOCALAPPDATA 'DentalSmart\\Icons'
+New-Item -ItemType Directory -Force -Path $iconDir | Out-Null
+$iconPath = Join-Path $iconDir '${psEscape(asciiFilenameBase)}.ico'
+try {
+  Invoke-WebRequest -Uri '${psEscape(faviconUrl)}' -OutFile $iconPath -TimeoutSec 5 -UseBasicParsing
+} catch {}
+
+$browserExe = $null
+$browserArgs = $null
+$candidates = @(
+  "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe",
+  "\${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe",
+  "$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe",
+  "\${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe",
+  "$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe",
+  "$env:LOCALAPPDATA\\CocCoc\\Browser\\Application\\browser.exe",
+  "$env:ProgramFiles\\CocCoc\\Browser\\Application\\browser.exe"
+)
+foreach ($c in $candidates) {
+  if ($c -and (Test-Path $c)) {
+    $browserExe = $c
+    $browserArgs = "--app=$appUrl"
+    break
+  }
+}
+
+$ws = New-Object -ComObject WScript.Shell
+$lnkPath = Join-Path $desktop ($appName + '.lnk')
+$sc = $ws.CreateShortcut($lnkPath)
+if ($browserExe) {
+  $sc.TargetPath = $browserExe
+  $sc.Arguments = $browserArgs
+  if (Test-Path $iconPath) {
+    $sc.IconLocation = "$iconPath,0"
+  } else {
+    $sc.IconLocation = "$browserExe,0"
+  }
+} else {
+  $sc.TargetPath = $appUrl
+  if (Test-Path $iconPath) {
+    $sc.IconLocation = "$iconPath,0"
+  }
+}
+$sc.Description = $appName
+$sc.Save()
+Write-Host ("CREATED: " + $lnkPath)
+`.trim();
+
+  const encodedCommand = Buffer.from(psScript, "utf16le").toString("base64");
+
+  const batContent = [
+    "@echo off",
+    "chcp 65001 >nul",
+    "title Cai dat loi tat Desktop",
+    "echo ========================================================",
+    "echo   DANG TAO BIEU TUONG UNG DUNG TREN MAN HINH DESKTOP...",
+    "echo ========================================================",
+    `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
+    "if %errorlevel% equ 0 (",
+    "  echo.",
+    "  echo [OK] Da tao bieu tuong loi tat tren Man hinh Desktop!",
+    "  echo Ban co the mo ung dung ngay tu Man hinh Desktop.",
+    "  timeout /t 2 >nul",
+    ") else (",
+    "  echo.",
+    "  echo [LOI] Khong the tao loi tat tu dong. Vui long thu cach khac trong trinh duyet.",
+    "  pause",
+    ")",
+    "",
+  ].join("\r\n");
+
+  res.setHeader("Content-Type", "application/bat; charset=utf-8");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="Cai_Dat_${asciiFilenameBase}.bat"`
+  );
+  res.send(batContent);
 });
 
 // Runtime Google OAuth Client ID configuration (public identifier, synced across all browsers/devices)

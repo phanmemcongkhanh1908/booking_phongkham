@@ -26,6 +26,7 @@ import MobileSummaryDrawer from './components/MobileSummaryDrawer';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import SimpleBookingForm from './components/SimpleBookingForm';
+import { useClinicManifestBinding } from '../../hooks/usePWAInstall';
 
 const SuccessView = React.lazy(() => import('./components/SuccessView'));
 
@@ -47,6 +48,8 @@ export default function Booking() {
     bookingFormConfig,
     announcementBanner 
   } = useClinicSettings(slug);
+
+  useClinicManifestBinding(slug || null, clinicProfile?.clinicName || clinicProfile?.name || null);
 
   const setStepStore = useBookingStore(s => s.setStep);
 
@@ -199,21 +202,21 @@ export default function Booking() {
                   </p>
                 )}
                 {clinicProfile?.address && (
-                  <div>
+                  <div className="min-w-0">
                     <a
-                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address)}
+                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address, clinicProfile.latitude, clinicProfile.longitude)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-start gap-1 text-[11px] text-slate-600 hover:text-teal-700 transition-colors leading-snug"
+                      className="inline-flex items-start gap-1 text-[11px] text-slate-600 hover:text-teal-700 transition-colors leading-snug max-w-full break-words"
                       title="Nhấn để mở bản đồ chỉ đường tới phòng khám"
                     >
                       <MapPin className="w-3 h-3 text-teal-600 shrink-0 mt-0.5" />
-                      <span className="underline decoration-slate-300 underline-offset-2">
-                        {clinicProfile.address}
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-700 shrink-0 ml-0.5">
-                        <Navigation className="w-2.5 h-2.5" />
-                        Chỉ đường
+                      <span className="underline decoration-slate-300 underline-offset-2 break-words">
+                        {clinicProfile.address}{' '}
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-700 whitespace-nowrap ml-0.5">
+                          <Navigation className="w-2.5 h-2.5 inline" />
+                          Chỉ đường
+                        </span>
                       </span>
                     </a>
                   </div>
@@ -248,21 +251,21 @@ export default function Booking() {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                <div className="flex flex-wrap items-start gap-x-3 gap-y-1 min-w-0">
                   {clinicProfile?.address && (
                     <a
-                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address)}
+                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address, clinicProfile.latitude, clinicProfile.longitude)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-start gap-1.5 text-xs text-slate-600 hover:text-teal-700 transition-colors group"
+                      className="inline-flex items-start gap-1.5 text-xs text-slate-600 hover:text-teal-700 transition-colors group max-w-full break-words"
                       title="Nhấn để mở Google Maps chỉ đường tới phòng khám"
                     >
                       <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
-                      <span className="leading-snug group-hover:underline underline-offset-2">
-                        {clinicProfile.address}
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-teal-700 whitespace-nowrap shrink-0">
-                        (<Navigation className="w-3 h-3 inline" /> Chỉ đường)
+                      <span className="leading-snug group-hover:underline underline-offset-2 break-words">
+                        {clinicProfile.address}{' '}
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-teal-700 whitespace-nowrap">
+                          (<Navigation className="w-3 h-3 inline" /> Chỉ đường)
+                        </span>
                       </span>
                     </a>
                   )}

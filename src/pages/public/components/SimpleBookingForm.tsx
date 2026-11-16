@@ -11,7 +11,6 @@ import {
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
-import { PWAInstallBanner } from './PWAInstallBanner';
 import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
 import ServiceReviewsModal from '../../../components/ServiceReviewsModal';
 import { formatClinicSlogan } from '../../../utils/maps';
@@ -19,6 +18,7 @@ import {
   CUSTOMER_REVIEW_SUBMITTED_EVENT,
   recordCustomerDeviceBooking,
 } from '../../../utils/customerDeviceBookings';
+import { saveOfflineAppointments, saveSingleOfflineAppointment } from '../../../utils/offlineBookingDb';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -271,7 +271,16 @@ export default function SimpleBookingForm() {
           fullName: p.fullName || prev.fullName,
           email: p.email || prev.email,
         }));
-        setBookingHistory(Array.isArray(p.bookingHistory) ? p.bookingHistory : []);
+        const historyList = Array.isArray(p.bookingHistory) ? p.bookingHistory : [];
+        setBookingHistory(historyList);
+        if (historyList.length > 0) {
+          void saveOfflineAppointments(historyList, {
+            phone: formData.phone,
+            clinicSlug: activeSlug || clinicProfile?.slug || null,
+            clinicName: clinicProfile?.clinicName || clinicProfile?.name || null,
+            fullName: p.fullName || formData.fullName,
+          });
+        }
         setPhoneStatus('verified');
         toast.success("Xác thực thành công! Đã tự động điền thông tin của bạn.");
         if (p.lastServiceId && selectedServiceIds.length === 0) {
@@ -373,6 +382,27 @@ export default function SimpleBookingForm() {
             providerName: appointmentData.providerName || null,
             startAt: appointmentData.startAt || selectedSlot?.startAt || null,
           });
+          void saveSingleOfflineAppointment(
+            {
+              id: appointmentData.appointmentId,
+              startAt: appointmentData.startAt || selectedSlot?.startAt,
+              endAt: appointmentData.endAt || selectedSlot?.endAt || selectedSlot?.startAt,
+              status: appointmentData.status || 'REQUESTED',
+              serviceId: appointmentData.serviceId || selectedServiceIds[0] || '',
+              serviceIds: appointmentData.serviceIds || selectedServiceIds,
+              serviceName: appointmentData.serviceName || combinedServiceName || 'Dịch vụ nha khoa',
+              providerName: appointmentData.providerName || null,
+              patientName: formData.fullName.trim(),
+              bookingFor: bookingFor,
+              notes: formData.notes || null,
+            },
+            {
+              phone: formData.phone.trim(),
+              clinicSlug: activeSlug || clinicProfile?.slug || null,
+              clinicName: clinicProfile?.clinicName || clinicProfile?.name || null,
+              fullName: formData.fullName.trim(),
+            }
+          );
         }
 
         setAppointmentSuccess(
@@ -1068,9 +1098,6 @@ export default function SimpleBookingForm() {
           </div>
         </div>
       </form>
-
-      {/* Floating PWA Install Prompt for Mobile */}
-      <PWAInstallBanner />
 
       <CustomerBookingHistoryModal
         isOpen={showHistoryModal}

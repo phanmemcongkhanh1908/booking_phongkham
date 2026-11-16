@@ -22,6 +22,7 @@ import { vi } from 'date-fns/locale';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 import { recordCustomerDeviceBooking } from '../../../utils/customerDeviceBookings';
+import { saveSingleOfflineAppointment } from '../../../utils/offlineBookingDb';
 
 export default function BookingConfirmation() {
   const { 
@@ -156,6 +157,27 @@ export default function BookingConfirmation() {
             providerName: appointmentData.providerName || null,
             startAt: appointmentData.startAt || slotStartTime || null,
           });
+          void saveSingleOfflineAppointment(
+            {
+              id: appointmentData.appointmentId,
+              startAt: appointmentData.startAt || slotStartTime,
+              endAt: appointmentData.endAt || slotStartTime,
+              status: appointmentData.status || 'REQUESTED',
+              serviceId: appointmentData.serviceId || serviceId || '',
+              serviceIds: appointmentData.serviceIds || targetServiceIds || null,
+              serviceName: appointmentData.serviceName || serviceName || 'Dịch vụ nha khoa',
+              providerName: appointmentData.providerName || null,
+              patientName: patientDraft.fullName.trim(),
+              bookingFor: patientDraft.bookingFor,
+              notes: patientNote || null,
+            },
+            {
+              phone: cleanPhone,
+              clinicSlug: getActiveRouteClinicSlug() || bookingState.clinicProfile?.slug || null,
+              clinicName: bookingState.clinicProfile?.clinicName || bookingState.clinicProfile?.name || null,
+              fullName: patientDraft.fullName.trim(),
+            }
+          );
           
           bookingState.setAppointmentSuccess(
             appointmentData.appointmentId,

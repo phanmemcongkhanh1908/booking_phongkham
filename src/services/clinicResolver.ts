@@ -27,6 +27,8 @@ export interface ClinicBrandingInfo {
   slug?: string;
   workingHours?: string;
   workingHoursStr?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface ClinicBundleData {

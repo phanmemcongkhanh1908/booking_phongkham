@@ -59,6 +59,8 @@ export interface ClinicBrandingInfo {
   slug?: string;
   workingHours?: string;
   workingHoursStr?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface ClinicConfig {
@@ -70,6 +72,8 @@ export interface ClinicConfig {
   hotline?: string;
   workingHours?: string;
   workingHoursStr?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   tenantId?: string;
   slug?: string;
   source: "firestore" | "local_db" | "default";
@@ -81,6 +85,13 @@ export interface ClinicConfig {
   primaryColor?: string;
   accentColor?: string;
   theme?: string;
+}
+
+function parseCoord(val: any, min: number, max: number): number | null {
+  if (val === null || val === undefined || val === "") return null;
+  const n = Number(val);
+  if (!Number.isFinite(n) || n < min || n > max) return null;
+  return Number(n.toFixed(6));
 }
 
 export interface ClinicFullBundle {
@@ -257,6 +268,21 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
         ? customProfileFromSettings.slogan
         : matchedUser.slogan || "";
 
+    const resolvedLatitude = parseCoord(
+      customProfileFromSettings?.latitude !== undefined
+        ? customProfileFromSettings.latitude
+        : matchedUser.latitude,
+      -90,
+      90
+    );
+    const resolvedLongitude = parseCoord(
+      customProfileFromSettings?.longitude !== undefined
+        ? customProfileFromSettings.longitude
+        : matchedUser.longitude,
+      -180,
+      180
+    );
+
     const clinicConfig: ClinicConfig = {
       clinicName: resolvedClinicName,
       doctorName: resolvedDoctorName,
@@ -266,6 +292,8 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
       hotline: resolvedHotline,
       workingHours: resolvedWorkingHours,
       workingHoursStr: resolvedWorkingHours,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
       tenantId: targetTenantId,
       slug: cleanSlug,
       source: "local_db",
@@ -409,6 +437,8 @@ function mapFirestoreData(data: any, docId: string, slug: string): ClinicConfig 
     hotline,
     workingHours,
     workingHoursStr: workingHours,
+    latitude: parseCoord(data.latitude ?? data.lat, -90, 90),
+    longitude: parseCoord(data.longitude ?? data.lng ?? data.lon, -180, 180),
     tenantId: data.tenantId || `tenant_${docId}`,
     slug: data.slug || slug,
     source: "firestore",
@@ -428,7 +458,9 @@ export async function syncClinicToFirestore(slug: string, config: Partial<Clinic
   if (Date.now() < firestoreNotFoundUntil) return false;
 
   try {
-    const payload = {
+    const lat = parseCoord(config.latitude, -90, 90);
+    const lng = parseCoord(config.longitude, -180, 180);
+    const payload: Record<string, any> = {
       slug: cleanSlug,
       clinicName: config.clinicName || "Nha Khoa Dental Smart",
       doctorName: config.doctorName || "",
@@ -441,6 +473,10 @@ export async function syncClinicToFirestore(slug: string, config: Partial<Clinic
       tenantId: config.tenantId || `tenant_${cleanSlug}`,
       updatedAt: new Date().toISOString(),
     };
+    if (lat !== null && lng !== null) {
+      payload.latitude = lat;
+      payload.longitude = lng;
+    }
 
     if (!adminDbUnavailable && adminDb && typeof adminDb.collection === "function") {
       try {
@@ -648,6 +684,8 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
     slug: clinicConfig?.slug || cleanSlug || "",
     workingHours: businessHours.workingHoursStr,
     workingHoursStr: businessHours.workingHoursStr,
+    latitude: clinicConfig?.latitude ?? null,
+    longitude: clinicConfig?.longitude ?? null,
   };
 
   let activeServices: any[] = [];

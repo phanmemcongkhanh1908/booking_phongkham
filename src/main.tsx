@@ -3,7 +3,16 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Register Service Worker for Web Push notifications
+// Capture beforeinstallprompt early so React mount timing never misses it
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
+    e.preventDefault();
+    (window as any).__deferredPwaPrompt = e;
+    window.dispatchEvent(new CustomEvent('pwa-installprompt-ready'));
+  });
+}
+
+// Register Service Worker for Web Push notifications & PWA installability
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
@@ -22,4 +31,3 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
-

@@ -91,6 +91,13 @@
         "reviewedAt": { "type": "string" },
         "isReviewHidden": { "type": "boolean" },
         "isRatingHidden": { "type": "boolean" },
+        "bookingCode": { "type": "string" },
+        "clinicSlug": { "type": "string" },
+        "patientPhone": { "type": "string" },
+        "patientName": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "providerName": { "type": "string" },
+        "oneHourReminderSentAt": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["patientId", "startAt", "endAt", "status"]
@@ -161,6 +168,8 @@
         "workingHours": { "type": "string", "maxLength": 200 },
         "workingHoursStr": { "type": "string", "maxLength": 200 },
         "slogan": { "type": "string", "maxLength": 300 },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
         "tenantId": { "type": "string", "maxLength": 128 },
         "updatedAt": { "type": "string", "maxLength": 64 }
       },

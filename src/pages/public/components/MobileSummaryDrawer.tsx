@@ -155,7 +155,7 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
           {/* Location info */}
           {address && (
             <a
-              href={buildGoogleMapsDirectionsUrl(address)}
+              href={buildGoogleMapsDirectionsUrl(address, clinicProfile?.latitude, clinicProfile?.longitude)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-start gap-1.5 text-[11px] text-slate-600 hover:text-teal-700 pt-0.5 transition-colors group"

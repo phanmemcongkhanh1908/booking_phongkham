@@ -866,6 +866,150 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
   }
 });
 
+function normalizeCoord(val: any, min: number, max: number): number | null {
+  if (val === null || val === undefined || val === "") return null;
+  const num = Number(val);
+  if (!Number.isFinite(num) || num < min || num > max) return null;
+  return Number(num.toFixed(6));
+}
+
+async function fetchNominatimJson(url: string, timeoutMs = 8000): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        "User-Agent": "DentalSmartBooking/1.0 (https://github.com/dental-smart-booking)",
+        "Accept": "application/json",
+        "Accept-Language": "vi,en;q=0.8",
+      },
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`Nominatim HTTP ${resp.status}`);
+    }
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+adminRouter.get("/location/reverse", requireAuth, async (req, res, next) => {
+  try {
+    const lat = normalizeCoord(req.query.lat, -90, 90);
+    const lng = normalizeCoord(req.query.lng ?? req.query.lon, -180, 180);
+    if (lat === null || lng === null) {
+      throw new BadRequestError("Tọa độ lat/lng không hợp lệ.");
+    }
+
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=vi`;
+    const data = await fetchNominatimJson(url);
+
+    const addrObj = data?.address || {};
+    const parts = [
+      addrObj.house_number && addrObj.road ? `${addrObj.house_number} ${addrObj.road}` : addrObj.road,
+      addrObj.suburb || addrObj.quarter || addrObj.village || addrObj.hamlet || addrObj.town,
+      addrObj.city_district || addrObj.county || addrObj.district,
+      addrObj.city || addrObj.state || addrObj.province,
+    ].filter(Boolean);
+
+    const formattedAddress =
+      parts.length > 0
+        ? Array.from(new Set(parts)).join(", ")
+        : (data?.display_name || "");
+
+    res.json({
+      success: true,
+      data: {
+        latitude: lat,
+        longitude: lng,
+        address: formattedAddress,
+        displayName: data?.display_name || formattedAddress,
+        rawAddress: addrObj,
+      },
+    });
+  } catch (error: any) {
+    console.warn("[AdminLocation] Reverse geocode failed:", error?.message || error);
+    res.json({
+      success: false,
+      message: "Không thể tự động tra cứu tên đường từ tọa độ. Bạn có thể tự nhập địa chỉ hoặc kéo ghim trên bản đồ.",
+      data: null,
+    });
+  }
+});
+
+adminRouter.get("/location/search", requireAuth, async (req, res, next) => {
+  try {
+    const rawQuery = String(req.query.q || "").trim();
+    if (rawQuery.length < 3) {
+      throw new BadRequestError("Vui lòng nhập địa chỉ đầy đủ hơn để tìm vị trí.");
+    }
+
+    const queryVariants: string[] = [rawQuery];
+    const commaParts = rawQuery
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    // Strip hyper-local prefixes like "Số 20", "KP1", "Ấp...", "Tổ..." progressively
+    if (commaParts.length >= 2) {
+      queryVariants.push(commaParts.slice(1).join(", "));
+      const filteredNoHamlet = commaParts.filter(
+        (p) => !/^(kp|khu\s*pho|ap|to|xom|thon)\b/i.test(
+          p.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        )
+      );
+      if (filteredNoHamlet.length >= 2) {
+        queryVariants.push(filteredNoHamlet.join(", "));
+      }
+      if (commaParts.length >= 3) {
+        queryVariants.push(commaParts.slice(-2).join(", "));
+      }
+    }
+
+    const uniqueQueries = Array.from(new Set(queryVariants.map((q) => q.trim()).filter((q) => q.length >= 3)));
+    let results: any[] = [];
+    let matchedQuery = rawQuery;
+    let isApproximate = false;
+
+    for (let i = 0; i < uniqueQueries.length; i++) {
+      const q = uniqueQueries[i];
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&countrycodes=vn&limit=5&addressdetails=1&accept-language=vi`;
+      const data = await fetchNominatimJson(url);
+      if (Array.isArray(data) && data.length > 0) {
+        results = data.map((item: any) => ({
+          latitude: Number(Number(item.lat).toFixed(6)),
+          longitude: Number(Number(item.lon).toFixed(6)),
+          displayName: String(item.display_name || q),
+          type: item.type || item.class || "place",
+        })).filter((item: any) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+
+        if (results.length > 0) {
+          matchedQuery = q;
+          isApproximate = i > 0;
+          break;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        results,
+        matchedQuery,
+        isApproximate,
+      },
+    });
+  } catch (error: any) {
+    console.warn("[AdminLocation] Search geocode failed:", error?.message || error);
+    res.json({
+      success: false,
+      message: "Dịch vụ tìm tọa độ tạm thời phản hồi chậm. Vui lòng thử lại hoặc chấm trực tiếp trên bản đồ.",
+      data: { results: [], matchedQuery: "", isApproximate: true },
+    });
+  }
+});
+
 adminRouter.get("/settings", requireAuth, async (req, res, next) => {
   try {
     const allSettings = await db.select().from(settings);
@@ -927,6 +1071,17 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
             ? (u.workingHoursStr || currentProfile.workingHours || currentProfile.workingHoursStr)
             : (currentProfile.workingHours || currentProfile.workingHoursStr || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00";
 
+        const resolvedLat = normalizeCoord(
+          currentProfile.latitude !== undefined ? currentProfile.latitude : u.latitude,
+          -90,
+          90
+        );
+        const resolvedLng = normalizeCoord(
+          currentProfile.longitude !== undefined ? currentProfile.longitude : u.longitude,
+          -180,
+          180
+        );
+
         settingsObj.clinicProfile = {
           clinicName: (isDefaultRoot ? (u.clinicName || currentProfile.clinicName) : (currentProfile.clinicName || currentProfile.name || u.clinicName)) || "Nha Khoa",
           name: (isDefaultRoot ? (u.clinicName || currentProfile.name) : (currentProfile.name || currentProfile.clinicName || u.clinicName)) || "Nha Khoa",
@@ -937,6 +1092,8 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
           hotline: (isDefaultRoot ? (u.hotline || u.phone || currentProfile.hotline) : (currentProfile.hotline || currentProfile.phone || u.hotline)) || "",
           workingHours: resolvedHours,
           workingHoursStr: resolvedHours,
+          latitude: resolvedLat,
+          longitude: resolvedLng,
           slug: u.slug || currentProfile.slug || "",
         };
       }
@@ -947,6 +1104,8 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
         ...cp,
         workingHours: resolvedHours,
         workingHoursStr: resolvedHours,
+        latitude: normalizeCoord(cp.latitude, -90, 90),
+        longitude: normalizeCoord(cp.longitude, -180, 180),
       };
     }
     
@@ -996,6 +1155,8 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
       const normalizedHours = String(clinicProfile.workingHours ?? clinicProfile.workingHoursStr ?? "").trim();
       const normalizedClinicName = clinicProfile.clinicName || clinicProfile.name || "";
       const normalizedPhone = clinicProfile.phone || clinicProfile.hotline || "";
+      const normalizedLat = normalizeCoord(clinicProfile.latitude, -90, 90);
+      const normalizedLng = normalizeCoord(clinicProfile.longitude, -180, 180);
       const normalizedClinicProfile = {
         ...clinicProfile,
         clinicName: normalizedClinicName,
@@ -1004,6 +1165,8 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
         hotline: clinicProfile.hotline || normalizedPhone,
         workingHours: normalizedHours,
         workingHoursStr: normalizedHours,
+        latitude: normalizedLat,
+        longitude: normalizedLng,
       };
 
       await db.insert(settings)
@@ -1029,6 +1192,8 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
           userUpdate.workingHoursStr = normalizedHours;
         }
         if (normalizedClinicProfile.slogan !== undefined) userUpdate.slogan = normalizedClinicProfile.slogan;
+        if (clinicProfile.latitude !== undefined) userUpdate.latitude = normalizedLat;
+        if (clinicProfile.longitude !== undefined) userUpdate.longitude = normalizedLng;
         if (Object.keys(userUpdate).length > 0) {
           const updatedUsers = await db.update(users).set(userUpdate).where(eq(users.id, req.user.userId)).returning();
           if (!effectiveSlug && updatedUsers[0]?.slug) {

@@ -22,7 +22,7 @@ export default function Login() {
   // Use the high-performance Clinic Settings Service Layer
   const { clinicProfile: clinicInfo, loading: clinicLoading } = useClinicSettings(effectiveSlug);
   useAdminManifestBinding(effectiveSlug || null, clinicInfo?.clinicName || null);
-  const { isInstalled, isInstallable, isIOS, install } = usePWAInstall();
+  const { isInstalled, isInstallable, isIOS, isInAppBrowser, install } = usePWAInstall();
   const [showInstallModal, setShowInstallModal] = useState(false);
 
   const [email, setEmail] = useState('');
@@ -574,6 +574,12 @@ export default function Login() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {isInAppBrowser && (
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+                Đang mở bằng trình duyệt trong Zalo/Facebook. Hãy bấm menu góc phải ➔ chọn <strong>&ldquo;Mở bằng trình duyệt&rdquo;</strong> ({isIOS ? 'Safari' : 'Chrome'}) trước khi cài App.
+              </div>
+            )}
 
             {isIOS ? (
               <ol className="list-decimal pl-5 space-y-1.5 text-xs text-slate-700 leading-relaxed">

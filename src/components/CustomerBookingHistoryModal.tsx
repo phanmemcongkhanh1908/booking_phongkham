@@ -9,6 +9,7 @@ import {
   User,
   Users,
   X,
+  WifiOff,
 } from 'lucide-react';
 import {
   APPOINTMENT_STATUSES,
@@ -70,6 +71,7 @@ interface CustomerBookingHistoryModalProps {
   customerPhone?: string;
   appointments: BookingHistoryItem[];
   loading?: boolean;
+  isOffline?: boolean;
 }
 
 export default function CustomerBookingHistoryModal({
@@ -79,6 +81,7 @@ export default function CustomerBookingHistoryModal({
   customerPhone,
   appointments,
   loading = false,
+  isOffline = false,
 }: CustomerBookingHistoryModalProps) {
   const [filterMode, setFilterMode] = useState<'all' | 'self' | 'relative'>('all');
 
@@ -141,7 +144,7 @@ export default function CustomerBookingHistoryModal({
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-4 bg-white">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <CalendarClock className="w-5 h-5 text-teal-700 shrink-0" />
               <h3
                 id="customer-booking-history-title"
@@ -149,6 +152,12 @@ export default function CustomerBookingHistoryModal({
               >
                 Lịch sử đặt lịch khám
               </h3>
+              {isOffline && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <WifiOff className="w-3 h-3" />
+                  Lưu ngoại tuyến
+                </span>
+              )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
               {customerName && (

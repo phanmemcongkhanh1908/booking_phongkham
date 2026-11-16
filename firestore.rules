@@ -16,7 +16,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'slug', 'clinicName', 'doctorName', 'address', 'phone',
           'hotline', 'workingHours', 'workingHoursStr', 'slogan',
-          'tenantId', 'updatedAt'
+          'latitude', 'longitude', 'tenantId', 'updatedAt'
         ])
         && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 128 && data.slug.matches('^[a-z0-9\\-]+$')
         && data.clinicName is string && data.clinicName.size() >= 1 && data.clinicName.size() <= 200
@@ -27,6 +27,8 @@ service cloud.firestore {
         && (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 200))
         && (!('workingHoursStr' in data) || (data.workingHoursStr is string && data.workingHoursStr.size() <= 200))
         && (!('slogan' in data) || (data.slogan is string && data.slogan.size() <= 300))
+        && (!('latitude' in data) || (data.latitude is number && data.latitude >= -90 && data.latitude <= 90))
+        && (!('longitude' in data) || (data.longitude is number && data.longitude >= -180 && data.longitude <= 180))
         && (!('tenantId' in data) || (data.tenantId is string && data.tenantId.size() <= 128))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
@@ -44,7 +46,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'clinicName', 'doctorName', 'address', 'phone',
           'hotline', 'workingHours', 'workingHoursStr', 'slogan',
-          'tenantId', 'updatedAt'
+          'latitude', 'longitude', 'tenantId', 'updatedAt'
         ]);
       allow delete: if false;
     }

@@ -40,12 +40,17 @@ import {
   LayoutList,
   Megaphone,
   Download,
-  Upload
+  Upload,
+  MapPin,
+  LocateFixed,
+  Search,
+  Navigation
 } from 'lucide-react';
 import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { invalidateClinicCache } from '../../services/clinicResolver';
+import ClinicLocationMap from '../../components/ClinicLocationMap';
 import SyncDiagnosticModal from './components/SyncDiagnosticModal';
 import GoogleOriginHelpModal from './components/GoogleOriginHelpModal';
 import { forceSyncAppointmentsToSheet } from '../../lib/googleWorkspace';
@@ -131,10 +136,17 @@ export default function Settings() {
     workingHoursStr: '',
     slogan: '',
     slug: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
   });
   const [clinicMsg, setClinicMsg] = useState('');
   const [clinicError, setClinicError] = useState(false);
   const [clinicSaving, setClinicSaving] = useState(false);
+  const [locatingGps, setLocatingGps] = useState(false);
+  const [searchingMap, setSearchingMap] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [locationHint, setLocationHint] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null);
+  const [addressCandidates, setAddressCandidates] = useState<Array<{ latitude: number; longitude: number; displayName: string }>>([]);
 
   // Cấu hình Bảo mật Đăng nhập bằng Gmail (theo từng phòng khám)
   const [googleLoginConfig, setGoogleLoginConfig] = useState<{
@@ -368,11 +380,18 @@ export default function Settings() {
       if (clinicProfile) {
         const parsedCp = typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile;
         const resolvedHours = parsedCp?.workingHours || parsedCp?.workingHoursStr || '';
+        const lat = typeof parsedCp?.latitude === 'number' ? parsedCp.latitude : null;
+        const lng = typeof parsedCp?.longitude === 'number' ? parsedCp.longitude : null;
         setClinicProfile({
           ...parsedCp,
           workingHours: resolvedHours,
           workingHoursStr: resolvedHours,
+          latitude: lat,
+          longitude: lng,
         });
+        if (lat !== null && lng !== null) {
+          setShowMapPicker(true);
+        }
       }
       if (dbAnnouncementBanner) setAnnouncementBanner(typeof dbAnnouncementBanner === 'string' ? JSON.parse(dbAnnouncementBanner) : dbAnnouncementBanner);
       if (dbGoogleLoginConfig) {
@@ -684,6 +703,139 @@ export default function Settings() {
 
     await trySave();
     setClinicSaving(false);
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocationHint({
+        type: 'error',
+        text: 'Trình duyệt của bạn không hỗ trợ định vị GPS (Geolocation). Vui lòng tìm theo địa chỉ hoặc chấm trên bản đồ.',
+      });
+      setShowMapPicker(true);
+      return;
+    }
+
+    setLocatingGps(true);
+    setAddressCandidates([]);
+    setLocationHint({ type: 'info', text: 'Đang lấy tọa độ GPS chính xác từ thiết bị...' });
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = Number(position.coords.latitude.toFixed(6));
+        const lng = Number(position.coords.longitude.toFixed(6));
+        setShowMapPicker(true);
+        setClinicProfile((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng,
+        }));
+
+        try {
+          const revRes = await api.get(`/admin/location/reverse?lat=${lat}&lng=${lng}`);
+          const revAddr = revRes.data?.data?.address;
+          if (revRes.data?.success && revAddr) {
+            setClinicProfile((prev) => ({
+              ...prev,
+              latitude: lat,
+              longitude: lng,
+              address: revAddr,
+            }));
+            setLocationHint({
+              type: 'success',
+              text: `Đã lấy vị trí GPS chính xác (${lat}, ${lng}) và tự động điền địa chỉ gần đúng. Hãy kiểm tra và bấm "Lưu thông tin phòng khám".`,
+            });
+          } else {
+            setLocationHint({
+              type: 'success',
+              text: `Đã ghim tọa độ GPS (${lat}, ${lng}) lên bản đồ. Bạn có thể giữ nguyên địa chỉ phòng khám và bấm "Lưu thông tin phòng khám".`,
+            });
+          }
+        } catch {
+          setLocationHint({
+            type: 'success',
+            text: `Đã ghim tọa độ GPS (${lat}, ${lng}). Bạn có thể kéo nhẹ ghim nếu cần rồi bấm "Lưu thông tin phòng khám".`,
+          });
+        } finally {
+          setLocatingGps(false);
+        }
+      },
+      (err) => {
+        setLocatingGps(false);
+        setShowMapPicker(true);
+        let msg = 'Không thể lấy vị trí hiện tại.';
+        if (err.code === 1) {
+          msg = 'Trình duyệt đang chặn quyền Truy cập Vị trí. Hãy cho phép quyền vị trí trên thanh địa chỉ hoặc dùng "Tìm từ địa chỉ & Chọn trên bản đồ".';
+        } else if (err.code === 2) {
+          msg = 'Không xác định được tín hiệu GPS lúc này. Hãy dùng "Tìm từ địa chỉ" để xác định trên bản đồ.';
+        } else if (err.code === 3) {
+          msg = 'Hết thời gian chờ GPS. Hãy thử lại hoặc chọn vị trí tương đối từ địa chỉ.';
+        }
+        setLocationHint({ type: 'error', text: msg });
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  };
+
+  const handleSearchAddressOnMap = async () => {
+    const query = (clinicProfile.address || '').trim();
+    if (query.length < 3) {
+      setLocationHint({
+        type: 'error',
+        text: 'Vui lòng nhập địa chỉ phòng khám trước khi tìm vị trí trên bản đồ.',
+      });
+      return;
+    }
+
+    setSearchingMap(true);
+    setShowMapPicker(true);
+    setAddressCandidates([]);
+    setLocationHint({ type: 'info', text: 'Đang tìm tọa độ tương đối theo địa chỉ phòng khám...' });
+
+    try {
+      const res = await api.get(`/admin/location/search?q=${encodeURIComponent(query)}`);
+      const results = res.data?.data?.results || [];
+      const isApprox = Boolean(res.data?.data?.isApproximate);
+
+      if (results.length > 0) {
+        const best = results[0];
+        setClinicProfile((prev) => ({
+          ...prev,
+          latitude: best.latitude,
+          longitude: best.longitude,
+        }));
+        setAddressCandidates(results);
+        setLocationHint({
+          type: 'success',
+          text: isApprox
+            ? `Đã tìm thấy vị trí khu vực gần đúng (${best.latitude}, ${best.longitude}). Hãy kéo ghim trên bản đồ đến đúng vị trí phòng khám rồi bấm Lưu!`
+            : `Đã xác định vị trí từ địa chỉ (${best.latitude}, ${best.longitude}). Bạn có thể tinh chỉnh ghim trên bản đồ rồi bấm Lưu.`,
+        });
+      } else {
+        setLocationHint({
+          type: 'error',
+          text: 'Chưa tìm thấy tự động từ địa chỉ chi tiết này. Hãy nhấp trực tiếp lên bản đồ bên dưới để đặt ghim vị trí phòng khám.',
+        });
+      }
+    } catch {
+      setLocationHint({
+        type: 'error',
+        text: 'Lỗi khi tra cứu địa chỉ. Bạn có thể chạm trực tiếp lên bản đồ để chọn tọa độ thủ công.',
+      });
+    } finally {
+      setSearchingMap(false);
+    }
+  };
+
+  const handleMapPinChange = (lat: number, lng: number) => {
+    setClinicProfile((prev) => ({
+      ...prev,
+      latitude: lat,
+      longitude: lng,
+    }));
+    setLocationHint({
+      type: 'info',
+      text: `Đã cập nhật ghim bản đồ tới tọa độ (${lat}, ${lng}). Đừng quên bấm "Lưu thông tin phòng khám" để áp dụng cho khách hàng!`,
+    });
   };
 
   const handleAddAllowedGmail = () => {
@@ -1083,14 +1235,127 @@ export default function Settings() {
                 onChange={e => setClinicProfile({...clinicProfile, doctorName: e.target.value})} 
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Địa chỉ</label>
+            <div className="space-y-2.5">
+              <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted block">Địa chỉ & Tọa độ bản đồ chỉ đường</label>
               <Input 
                 type="text" 
                 placeholder="VD: 123 Nguyễn Văn Cừ, Quận 5, TP.HCM" 
                 value={clinicProfile.address || ''} 
                 onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} 
               />
+
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleGetCurrentLocation}
+                  disabled={locatingGps}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <LocateFixed className={`w-3.5 h-3.5 text-teal-600 ${locatingGps ? 'animate-spin' : ''}`} />
+                  <span>{locatingGps ? 'Đang lấy GPS...' : 'Lấy vị trí hiện tại'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSearchAddressOnMap}
+                  disabled={searchingMap}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <Search className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{searchingMap ? 'Đang tìm vị trí...' : 'Tìm từ địa chỉ & Chọn trên bản đồ'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMapPicker((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-slate-600" />
+                  <span>{showMapPicker ? 'Ẩn bản đồ' : 'Mở bản đồ chọn ghim'}</span>
+                </button>
+              </div>
+
+              {clinicProfile.latitude !== null && clinicProfile.longitude !== null && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-xs text-emerald-900">
+                  <span className="font-mono text-[11px] font-semibold">
+                    📍 Tọa độ đã chọn: {clinicProfile.latitude}, {clinicProfile.longitude}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${clinicProfile.latitude},${clinicProfile.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 hover:underline"
+                    >
+                      <Navigation className="w-3 h-3" />
+                      Kiểm tra chỉ đường
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClinicProfile((prev) => ({ ...prev, latitude: null, longitude: null }));
+                        setLocationHint(null);
+                      }}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-red-600 cursor-pointer"
+                    >
+                      Xóa tọa độ
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {locationHint && (
+                <div
+                  className={`text-xs px-3 py-2 rounded-xl border ${
+                    locationHint.type === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-700'
+                      : locationHint.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-sky-50 border-sky-200 text-sky-800'
+                  }`}
+                >
+                  {locationHint.text}
+                </div>
+              )}
+
+              {addressCandidates.length > 1 && (
+                <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <p className="text-[11px] font-bold text-slate-600">
+                    Chọn điểm gợi ý gần nhất để ghim lên bản đồ:
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {addressCandidates.map((cand, idx) => (
+                      <button
+                        key={`${cand.latitude}-${cand.longitude}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setClinicProfile((prev) => ({
+                            ...prev,
+                            latitude: cand.latitude,
+                            longitude: cand.longitude,
+                          }));
+                          setLocationHint({
+                            type: 'info',
+                            text: `Đã chuyển ghim sang: ${cand.displayName}. Kéo ghim để tinh chỉnh chính xác hơn nếu cần.`,
+                          });
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 text-[11px] text-slate-700 transition-colors cursor-pointer"
+                      >
+                        📍 {cand.displayName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showMapPicker && (
+                <ClinicLocationMap
+                  latitude={clinicProfile.latitude}
+                  longitude={clinicProfile.longitude}
+                  onChange={handleMapPinChange}
+                  clinicName={clinicProfile.clinicName}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5 block">Hotline</label>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
-import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles, CalendarClock, User, Users } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles, CalendarClock, User, Users, WifiOff } from 'lucide-react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
@@ -19,6 +19,11 @@ import {
   markDeviceBookingReviewed,
   syncCustomerLookupBookings,
 } from '../../utils/customerDeviceBookings';
+import {
+  getOfflineAppointments,
+  patchOfflineAppointment,
+  saveOfflineAppointments,
+} from '../../utils/offlineBookingDb';
 
 interface AppointmentData {
   id: string;
@@ -120,19 +125,46 @@ export default function MyBooking() {
   const [reputationRefreshKey, setReputationRefreshKey] = useState(0);
   const [allBookingHistory, setAllBookingHistory] = useState<BookingHistoryItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+  const [isOfflineDataShown, setIsOfflineDataShown] = useState(false);
+
+  useEffect(() => {
+    const onOnline = () => setIsOfflineMode(false);
+    const onOffline = () => setIsOfflineMode(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
   
   const handleReviewSuccess = (updatedData?: any) => {
     if (!reviewModalApt) return;
     markDeviceBookingReviewed(reviewModalApt.id);
+    const nextRating = updatedData?.rating || reviewModalApt.rating || 5;
+    const nextServiceRatings = updatedData?.serviceRatings || reviewModalApt.serviceRatings;
+    const nextComment = updatedData?.reviewComment !== undefined ? updatedData.reviewComment : reviewModalApt.reviewComment;
+    const nextTags = updatedData?.reviewTags || reviewModalApt.reviewTags;
+    const nextReviewedAt = updatedData?.reviewedAt || new Date().toISOString();
+    void patchOfflineAppointment(reviewModalApt.id, {
+      rating: nextRating,
+      serviceRatings: nextServiceRatings,
+      reviewComment: nextComment,
+      reviewTags: nextTags,
+      reviewedAt: nextReviewedAt,
+    });
     setAppointments(prev => prev.map(a => {
       if (a.id === reviewModalApt.id) {
         return {
           ...a,
-          rating: updatedData?.rating || reviewModalApt.rating || 5,
-          serviceRatings: updatedData?.serviceRatings || reviewModalApt.serviceRatings,
-          reviewComment: updatedData?.reviewComment !== undefined ? updatedData.reviewComment : reviewModalApt.reviewComment,
-          reviewTags: updatedData?.reviewTags || reviewModalApt.reviewTags,
-          reviewedAt: updatedData?.reviewedAt || new Date().toISOString()
+          rating: nextRating,
+          serviceRatings: nextServiceRatings,
+          reviewComment: nextComment,
+          reviewTags: nextTags,
+          reviewedAt: nextReviewedAt
         };
       }
       return a;
@@ -142,6 +174,10 @@ export default function MyBooking() {
   };
   
   const handleCancel = async (id: string) => {
+    if (!navigator.onLine) {
+      toast.error('Thiết bị đang ngoại tuyến. Không thể hủy lịch khi mất kết nối mạng.');
+      return;
+    }
     let phoneToUse = verifiedPhone;
     if (!phoneToUse) {
       toast.error('Không tìm thấy số điện thoại xác thực');
@@ -153,6 +189,7 @@ export default function MyBooking() {
       const res = await api.patch(`/public/appointments/${id}/cancel`, { phone: phoneToUse });
       if (res.data.success) {
         toast.success("Hủy lịch thành công");
+        void patchOfflineAppointment(id, { status: 'CANCEL_PATIENT' });
         setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'CANCEL_PATIENT' } : a));
       }
     } catch (err: any) {
@@ -163,6 +200,11 @@ export default function MyBooking() {
   };
   
   const handleRescheduleSuccess = (appointmentId: string, newStartAt: string, newEndAt: string) => {
+    void patchOfflineAppointment(appointmentId, {
+      status: 'REQUESTED',
+      startAt: newStartAt,
+      endAt: newEndAt,
+    });
     setAppointments(prev => prev.map(a => a.id === appointmentId ? { 
       ...a, 
       status: 'REQUESTED',
@@ -170,6 +212,22 @@ export default function MyBooking() {
       endAt: newEndAt
     } : a));
     setRescheduleData({ isOpen: false, appointmentId: null, serviceId: null });
+  };
+
+  const loadOfflineHistoryFallback = async (phone?: string, fullName?: string) => {
+    const cached = await getOfflineAppointments({
+      phone: phone || undefined,
+      clinicSlug: effectiveSlug || undefined,
+    });
+    if (cached.length > 0) {
+      setAppointments(cached as any[]);
+      setAllBookingHistory(cached as any[]);
+      if (phone) setVerifiedPhone(phone);
+      if (fullName) setSearchName(fullName);
+      setIsOfflineDataShown(true);
+      return true;
+    }
+    return false;
   };
 
   const handleSearch = async (e?: React.FormEvent, submitPin?: string) => {
@@ -180,18 +238,36 @@ export default function MyBooking() {
     }
     setSearchLoading(true);
     try {
+      if (!navigator.onLine) {
+        const foundOffline = await loadOfflineHistoryFallback(searchPhone, searchName);
+        if (foundOffline) {
+          toast.success("Đang ngoại tuyến — hiển thị lịch hẹn đã lưu trên thiết bị");
+        } else {
+          toast.error("Đang mất kết nối mạng và chưa có lịch hẹn lưu cục bộ cho số này");
+        }
+        return;
+      }
+
       const res = await api.post('/public/appointments/lookup', { 
         phone: searchPhone, 
         fullName: searchName,
         pin: submitPin || undefined
       });
       if (res.data.success) {
+        const historyList = Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []);
         setAppointments(res.data.data);
-        setAllBookingHistory(Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []));
+        setAllBookingHistory(historyList);
         setVerifiedPhone(searchPhone);
         setIsFromLocalStorage(false);
+        setIsOfflineDataShown(false);
         setHasHistory(res.data.hasHistory || false);
         syncCustomerLookupBookings(res.data.data || [], searchPhone, effectiveSlug || null);
+        void saveOfflineAppointments(historyList.length >= (res.data.data || []).length ? historyList : (res.data.data || []), {
+          phone: searchPhone,
+          clinicSlug: effectiveSlug || null,
+          clinicName: clinicDisplayName || null,
+          fullName: searchName,
+        });
         
         if (submitPin) {
           setShowPinInput(false);
@@ -205,6 +281,13 @@ export default function MyBooking() {
         }
       }
     } catch (err: any) {
+      if (!err.response || err.response.status >= 500) {
+        const foundOffline = await loadOfflineHistoryFallback(searchPhone, searchName);
+        if (foundOffline) {
+          toast.success("Mất kết nối máy chủ — đang hiển thị lịch sử đã lưu ngoại tuyến");
+          return;
+        }
+      }
       toast.error(err.response?.data?.error?.message || "Lỗi khi tra cứu lịch hẹn");
     } finally {
       setSearchLoading(false);
@@ -239,29 +322,54 @@ export default function MyBooking() {
     const fetchAppointments = async () => {
       const vpStr = localStorage.getItem('verifiedPatient');
       if (!vpStr) {
+        if (!navigator.onLine) {
+          await loadOfflineHistoryFallback();
+        }
         setLoading(false);
         return;
       }
       
+      let parsedPhone = '';
+      let parsedName = '';
       try {
         const vp = JSON.parse(vpStr);
         if (vp.phone && vp.fullName) {
+          parsedPhone = vp.phone;
+          parsedName = vp.fullName;
           setSearchPhone(vp.phone);
           setSearchName(vp.fullName);
           setIsFromLocalStorage(true);
+
+          if (!navigator.onLine) {
+            await loadOfflineHistoryFallback(vp.phone, vp.fullName);
+            setLoading(false);
+            return;
+          }
+
           const res = await api.post('/public/appointments/lookup', { phone: vp.phone, fullName: vp.fullName });
           if (res.data.success) {
+            const historyList = Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []);
             setAppointments(res.data.data);
-            setAllBookingHistory(Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []));
+            setAllBookingHistory(historyList);
             setVerifiedPhone(vp.phone);
+            setIsOfflineDataShown(false);
             setHasHistory(res.data.hasHistory || false);
             syncCustomerLookupBookings(res.data.data || [], vp.phone, effectiveSlug || null);
+            void saveOfflineAppointments(historyList.length >= (res.data.data || []).length ? historyList : (res.data.data || []), {
+              phone: vp.phone,
+              clinicSlug: effectiveSlug || null,
+              clinicName: clinicDisplayName || null,
+              fullName: vp.fullName,
+            });
           } else {
             localStorage.removeItem('verifiedPatient');
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching local appointments', err);
+        if (!err?.response || err?.response?.status >= 500 || !navigator.onLine) {
+          await loadOfflineHistoryFallback(parsedPhone || undefined, parsedName || undefined);
+        }
       } finally {
         setLoading(false);
       }
@@ -339,6 +447,18 @@ export default function MyBooking() {
            </div>
            <p className="text-[11px] text-slate-400 mt-2">Nhập chính xác Số điện thoại và Họ tên để xác thực và xem lịch sử.</p>
         </form>
+
+        {(isOfflineMode || isOfflineDataShown) && (
+          <div className="mb-5 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5 shadow-2xs">
+            <WifiOff className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed">
+              <strong className="font-bold">Chế độ Ngoại tuyến (IndexedDB):</strong>{' '}
+              {isOfflineDataShown
+                ? 'Bạn đang xem dữ liệu lịch hẹn được lưu cục bộ trên thiết bị này khi mất kết nối mạng.'
+                : 'Thiết bị đang mất kết nối mạng. Bấm Tra cứu an toàn để xem lại lịch sử đã lưu trên máy.'}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12 text-text-muted">Đang tải...</div>
@@ -691,6 +811,7 @@ export default function MyBooking() {
         customerName={searchName}
         customerPhone={searchPhone || verifiedPhone}
         appointments={allBookingHistory.length > 0 ? allBookingHistory : appointments}
+        isOffline={isOfflineDataShown || isOfflineMode}
       />
     </div>
   );

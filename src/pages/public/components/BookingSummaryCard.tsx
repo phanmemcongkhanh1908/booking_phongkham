@@ -190,7 +190,7 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
             <div className="pt-3 space-y-2 text-xs text-slate-600">
               {address && (
                 <a
-                  href={buildGoogleMapsDirectionsUrl(address)}
+                  href={buildGoogleMapsDirectionsUrl(address, clinicProfile?.latitude, clinicProfile?.longitude)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-start gap-2 text-slate-600 hover:text-teal-700 transition-colors group"

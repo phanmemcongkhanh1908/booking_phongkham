@@ -62,6 +62,8 @@ interface BookingState {
     workingHoursStr?: string;
     slogan?: string;
     slug?: string;
+    latitude?: number | null;
+    longitude?: number | null;
   } | null;
   bookingFormConfig: {
     uiVersion?: 'full' | 'simple';

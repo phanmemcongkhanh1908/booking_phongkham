@@ -11,7 +11,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: null,
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'sw-push.js'],
         workbox: {
+          importScripts: ['/sw-push.js'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/b\//, /^\/s\//],
           maximumFileSizeToCacheInBytes: 5000000,
           runtimeCaching: [
             {
@@ -74,22 +78,34 @@ export default defineConfig(() => {
           enabled: false
         },
         manifest: {
-          name: 'Dental Smart Booking',
-          short_name: 'DentalBooking',
-          description: 'Hệ thống đặt lịch nha khoa thông minh',
-          theme_color: '#ffffff',
+          id: '/',
+          name: 'Dental Smart - Đặt Lịch Khám Nha Khoa',
+          short_name: 'Đặt Lịch',
+          description: 'Đặt lịch hẹn khám nha khoa nhanh chóng, tiện lợi',
+          start_url: '/',
+          scope: '/',
+          theme_color: '#0d9488',
           background_color: '#ffffff',
           display: 'standalone',
+          orientation: 'portrait-primary',
           icons: [
             {
               src: '/pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any'
             },
             {
               src: '/pwa-512x512.png',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/pwa-maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ]
         }
