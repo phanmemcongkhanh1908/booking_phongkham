@@ -28,6 +28,9 @@ export interface PushMessage {
   badge?: string;
   tag?: string;
   appointmentId?: string;
+  type?: string;
+  tenantId?: string | null;
+  requireInteraction?: boolean;
 }
 
 export async function sendWebPush(
@@ -84,9 +87,13 @@ export async function sendWebPush(
       title: message.title,
       body: message.body,
       url: message.url || "/lich-hen-cua-toi",
-      icon: message.icon || "/icon-192x192.png",
-      badge: message.badge || "/icon-192x192.png",
+      icon: message.icon || "/pwa-192x192.png",
+      badge: message.badge || "/pwa-192x192.png",
       tag: message.tag || (message.appointmentId ? `apt-${message.appointmentId}` : "dental-smart-push"),
+      appointmentId: message.appointmentId || null,
+      type: message.type || "patient_update",
+      tenantId: message.tenantId || null,
+      requireInteraction: Boolean(message.requireInteraction),
       timestamp: Date.now(),
     });
 
@@ -136,12 +143,14 @@ export async function sendAppointmentStatusPush(
     const aptList = await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         status: appointments.status,
         patientId: appointments.patientId,
         patientName: patients.fullName,
         patientPhone: patients.phone,
         serviceName: services.name,
+        customServiceName: appointments.customServiceName,
         providerName: providers.name,
       })
       .from(appointments)
@@ -154,18 +163,34 @@ export async function sendAppointmentStatusPush(
     if (aptList.length === 0) return;
     const apt = aptList[0];
 
-    // Get Clinic Profile
+    // Get Clinic Profile & slug (tenant-scoped when available)
     let clinicName = "Nha Khoa Dental Smart";
+    let clinicSlug = "";
     try {
-      const settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-      if (settingRes.length > 0 && typeof settingRes[0].value === "object" && (settingRes[0].value as any).clinicName) {
-        clinicName = (settingRes[0].value as any).clinicName;
+      const allSettings = await db.select().from(settings);
+      const profileSetting =
+        (apt.tenantId
+          ? allSettings.find((s: any) => s.id === "clinicProfile" && s.tenantId === apt.tenantId)
+          : null) ||
+        allSettings.find((s: any) => s.id === "clinicProfile" && !s.tenantId) ||
+        allSettings.find((s: any) => s.id === "clinicProfile");
+      if (profileSetting && typeof profileSetting.value === "object") {
+        const val = profileSetting.value as any;
+        if (val.clinicName || val.name) clinicName = val.clinicName || val.name;
+        if (val.slug) clinicSlug = String(val.slug).trim().toLowerCase();
+      }
+      if (!clinicSlug && apt.tenantId && String(apt.tenantId).startsWith("tenant_")) {
+        const { users } = await import("../db/schema.js");
+        const tenantUsers = await db.select().from(users).where(eq(users.tenantId, apt.tenantId)).limit(1);
+        if (tenantUsers.length > 0 && tenantUsers[0].slug) {
+          clinicSlug = String(tenantUsers[0].slug).trim().toLowerCase();
+        }
       }
     } catch (e) {}
 
     const timeStart = options?.newStartAt ? new Date(options.newStartAt) : apt.startAt;
     const timeStr = safeFormatDate(timeStart, "HH:mm - EEEE, dd/MM/yyyy");
-    const serviceTitle = apt.serviceName || "Khám nha khoa";
+    const serviceTitle = apt.customServiceName || apt.serviceName || "Khám nha khoa";
     const doctorTitle = apt.providerName ? `Bác sĩ ${apt.providerName}` : "Bác sĩ chuyên khoa";
 
     let title = "";
@@ -203,8 +228,8 @@ export async function sendAppointmentStatusPush(
         break;
 
       case "COMPLETED":
-        title = "🌟 Hoàn tất buổi khám điều trị";
-        body = `Buổi khám ${serviceTitle} đã hoàn tất. Cảm ơn bạn đã tin tưởng dịch vụ tại ${clinicName}!`;
+        title = `⭐ Hoàn tất khám tại ${clinicName} — Mời bạn đánh giá`;
+        body = `Dịch vụ ${serviceTitle} đã hoàn tất. Chạm vào thông báo để chấm sao & đánh giá từng dịch vụ giúp phòng khám nhé!`;
         break;
 
       case "NO_SHOW":
@@ -224,9 +249,16 @@ export async function sendAppointmentStatusPush(
         break;
     }
 
-    const targetUrl = apt.patientPhone 
-      ? `/lich-hen-cua-toi?phone=${encodeURIComponent(apt.patientPhone)}`
+    const baseBookingLookupUrl = clinicSlug
+      ? `/b/${encodeURIComponent(clinicSlug)}/lich-hen`
       : "/lich-hen-cua-toi";
+
+    const targetUrl =
+      normalizedStatus === "COMPLETED"
+        ? `${baseBookingLookupUrl}?reviewAppointmentId=${encodeURIComponent(apt.id)}`
+        : apt.patientPhone
+        ? `${baseBookingLookupUrl}?phone=${encodeURIComponent(apt.patientPhone)}`
+        : baseBookingLookupUrl;
 
     await sendWebPush(
       {
@@ -238,6 +270,9 @@ export async function sendAppointmentStatusPush(
         body,
         url: targetUrl,
         appointmentId: apt.id,
+        tenantId: apt.tenantId || null,
+        type: normalizedStatus === "COMPLETED" ? "patient_review_request" : "patient_update",
+        requireInteraction: normalizedStatus === "COMPLETED",
       }
     );
   } catch (err) {

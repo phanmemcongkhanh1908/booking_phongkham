@@ -8,8 +8,14 @@ interface ConnectedClient {
   isSuperAdmin?: boolean;
 }
 
+interface PatientSseClient {
+  res: Response;
+  appointmentIds: Set<string>;
+}
+
 class RealtimeNotificationService extends EventEmitter {
   private clients: Set<ConnectedClient> = new Set();
+  private patientClients: Set<PatientSseClient> = new Set();
 
   constructor() {
     super();
@@ -61,6 +67,41 @@ class RealtimeNotificationService extends EventEmitter {
     res.on('error', cleanup);
   }
 
+  public addPatientClient(req: Request, res: Response, appointmentIds: string[]) {
+    const cleanIds = new Set(
+      appointmentIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => id.length >= 8)
+        .slice(0, 50)
+    );
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write('retry: 10000\n\n');
+    res.write(': patient-connected\n\n');
+
+    const client: PatientSseClient = {
+      res,
+      appointmentIds: cleanIds,
+    };
+
+    this.patientClients.add(client);
+
+    const cleanup = () => {
+      this.patientClients.delete(client);
+    };
+
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+    res.on('close', cleanup);
+    res.on('error', cleanup);
+  }
+
   private sendHeartbeat() {
     const data = `data: {"type": "HEARTBEAT"}\n\n`;
     for (const client of this.clients) {
@@ -72,6 +113,17 @@ class RealtimeNotificationService extends EventEmitter {
         }
       } catch (err) {
         this.clients.delete(client);
+      }
+    }
+    for (const pClient of this.patientClients) {
+      try {
+        if (pClient.res.writable && !pClient.res.destroyed) {
+          pClient.res.write(data);
+        } else {
+          this.patientClients.delete(pClient);
+        }
+      } catch (err) {
+        this.patientClients.delete(pClient);
       }
     }
   }
@@ -134,6 +186,28 @@ class RealtimeNotificationService extends EventEmitter {
         client.res.write(data);
       } catch (err) {
         this.clients.delete(client);
+      }
+    }
+  }
+
+  public emitPatientAppointmentCompleted(payload: any) {
+    this.emit('APPOINTMENT_COMPLETED', payload);
+    const targetAptId = payload?.id ? String(payload.id).trim() : '';
+    if (!targetAptId) return;
+
+    const data = `event: APPOINTMENT_COMPLETED\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of this.patientClients) {
+      try {
+        if (!client.res.writable || client.res.destroyed) {
+          this.patientClients.delete(client);
+          continue;
+        }
+        if (!client.appointmentIds.has(targetAptId)) {
+          continue;
+        }
+        client.res.write(data);
+      } catch (err) {
+        this.patientClients.delete(client);
       }
     }
   }

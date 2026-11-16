@@ -10,10 +10,12 @@ import {
   UserCheck, 
   MapPin, 
   Phone,
-  Lock
+  Lock,
+  Navigation
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { buildGoogleMapsDirectionsUrl } from '../../../utils/maps';
 
 interface MobileSummaryDrawerProps {
   currentStep: number;
@@ -152,10 +154,21 @@ export default function MobileSummaryDrawer({ currentStep }: MobileSummaryDrawer
 
           {/* Location info */}
           {address && (
-            <div className="flex items-start gap-1.5 text-[11px] text-slate-500 pt-0.5">
-              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-              <span className="line-clamp-2">{address}</span>
-            </div>
+            <a
+              href={buildGoogleMapsDirectionsUrl(address)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-1.5 text-[11px] text-slate-600 hover:text-teal-700 pt-0.5 transition-colors group"
+              title="Nhấn để mở Google Maps chỉ đường tới phòng khám"
+            >
+              <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+              <span className="leading-relaxed group-hover:underline underline-offset-2">
+                {address}{' '}
+                <span className="inline-flex items-center gap-0.5 font-bold text-teal-700 whitespace-nowrap">
+                  (<Navigation className="w-2.5 h-2.5 inline" /> Chỉ đường)
+                </span>
+              </span>
+            </a>
           )}
 
           {/* Medical Trust Badges */}

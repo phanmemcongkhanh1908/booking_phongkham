@@ -27,6 +27,7 @@ import toast from 'react-hot-toast';
 import { useClinicSettings } from '../../../hooks/useClinicSettings';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 import ServiceReviewsModal from '../../../components/ServiceReviewsModal';
+import { CUSTOMER_REVIEW_SUBMITTED_EVENT } from '../../../utils/customerDeviceBookings';
 
 interface Service {
   id: string;
@@ -97,17 +98,23 @@ export default function ServiceSelection() {
   // Silent background revalidation so live star scores & visibility toggles stay fresh immediately
   useEffect(() => {
     let cancelled = false;
-    api
-      .get('/public/services', { params: getPublicServicesParams() })
-      .then((res) => {
-        if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          setServices(res.data.data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {});
+    const refreshServices = () => {
+      api
+        .get('/public/services', { params: getPublicServicesParams() })
+        .then((res) => {
+          if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+            setServices(res.data.data);
+            setLoading(false);
+          }
+        })
+        .catch(() => {});
+    };
+
+    refreshServices();
+    window.addEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, refreshServices);
     return () => {
       cancelled = true;
+      window.removeEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, refreshServices);
     };
   }, [activeSlug, storeTenantId]);
 

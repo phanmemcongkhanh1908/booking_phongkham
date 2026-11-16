@@ -19,7 +19,8 @@ import {
   Stethoscope, 
   Share2, 
   CalendarPlus,
-  Star
+  Star,
+  Navigation
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toPng } from "html-to-image";
@@ -31,6 +32,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getClinicBasePath } from '../../../services/clinicResolver';
 import GoogleCalendarSyncCard from './GoogleCalendarSyncCard';
 import { buildGoogleCalendarUrl, CalendarAppointmentDetails } from '../../../utils/calendarSync';
+import { buildGoogleMapsDirectionsUrl } from '../../../utils/maps';
 
 export default function SuccessView() {
   const store = useBookingStore();
@@ -337,10 +339,21 @@ export default function SuccessView() {
 
               {/* Location info */}
               {address && (
-                <div className="flex items-start gap-2 text-xs text-slate-600 px-1 pt-1">
-                  <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">{address}</span>
-                </div>
+                <a
+                  href={buildGoogleMapsDirectionsUrl(address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2 text-xs text-slate-600 hover:text-teal-700 px-1 pt-1 transition-colors group"
+                  title="Nhấn để mở Google Maps chỉ đường tới phòng khám"
+                >
+                  <MapPin className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed group-hover:underline underline-offset-2">
+                    {address}{' '}
+                    <span className="inline-flex items-center gap-0.5 font-bold text-teal-700 whitespace-nowrap">
+                      (<Navigation className="w-3 h-3 inline" /> Chỉ đường)
+                    </span>
+                  </span>
+                </a>
               )}
             </div>
           </div>
@@ -483,10 +496,10 @@ export default function SuccessView() {
           </div>
           <div className="space-y-0.5">
             <p className="text-xs sm:text-sm font-bold text-slate-900">
-              Đánh giá sao dịch vụ sau khi hoàn tất khám
+              Popup đánh giá sao tự động hiển thị sau khi hoàn tất khám
             </p>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Sau khi hoàn thành buổi khám cho đợt đăng ký này, bạn có thể chấm sao từng dịch vụ và gửi nhận xét tại mục <strong>Tra cứu &amp; Quản lý lịch</strong>.
+              Ngay khi bác sĩ / phòng khám xác nhận <strong>Hoàn thành ca khám</strong>, màn hình đánh giá theo từng dịch vụ sẽ tự động bật lên trên chính thiết bị đặt lịch này (hoặc bạn có thể mở lại bất cứ lúc nào tại mục <strong>Tra cứu &amp; Quản lý lịch</strong>).
             </p>
           </div>
         </div>

@@ -10,6 +10,7 @@ import { useParams } from 'react-router-dom';
 import api from '../services/api';
 import { useBookingStore } from '../store/booking';
 import { getActiveRouteClinicSlug } from '../services/clinicResolver';
+import { CUSTOMER_REVIEW_SUBMITTED_EVENT } from '../utils/customerDeviceBookings';
 
 interface ReviewItem {
   id: string;
@@ -58,6 +59,13 @@ export default function ClinicReputationWidget({
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeReviewIdx] = useState(0);
+  const [internalRefresh, setInternalRefresh] = useState(0);
+
+  useEffect(() => {
+    const onSubmitted = () => setInternalRefresh((k) => k + 1);
+    window.addEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, onSubmitted);
+    return () => window.removeEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, onSubmitted);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -76,7 +84,7 @@ export default function ClinicReputationWidget({
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [effectiveSlug, tenantId, refreshKey]);
+  }, [effectiveSlug, tenantId, refreshKey, internalRefresh]);
 
   if (loading && !stats) return null;
 

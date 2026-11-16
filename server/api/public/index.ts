@@ -590,9 +590,14 @@ publicRouter.post("/appointments", bookingHoldLimiter, async (req, res, next) =>
       success: true,
       data: {
         appointmentId: bookingResult.id,
+        tenantId: targetTenantSnapshot || null,
         status: bookingResult.status,
         startAt: bookingResult.startAt,
         endAt: bookingResult.endAt,
+        serviceId: bookingResult.serviceId || null,
+        serviceIds: Array.isArray((bookingResult as any).serviceIds)
+          ? (bookingResult as any).serviceIds
+          : [bookingResult.serviceId].filter(Boolean),
         serviceName: aptDetailPayload?.serviceName || bookingResult.customServiceName || null,
         providerName: aptDetailPayload?.providerName || null,
         patientEmail: data.email || null,
@@ -867,6 +872,145 @@ publicRouter.get("/clinic-bundle/:slug", handleClinicBundle);
 publicRouter.get("/clinic-info", handleClinicBundle);
 publicRouter.get("/clinic-info/:slug", handleClinicBundle);
 
+// SSE stream dành riêng cho thiết bị khách hàng đang giữ mã lịch hẹn (chỉ nhận đúng sự kiện hoàn tất của chính appointmentId thiết bị đã đặt)
+publicRouter.get("/appointments/stream", async (req, res, next) => {
+  try {
+    const rawIds = String(req.query.ids || req.query.appointmentId || "").trim();
+    const ids = rawIds
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 8)
+      .slice(0, 50);
+
+    const { realtimeNotification } = await import("../../services/realtimeNotification.js");
+    realtimeNotification.addPatientClient(req, res, ids);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Kiểm tra danh sách lịch hẹn đã hoàn thành nhưng chưa được đánh giá từ chính thiết bị đặt lịch
+publicRouter.post("/appointments/pending-reviews", async (req, res, next) => {
+  try {
+    const rawIds = Array.isArray(req.body?.appointmentIds) ? req.body.appointmentIds : [];
+    const targetIds = Array.from(
+      new Set(
+        rawIds
+          .map((id: any) => String(id || "").trim())
+          .filter((id: string) => id.length >= 8)
+      )
+    ).slice(0, 50) as string[];
+
+    if (targetIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const rawClinicSlug = typeof req.body?.clinicSlug === "string" ? req.body.clinicSlug.trim().toLowerCase() : "";
+    let filterTenantId = typeof req.body?.tenantId === "string" ? req.body.tenantId.trim() : "";
+    let hasExplicitClinicFilter = Boolean(filterTenantId);
+
+    if (!filterTenantId && rawClinicSlug) {
+      try {
+        const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+        const matched = await findClinicBySlug(rawClinicSlug);
+        if (matched) {
+          hasExplicitClinicFilter = true;
+          filterTenantId = matched.tenantId ? String(matched.tenantId).trim() : "";
+        }
+      } catch {}
+    }
+
+    const [matchedApts, allServices, allProviders, allPatients, allSettings] = await Promise.all([
+      db.select().from(appointments).where(inArray(appointments.id, targetIds)),
+      db.select().from(services),
+      db.select().from(providers),
+      db.select().from(patients),
+      db.select().from(settings),
+    ]);
+
+    const serviceMap = new Map<string, string>();
+    for (const s of allServices as any[]) {
+      if (s?.id && s?.name) serviceMap.set(s.id, s.name);
+      if (s?.originalId && s?.name && !serviceMap.has(s.originalId)) {
+        serviceMap.set(s.originalId, s.name);
+      }
+    }
+    const providerMap = new Map((allProviders as any[]).map((p) => [p.id, p]));
+    const patientMap = new Map((allPatients as any[]).map((p) => [p.id, p]));
+
+    const pending = matchedApts
+      .filter((apt: any) => {
+        if (String(apt.status || "").toUpperCase() !== "COMPLETED") return false;
+        const hasRating = apt.rating !== null && apt.rating !== undefined && Number(apt.rating) > 0;
+        const hasServiceRatings =
+          apt.serviceRatings &&
+          typeof apt.serviceRatings === "object" &&
+          Object.keys(apt.serviceRatings).length > 0;
+        if (hasRating || hasServiceRatings || apt.reviewedAt) return false;
+        if (hasExplicitClinicFilter) {
+          const aptTenantStr = apt.tenantId ? String(apt.tenantId).trim() : "";
+          if (aptTenantStr !== filterTenantId) return false;
+        }
+        return true;
+      })
+      .map((apt: any) => {
+        const aptTenantId = apt.tenantId ? String(apt.tenantId).trim() : null;
+        const normalizedIds = Array.from(
+          new Set(
+            [
+              apt.serviceId,
+              ...(Array.isArray(apt.serviceIds) ? apt.serviceIds : []),
+            ]
+              .filter(Boolean)
+              .map((s: any) => String(s).trim())
+          )
+        );
+        const serviceItems = normalizedIds.map((sId) => ({
+          id: sId,
+          name: serviceMap.get(sId) || apt.customServiceName || "Dịch vụ nha khoa",
+        }));
+        const resolvedServiceName =
+          apt.customServiceName ||
+          (serviceItems.length > 0 ? serviceItems.map((i) => i.name).join(" + ") : "Dịch vụ nha khoa");
+
+        const profileSetting =
+          (aptTenantId
+            ? (allSettings as any[]).find((s) => s.id === "clinicProfile" && String(s.tenantId || "").trim() === aptTenantId)
+            : null) ||
+          (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+          (allSettings as any[]).find((s) => s.id === "clinicProfile");
+        const profileVal =
+          profileSetting?.value && typeof profileSetting.value === "object" ? (profileSetting.value as any) : {};
+
+        const pt = patientMap.get(apt.patientId);
+        const pr = providerMap.get(apt.providerId);
+
+        return {
+          id: apt.id,
+          status: apt.status,
+          tenantId: aptTenantId,
+          clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
+          clinicSlug: profileVal.slug ? String(profileVal.slug).trim().toLowerCase() : null,
+          startAt: apt.startAt,
+          endAt: apt.endAt,
+          serviceId: apt.serviceId || normalizedIds[0] || null,
+          serviceIds: normalizedIds,
+          serviceItems,
+          serviceName: resolvedServiceName,
+          providerName: pr?.name || profileVal.doctorName || "Bác sĩ chuyên khoa",
+          patientName: apt.bookedForName || pt?.fullName || "Quý khách",
+          rating: apt.rating ?? null,
+          reviewedAt: apt.reviewedAt ?? null,
+        };
+      })
+      .sort((a: any, b: any) => new Date(b.startAt || 0).getTime() - new Date(a.startAt || 0).getTime());
+
+    res.json({ success: true, data: pending });
+  } catch (error) {
+    next(error);
+  }
+});
+
 publicRouter.get("/appointments/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -874,12 +1018,22 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
     const results = await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
+        patientId: appointments.patientId,
         status: appointments.status,
         startAt: appointments.startAt,
         endAt: appointments.endAt,
         serviceId: appointments.serviceId,
+        serviceIds: appointments.serviceIds,
+        customServiceName: appointments.customServiceName,
+        bookedForName: appointments.bookedForName,
         serviceName: services.name,
-        providerName: providers.name
+        providerName: providers.name,
+        rating: appointments.rating,
+        serviceRatings: appointments.serviceRatings,
+        reviewComment: appointments.reviewComment,
+        reviewTags: appointments.reviewTags,
+        reviewedAt: appointments.reviewedAt,
       })
       .from(appointments)
       .leftJoin(services, eq(appointments.serviceId, services.id))
@@ -891,7 +1045,72 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
       return res.status(404).json({ success: false, error: { message: "Không tìm thấy lịch hẹn" } });
     }
 
-    res.json({ success: true, data: results[0] });
+    const row = results[0] as any;
+    const [allServices, allPatients, allSettings] = await Promise.all([
+      db.select().from(services),
+      db.select().from(patients).where(eq(patients.id, row.patientId)).limit(1),
+      db.select().from(settings),
+    ]);
+
+    const serviceMap = new Map<string, string>();
+    for (const s of allServices as any[]) {
+      if (s?.id && s?.name) serviceMap.set(s.id, s.name);
+      if (s?.originalId && s?.name && !serviceMap.has(s.originalId)) {
+        serviceMap.set(s.originalId, s.name);
+      }
+    }
+
+    const normalizedIds = Array.from(
+      new Set(
+        [
+          row.serviceId,
+          ...(Array.isArray(row.serviceIds) ? row.serviceIds : []),
+        ]
+          .filter(Boolean)
+          .map((s: any) => String(s).trim())
+      )
+    );
+    const serviceItems = normalizedIds.map((sId) => ({
+      id: sId,
+      name: serviceMap.get(sId) || row.serviceName || row.customServiceName || "Dịch vụ nha khoa",
+    }));
+    const resolvedServiceName =
+      row.customServiceName ||
+      (serviceItems.length > 0 ? serviceItems.map((i) => i.name).join(" + ") : row.serviceName || "Dịch vụ nha khoa");
+
+    const rowTenantId = row.tenantId ? String(row.tenantId).trim() : null;
+    const profileSetting =
+      (rowTenantId
+        ? (allSettings as any[]).find((s) => s.id === "clinicProfile" && String(s.tenantId || "").trim() === rowTenantId)
+        : null) ||
+      (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+      (allSettings as any[]).find((s) => s.id === "clinicProfile");
+    const profileVal =
+      profileSetting?.value && typeof profileSetting.value === "object" ? (profileSetting.value as any) : {};
+
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        tenantId: rowTenantId,
+        clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
+        clinicSlug: profileVal.slug ? String(profileVal.slug).trim().toLowerCase() : null,
+        status: row.status,
+        startAt: row.startAt,
+        endAt: row.endAt,
+        serviceId: row.serviceId || normalizedIds[0] || null,
+        serviceIds: normalizedIds,
+        serviceItems,
+        serviceName: resolvedServiceName,
+        providerName: row.providerName || profileVal.doctorName || "Bác sĩ chuyên khoa",
+        patientName: row.bookedForName || allPatients[0]?.fullName || "Quý khách",
+        rating: row.rating ?? null,
+        serviceRatings: row.serviceRatings ?? null,
+        reviewComment: row.reviewComment ?? null,
+        reviewTags: row.reviewTags ?? null,
+        reviewedAt: row.reviewedAt ?? null,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -1347,10 +1566,14 @@ publicRouter.post("/appointments/:id/review", patientVerifyLimiter, async (req, 
       });
     }
 
-    // Mandatory ownership verification via phone OR matching booking code
+    // Mandatory ownership verification via phone OR full matching booking ID
     const cleanPhone = String(phone || "").replace(/\D/g, "");
     const cleanCode = String(bookingCode || "").trim();
-    const isCodeVerified = Boolean(cleanCode && (cleanCode === apt.id || apt.id.toLowerCase().startsWith(cleanCode.toLowerCase())));
+    const isCodeVerified = Boolean(
+      cleanCode &&
+        (cleanCode === apt.id ||
+          (cleanCode.length >= 12 && apt.id.toLowerCase().startsWith(cleanCode.toLowerCase())))
+    );
 
     if (!cleanPhone && !isCodeVerified) {
       return res.status(403).json({
@@ -1406,6 +1629,32 @@ publicRouter.post("/appointments/:id/review", patientVerifyLimiter, async (req, 
         updatedAt: new Date(),
       }).where(eq(appointments.id, id)).returning();
     });
+
+    // Clear clinic slug bundle cache & notify clinic admin dashboard in real-time
+    try {
+      const { invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+      invalidateClinicSlugCache();
+    } catch {}
+
+    try {
+      const { realtimeNotification } = await import("../../services/realtimeNotification.js");
+      const [ptRows, svcRows] = await Promise.all([
+        db.select().from(patients).where(eq(patients.id, apt.patientId)).limit(1),
+        apt.serviceId ? db.select().from(services).where(eq(services.id, apt.serviceId)).limit(1) : Promise.resolve([]),
+      ]);
+      realtimeNotification.emitBookingUpdated({
+        id: apt.id,
+        status: apt.status,
+        tenantId: apt.tenantId || ctxTenant || null,
+        rating: finalOverallRating,
+        serviceRatings: normalizedServiceRatings,
+        serviceName: apt.customServiceName || (svcRows as any[])[0]?.name || undefined,
+        reviewComment: updated[0]?.reviewComment || "",
+        reviewedAt: updated[0]?.reviewedAt || new Date().toISOString(),
+        patientName: apt.bookedForName || ptRows[0]?.fullName || "Khách hàng",
+        action: "reviewed",
+      });
+    } catch {}
 
     res.json({
       success: true,

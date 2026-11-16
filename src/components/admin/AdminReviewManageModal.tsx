@@ -5,7 +5,6 @@ import {
   Eye, 
   EyeOff, 
   Trash2, 
-  Edit3, 
   Calendar, 
   User, 
   Stethoscope, 
@@ -23,7 +22,6 @@ interface AdminReviewManageModalProps {
   onClose: () => void;
   appointment: any | null;
   onSuccess: () => void;
-  onEditReview: (appointment: any) => void;
 }
 
 export default function AdminReviewManageModal({
@@ -31,7 +29,6 @@ export default function AdminReviewManageModal({
   onClose,
   appointment,
   onSuccess,
-  onEditReview
 }: AdminReviewManageModalProps) {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -333,17 +330,6 @@ export default function AdminReviewManageModal({
           </button>
 
           <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onEditReview(appointment);
-                onClose();
-              }}
-              className="px-3 py-2 text-xs font-bold rounded-xl text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Edit3 className="w-4 h-4" />
-              <span>Sửa</span>
-            </button>
 
             {/* Nút Ẩn / Hiện Điểm Sao */}
             <button

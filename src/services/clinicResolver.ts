@@ -25,6 +25,8 @@ export interface ClinicBrandingInfo {
   accentColor?: string;
   theme?: string;
   slug?: string;
+  workingHours?: string;
+  workingHoursStr?: string;
 }
 
 export interface ClinicBundleData {
@@ -250,31 +252,36 @@ export function getCachedClinicSettings(slugOrDomain?: string): ClinicBundleData
 /**
  * High-performance service layer function for resolving full clinic bundle
  */
-export async function fetchClinicSettings(slugOrDomain?: string): Promise<ClinicBundleData> {
+export async function fetchClinicSettings(
+  slugOrDomain?: string,
+  options?: { forceRefresh?: boolean }
+): Promise<ClinicBundleData> {
   const effectiveIdentifier = (slugOrDomain !== undefined ? slugOrDomain : extractClinicIdentifier()).trim().toLowerCase();
   const cacheKey = effectiveIdentifier || '__default_root__';
 
-  // 1. Check in-memory cache
-  const cached = memoryCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.data;
+  if (!options?.forceRefresh) {
+    // 1. Check in-memory cache
+    const cached = memoryCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    // 2. Check sessionStorage cache
+    try {
+      const sessionRaw = sessionStorage.getItem(`clinic_bundle_${cacheKey}`);
+      if (sessionRaw) {
+        const parsed = JSON.parse(sessionRaw);
+        if (parsed && Date.now() - (parsed._cachedAt || 0) < CACHE_TTL_MS) {
+          delete parsed._cachedAt;
+          memoryCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
+          return parsed;
+        }
+      }
+    } catch (e) {}
   }
 
-  // 2. Check sessionStorage cache
-  try {
-    const sessionRaw = sessionStorage.getItem(`clinic_bundle_${cacheKey}`);
-    if (sessionRaw) {
-      const parsed = JSON.parse(sessionRaw);
-      if (parsed && Date.now() - (parsed._cachedAt || 0) < CACHE_TTL_MS) {
-        delete parsed._cachedAt;
-        memoryCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
-        return parsed;
-      }
-    }
-  } catch (e) {}
-
   // 3. Deduplicate concurrent in-flight requests
-  if (inFlightRequests.has(cacheKey)) {
+  if (!options?.forceRefresh && inFlightRequests.has(cacheKey)) {
     return inFlightRequests.get(cacheKey)!;
   }
 
@@ -383,6 +390,16 @@ export function invalidateClinicCache(slug?: string): void {
     } catch (e) {}
   } else {
     memoryCache.clear();
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('clinic_bundle_')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => sessionStorage.removeItem(k));
+    } catch (e) {}
   }
 }
 

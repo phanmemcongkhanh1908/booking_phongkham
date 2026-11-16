@@ -57,6 +57,8 @@ export interface ClinicBrandingInfo {
   accentColor?: string;
   theme?: string;
   slug?: string;
+  workingHours?: string;
+  workingHoursStr?: string;
 }
 
 export interface ClinicConfig {
@@ -220,15 +222,50 @@ export async function findClinicBySlug(slug: string): Promise<ClinicConfig | nul
       } catch {}
     }
 
+    const resolvedClinicName =
+      customProfileFromSettings?.clinicName ||
+      customProfileFromSettings?.name ||
+      matchedUser.clinicName ||
+      "Nha Khoa Dental Smart";
+    const resolvedAddress =
+      customProfileFromSettings?.address ||
+      matchedUser.address ||
+      "";
+    const resolvedPhone =
+      customProfileFromSettings?.phone ||
+      customProfileFromSettings?.hotline ||
+      matchedUser.phone ||
+      matchedUser.hotline ||
+      "";
+    const resolvedHotline =
+      customProfileFromSettings?.hotline ||
+      customProfileFromSettings?.phone ||
+      matchedUser.hotline ||
+      matchedUser.phone ||
+      "";
+    const resolvedWorkingHours =
+      (
+        customProfileFromSettings?.workingHours ||
+        customProfileFromSettings?.workingHoursStr ||
+        matchedUser.workingHoursStr ||
+        ""
+      )
+        .toString()
+        .trim();
+    const resolvedSlogan =
+      customProfileFromSettings?.slogan !== undefined && customProfileFromSettings?.slogan !== ""
+        ? customProfileFromSettings.slogan
+        : matchedUser.slogan || "";
+
     const clinicConfig: ClinicConfig = {
-      clinicName: matchedUser.clinicName || customProfileFromSettings?.clinicName || customProfileFromSettings?.name || "Nha Khoa Dental Smart",
+      clinicName: resolvedClinicName,
       doctorName: resolvedDoctorName,
-      slogan: matchedUser.slogan || customProfileFromSettings?.slogan || "",
-      address: matchedUser.address || customProfileFromSettings?.address || "",
-      phone: matchedUser.phone || matchedUser.hotline || customProfileFromSettings?.phone || customProfileFromSettings?.hotline || "",
-      hotline: matchedUser.hotline || matchedUser.phone || customProfileFromSettings?.hotline || customProfileFromSettings?.phone || "",
-      workingHours: matchedUser.workingHoursStr || customProfileFromSettings?.workingHours || customProfileFromSettings?.workingHoursStr || "",
-      workingHoursStr: matchedUser.workingHoursStr || customProfileFromSettings?.workingHoursStr || customProfileFromSettings?.workingHours || "",
+      slogan: resolvedSlogan,
+      address: resolvedAddress,
+      phone: resolvedPhone,
+      hotline: resolvedHotline,
+      workingHours: resolvedWorkingHours,
+      workingHoursStr: resolvedWorkingHours,
       tenantId: targetTenantId,
       slug: cleanSlug,
       source: "local_db",
@@ -436,42 +473,137 @@ export async function syncClinicToFirestore(slug: string, config: Partial<Clinic
   return false;
 }
 
+const DAY_ORDER = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'] as const;
+
+function parseDayTokenIndex(token: string): number | null {
+  const t = token
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (!t) return null;
+  if (t.includes('chu nhat') || t === 'cn') return 6;
+  if (t.includes('bay') || t.includes('t7') || t.includes('thu 7')) return 5;
+  if (t.includes('sau') || t.includes('t6') || t.includes('thu 6')) return 4;
+  if (t.includes('nam') || t.includes('t5') || t.includes('thu 5')) return 3;
+  if (t.includes('tu') || t.includes('t4') || t.includes('thu 4')) return 2;
+  if (t.includes('ba') || t.includes('t3') || t.includes('thu 3')) return 1;
+  if (t.includes('hai') || t.includes('t2') || t.includes('thu 2')) return 0;
+  return null;
+}
+
+function extractDaysFromSegment(segment: string): string[] | null {
+  const norm = segment
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const dayRegex = /(?:thu\s*(?:2|3|4|5|6|7|hai|bay|ba|tu|nam|sau)(?![a-z])|chu\s*nhat(?![a-z])|\bt[2-7]\b|\bcn\b)/g;
+  const matches: Array<{ idx: number; start: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = dayRegex.exec(norm)) !== null) {
+    const dayIdx = parseDayTokenIndex(m[0]);
+    if (dayIdx !== null) {
+      matches.push({ idx: dayIdx, start: m.index, end: m.index + m[0].length });
+    }
+  }
+  if (matches.length === 0) return null;
+
+  const selected = new Set<string>();
+  for (let i = 0; i < matches.length; i++) {
+    const curr = matches[i];
+    const next = matches[i + 1];
+    if (next) {
+      const between = norm.slice(curr.end, next.start);
+      if (/^\s*(?:[-–—]|den|toi)\s*$/i.test(between)) {
+        if (curr.idx <= next.idx) {
+          for (let d = curr.idx; d <= next.idx; d++) {
+            selected.add(DAY_ORDER[d]);
+          }
+        } else {
+          for (let d = curr.idx; d < DAY_ORDER.length; d++) selected.add(DAY_ORDER[d]);
+          for (let d = 0; d <= next.idx; d++) selected.add(DAY_ORDER[d]);
+        }
+        i++; // Skip next since we consumed range pair
+        continue;
+      }
+    }
+    selected.add(DAY_ORDER[curr.idx]);
+  }
+  return DAY_ORDER.filter((d) => selected.has(d));
+}
+
+function extractTimeIntervals(segment: string): Array<{ startStr: string; endStr: string; startMins: number; endMins: number }> {
+  const results: Array<{ startStr: string; endStr: string; startMins: number; endMins: number }> = [];
+  const regex = /(\d{1,2})\s*[:hH]\s*(\d{2})\s*(?:[-–—]|đến|tới)+\s*(\d{1,2})\s*[:hH]\s*(\d{2})/g;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(segment)) !== null) {
+    const sh = Math.min(23, parseInt(m[1], 10));
+    const sm = Math.min(59, parseInt(m[2], 10));
+    const eh = Math.min(23, parseInt(m[3], 10));
+    const em = Math.min(59, parseInt(m[4], 10));
+    const startStr = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}`;
+    const endStr = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+    results.push({
+      startStr,
+      endStr,
+      startMins: sh * 60 + sm,
+      endMins: eh * 60 + em,
+    });
+  }
+  return results;
+}
+
 /**
  * Parses working hours string into structured format and checks open status
+ * Supports multi-segment Vietnamese schedules (e.g. "17:00 - 20:00 (Thứ 2 - Thứ 5) và 7:30 - 20:00 (Thứ bảy - Chủ nhật)")
  */
-export function parseBusinessHours(hoursStr?: string): BusinessHoursInfo {
+export function parseBusinessHours(hoursStr?: string, referenceDate?: Date): BusinessHoursInfo {
   const defaultHours = "T2 - CN: 08:00 - 20:00";
   const raw = (hoursStr || "").trim() || defaultHours;
-  
-  // Extract time format (e.g. 08:00 - 20:00 or 8:00 - 17:00)
-  const timeMatch = raw.match(/(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/);
-  const openTime = timeMatch ? timeMatch[1].padStart(5, '0') : "08:00";
-  const closeTime = timeMatch ? timeMatch[2].padStart(5, '0') : "20:00";
-
-  // Check days
-  let days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-  if (raw.toLowerCase().includes('thứ 2 - thứ 7') || raw.toLowerCase().includes('t2 - t7')) {
-    days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-  } else if (raw.toLowerCase().includes('thứ 2 - thứ 6') || raw.toLowerCase().includes('t2 - t6')) {
-    days = ['T2', 'T3', 'T4', 'T5', 'T6'];
-  }
 
   // Calculate current Vietnam time (GMT+7)
-  const now = new Date();
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const vnTime = new Date(utc + (3600000 * 7));
+  const now = referenceDate || new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const vnTime = new Date(utc + 3600000 * 7);
   const currentDayIndex = vnTime.getDay(); // 0 is Sunday, 1 is Monday...
   const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   const currentDayName = dayNames[currentDayIndex];
-  
   const currentMinutes = vnTime.getHours() * 60 + vnTime.getMinutes();
-  const [openH, openM] = openTime.split(':').map(Number);
-  const [closeH, closeM] = closeTime.split(':').map(Number);
-  const openMinutes = openH * 60 + openM;
-  const closeMinutes = closeH * 60 + closeM;
 
-  const isOpenToday = days.includes(currentDayName);
-  const isCurrentlyOpen = isOpenToday && (currentMinutes >= openMinutes && currentMinutes <= closeMinutes);
+  const segments = raw
+    .split(/(?:\s+và\s+|;|\||\n)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const allDaysSet = new Set<string>();
+  const todayIntervals: Array<{ startStr: string; endStr: string; startMins: number; endMins: number }> = [];
+  const fallbackIntervals = extractTimeIntervals(raw);
+
+  for (const seg of segments) {
+    const segDays = extractDaysFromSegment(seg) || [...DAY_ORDER];
+    const segTimes = extractTimeIntervals(seg);
+    if (segTimes.length > 0) {
+      segDays.forEach((d) => allDaysSet.add(d));
+      if (segDays.includes(currentDayName)) {
+        todayIntervals.push(...segTimes);
+      }
+    }
+  }
+
+  const days =
+    allDaysSet.size > 0
+      ? DAY_ORDER.filter((d) => allDaysSet.has(d))
+      : extractDaysFromSegment(raw) || [...DAY_ORDER];
+
+  const activeIntervals = todayIntervals.length > 0 ? todayIntervals : fallbackIntervals;
+  const openTime = activeIntervals[0]?.startStr || "08:00";
+  const closeTime = activeIntervals[activeIntervals.length - 1]?.endStr || "20:00";
+
+  const isOpenToday = todayIntervals.length > 0 || (fallbackIntervals.length > 0 && days.includes(currentDayName));
+  const isCurrentlyOpen =
+    isOpenToday &&
+    todayIntervals.some((iv) => currentMinutes >= iv.startMins && currentMinutes <= iv.endMins);
 
   return {
     workingHoursStr: raw,
@@ -480,7 +612,7 @@ export function parseBusinessHours(hoursStr?: string): BusinessHoursInfo {
     days,
     isOpenToday,
     isCurrentlyOpen,
-    scheduleSummary: `${openTime} - ${closeTime} (${days.join(', ')})`,
+    scheduleSummary: raw,
   };
 }
 
@@ -497,6 +629,8 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
 
   const tenantId = clinicConfig?.tenantId || (cleanSlug ? `tenant_${cleanSlug}` : null);
 
+  const businessHours = parseBusinessHours(clinicConfig?.workingHoursStr || clinicConfig?.workingHours);
+
   // Fallback default profile if not found
   const clinicProfile: ClinicBrandingInfo = {
     clinicName: clinicConfig?.clinicName || "Nha Khoa Dental Smart",
@@ -512,9 +646,9 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
     accentColor: clinicConfig?.accentColor || "#14b8a6",
     theme: clinicConfig?.theme || "teal",
     slug: clinicConfig?.slug || cleanSlug || "",
+    workingHours: businessHours.workingHoursStr,
+    workingHoursStr: businessHours.workingHoursStr,
   };
-
-  const businessHours = parseBusinessHours(clinicConfig?.workingHoursStr || clinicConfig?.workingHours);
 
   let activeServices: any[] = [];
   let activeProviders: any[] = [];

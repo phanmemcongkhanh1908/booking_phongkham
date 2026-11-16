@@ -1019,6 +1019,14 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
       notifyPatientAppointment(appointment.id, "CONFIRMED").catch(console.error);
     } else if (nextStatus === "COMPLETED") {
       generateRecall(appointment).catch(console.error);
+      // Emit real-time completion prompt strictly to the customer device holding this appointmentId
+      buildPatientReviewEventPayload(appointment)
+        .then((reviewPayload) => {
+          if (reviewPayload) {
+            realtimeNotification.emitPatientAppointmentCompleted(reviewPayload);
+          }
+        })
+        .catch(console.error);
     } else if (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT") {
       notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
       triggerWaitlistMatching(appointment).catch(console.error);
@@ -1027,6 +1035,126 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     res.json({
       success: true,
       data: appointment,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function buildPatientReviewEventPayload(appointment: any) {
+  if (!appointment?.id) return null;
+  const tenantId = normalizeTenant(appointment.tenantId);
+
+  const [allServices, allProviders, allPatients, allSettings] = await Promise.all([
+    db.select().from(services),
+    db.select().from(providers),
+    db.select().from(patients),
+    db.select().from(settings),
+  ]);
+
+  const serviceMap = new Map<string, string>();
+  for (const s of allServices as any[]) {
+    if (s?.id && s?.name) serviceMap.set(s.id, s.name);
+    if (s?.originalId && s?.name && !serviceMap.has(s.originalId)) {
+      serviceMap.set(s.originalId, s.name);
+    }
+  }
+
+  const normalizedServiceIds = Array.from(
+    new Set(
+      [
+        appointment.serviceId,
+        ...(Array.isArray(appointment.serviceIds) ? appointment.serviceIds : []),
+      ]
+        .filter(Boolean)
+        .map((id) => String(id).trim())
+    )
+  );
+
+  const serviceItems = normalizedServiceIds.map((sId) => ({
+    id: sId,
+    name: serviceMap.get(sId) || appointment.customServiceName || "Dịch vụ nha khoa",
+  }));
+
+  const resolvedServiceName =
+    appointment.customServiceName ||
+    (serviceItems.length > 0 ? serviceItems.map((i) => i.name).join(" + ") : "Dịch vụ nha khoa");
+
+  const provider = (allProviders as any[]).find((p) => p.id === appointment.providerId);
+  const patient = (allPatients as any[]).find((p) => p.id === appointment.patientId);
+
+  const profileSetting =
+    (tenantId
+      ? (allSettings as any[]).find((s) => s.id === "clinicProfile" && normalizeTenant(s.tenantId) === tenantId)
+      : null) ||
+    (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+    (allSettings as any[]).find((s) => s.id === "clinicProfile");
+
+  const profileVal = (profileSetting?.value && typeof profileSetting.value === "object")
+    ? (profileSetting.value as any)
+    : {};
+
+  let clinicSlug = profileVal.slug ? String(profileVal.slug).trim().toLowerCase() : "";
+  if (!clinicSlug && tenantId) {
+    try {
+      const { users } = await import("../../db/schema.js");
+      const tenantUsers = await db.select().from(users).where(eq(users.tenantId, tenantId)).limit(1);
+      if (tenantUsers.length > 0 && tenantUsers[0].slug) {
+        clinicSlug = String(tenantUsers[0].slug).trim().toLowerCase();
+      }
+    } catch {}
+  }
+
+  return {
+    id: appointment.id,
+    status: appointment.status || "COMPLETED",
+    tenantId,
+    clinicSlug: clinicSlug || null,
+    clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
+    patientName: appointment.bookedForName || patient?.fullName || "Quý khách",
+    serviceId: appointment.serviceId || normalizedServiceIds[0] || null,
+    serviceIds: normalizedServiceIds,
+    serviceItems,
+    serviceName: resolvedServiceName,
+    providerName: provider?.name || profileVal.doctorName || "Bác sĩ chuyên khoa",
+    startAt: appointment.startAt,
+    rating: appointment.rating ?? null,
+    reviewedAt: appointment.reviewedAt ?? null,
+  };
+}
+
+// Gửi lại yêu cầu đánh giá tới thiết bị khách hàng cho ca khám đã hoàn thành
+appointmentRouter.post("/:id/request-review", requirePermission("appointment.update"), async (req, res, next) => {
+  try {
+    const appointmentId = req.params.id;
+    const requestTenantId = getRequestTenantId(req);
+    const existing = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (existing.length === 0 || normalizeTenant(existing[0].tenantId) !== requestTenantId) {
+      throw new NotFoundError("Không tìm thấy lịch hẹn");
+    }
+
+    const apt = existing[0];
+    if (String(apt.status || "").toUpperCase() !== "COMPLETED") {
+      throw new BadRequestError("Chỉ có thể gửi yêu cầu đánh giá sau khi đã xác nhận hoàn thành khám.");
+    }
+
+    const reviewPayload = await buildPatientReviewEventPayload(apt);
+    if (reviewPayload) {
+      realtimeNotification.emitPatientAppointmentCompleted(reviewPayload);
+    }
+    sendAppointmentStatusPush(apt.id, "COMPLETED").catch(console.error);
+
+    const reviewPath = reviewPayload?.clinicSlug
+      ? `/b/${encodeURIComponent(reviewPayload.clinicSlug)}/lich-hen?reviewAppointmentId=${encodeURIComponent(apt.id)}`
+      : `/lich-hen-cua-toi?reviewAppointmentId=${encodeURIComponent(apt.id)}`;
+
+    res.json({
+      success: true,
+      data: {
+        reviewPath,
+        clinicSlug: reviewPayload?.clinicSlug || null,
+      },
+      message: "Đã gửi lại thông báo mời đánh giá tới thiết bị khách hàng",
     });
   } catch (error) {
     next(error);

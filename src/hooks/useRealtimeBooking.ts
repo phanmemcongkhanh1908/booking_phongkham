@@ -102,6 +102,18 @@ export function useRealtimeBooking() {
                 icon: '🗓️',
                 duration: 6000,
               });
+            } else if (payload.action === 'reviewed') {
+              const scoreStr = payload.rating ? `${payload.rating}/5⭐` : 'mới';
+              toast.success(
+                `Khách hàng ${payload.patientName || ''} vừa gửi đánh giá ${scoreStr}${payload.serviceName ? ` (${payload.serviceName})` : ''}`,
+                {
+                  icon: '⭐',
+                  duration: 7000,
+                }
+              );
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('admin-appointments-refresh', { detail: payload }));
+              }
             }
           } catch {}
         });

@@ -45,6 +45,7 @@ import {
 import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
+import { invalidateClinicCache } from '../../services/clinicResolver';
 import SyncDiagnosticModal from './components/SyncDiagnosticModal';
 import GoogleOriginHelpModal from './components/GoogleOriginHelpModal';
 import { forceSyncAppointmentsToSheet } from '../../lib/googleWorkspace';
@@ -127,7 +128,9 @@ export default function Settings() {
     address: '',
     phone: '',
     workingHours: '',
+    workingHoursStr: '',
     slogan: '',
+    slug: '',
   });
   const [clinicMsg, setClinicMsg] = useState('');
   const [clinicError, setClinicError] = useState(false);
@@ -362,7 +365,15 @@ export default function Settings() {
       if (telegramToken) setTelegramToken(prev => prev === telegramToken ? prev : telegramToken);
       if (telegramChatId) setTelegramChatId(prev => prev === telegramChatId ? prev : telegramChatId);
       if (telegramBotUsername) setTelegramBotUsername(prev => prev === telegramBotUsername ? prev : telegramBotUsername);
-      if (clinicProfile) setClinicProfile(typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile);
+      if (clinicProfile) {
+        const parsedCp = typeof clinicProfile === 'string' ? JSON.parse(clinicProfile) : clinicProfile;
+        const resolvedHours = parsedCp?.workingHours || parsedCp?.workingHoursStr || '';
+        setClinicProfile({
+          ...parsedCp,
+          workingHours: resolvedHours,
+          workingHoursStr: resolvedHours,
+        });
+      }
       if (dbAnnouncementBanner) setAnnouncementBanner(typeof dbAnnouncementBanner === 'string' ? JSON.parse(dbAnnouncementBanner) : dbAnnouncementBanner);
       if (dbGoogleLoginConfig) {
         const parsedGl = typeof dbGoogleLoginConfig === 'string' ? JSON.parse(dbGoogleLoginConfig) : dbGoogleLoginConfig;
@@ -634,9 +645,20 @@ export default function Settings() {
     setClinicError(false);
     setClinicSaving(true);
 
+    const normalizedHours = String(clinicProfile.workingHours || clinicProfile.workingHoursStr || '').trim();
+    const payloadProfile = {
+      ...clinicProfile,
+      workingHours: normalizedHours,
+      workingHoursStr: normalizedHours,
+    };
+
     const trySave = async (retryCount = 0): Promise<void> => {
       try {
-        const res = await api.post('/admin/settings', { clinicProfile, idleTimeoutMinutes: Number(idleTimeoutMinutes) });
+        const res = await api.post('/admin/settings', {
+          clinicProfile: payloadProfile,
+          idleTimeoutMinutes: Number(idleTimeoutMinutes),
+        });
+        invalidateClinicCache();
         setClinicError(false);
         setClinicMsg(res.data?.message || 'Lưu thông tin phòng khám thành công!');
         setTimeout(() => setClinicMsg(''), 4000);
@@ -1084,8 +1106,12 @@ export default function Settings() {
               <Input 
                 type="text" 
                 placeholder="VD: 08:00 - 20:00 (Thứ 2 - Thứ 7)" 
-                value={clinicProfile.workingHours || ''} 
-                onChange={e => setClinicProfile({...clinicProfile, workingHours: e.target.value})} 
+                value={clinicProfile.workingHours || clinicProfile.workingHoursStr || ''} 
+                onChange={e => setClinicProfile({
+                  ...clinicProfile,
+                  workingHours: e.target.value,
+                  workingHoursStr: e.target.value,
+                })} 
               />
             </div>
             <p className="text-[11px] text-text-muted">

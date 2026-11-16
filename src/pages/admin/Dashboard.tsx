@@ -29,8 +29,7 @@ import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarnin
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
-import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone, History, Eye, EyeOff, MessageSquareText } from 'lucide-react';
-import AppointmentReviewModal from '../../components/AppointmentReviewModal';
+import { LayoutList, Calendar, BarChart3, Users, CalendarPlus, QrCode, Settings as SettingsIcon, LogOut, UserPlus, Clock, CheckCircle, Bell, BellOff, Volume2, VolumeX, X, ShieldAlert, Cloud, PhoneCall, ChevronRight, FileSpreadsheet, UserCircle2, ShieldCheck, CheckCircle2, AlertTriangle, Star, Trash2, Sparkles, ExternalLink, Smartphone, History, Eye, EyeOff, MessageSquareText, Send } from 'lucide-react';
 import AdminReviewManageModal from '../../components/admin/AdminReviewManageModal';
 import { resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 import MobileNotificationControls from '../../components/admin/MobileNotificationControls';
@@ -72,10 +71,7 @@ export default function Dashboard() {
     appointmentId: null,
     reason: ''
   });
-  const [completeReviewModalData, setCompleteReviewModalData] = useState<{isOpen: boolean, appointment: any | null}>({
-    isOpen: false,
-    appointment: null
-  });
+  const [sendingReviewReqId, setSendingReviewReqId] = useState<string | null>(null);
   const [manageReviewModalData, setManageReviewModalData] = useState<{isOpen: boolean, appointment: any | null}>({
     isOpen: false,
     appointment: null
@@ -327,6 +323,17 @@ export default function Dashboard() {
     fetchClinicServices();
   }, [user?.id, user?.tenantId]);
 
+  // Refresh appointments & service star stats immediately when a customer submits a review
+  useEffect(() => {
+    const handleAdminRefresh = () => {
+      invalidateClinicCache();
+      fetchAppointments(false);
+      fetchClinicServices();
+    };
+    window.addEventListener('admin-appointments-refresh', handleAdminRefresh);
+    return () => window.removeEventListener('admin-appointments-refresh', handleAdminRefresh);
+  }, []);
+
   const notifiedApptsRef = useRef<Set<string>>(new Set());
 
     
@@ -403,34 +410,45 @@ export default function Dashboard() {
   }, []);
 
   const handleUpdateStatus = async (id: string, newStatus: string, cancelReason?: string) => {
-    if (newStatus === 'COMPLETED') {
-      const apt = appointments.find(a => a.id === id);
-      if (apt) {
-        setCompleteReviewModalData({
-          isOpen: true,
-          appointment: apt
-        });
-        return;
-      }
-    }
     try {
       await api.patch(`/appointments/${id}/status`, { status: newStatus, cancelReason });
       useBroadcastStore.getState().dismissAppointment(id);
+      if (newStatus === 'COMPLETED') {
+        toast.success(
+          'Đã xác nhận hoàn thành ca khám! Popup đánh giá đã được gửi tới thiết bị đặt lịch của khách hàng.',
+          { icon: '⭐', duration: 6000 }
+        );
+      }
       fetchAppointments();
     } catch (error) {
-      alert("Không thể cập nhật trạng thái");
+      toast.error("Không thể cập nhật trạng thái");
       console.error(error);
     }
   };
 
-  const handleCompleteWithoutReview = async (appointmentId: string) => {
+  const handleRequestCustomerReview = async (apt: any) => {
+    if (!apt?.id || sendingReviewReqId === apt.id) return;
+    setSendingReviewReqId(apt.id);
     try {
-      await api.patch(`/appointments/${appointmentId}/status`, { status: 'COMPLETED' });
-      useBroadcastStore.getState().dismissAppointment(appointmentId);
-      fetchAppointments();
-    } catch (error) {
-      alert("Không thể cập nhật trạng thái");
-      console.error(error);
+      const res = await api.post(`/appointments/${apt.id}/request-review`);
+      const reviewPath = res.data?.data?.reviewPath;
+      let copied = false;
+      if (reviewPath && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}${reviewPath}`);
+          copied = true;
+        } catch {}
+      }
+      toast.success(
+        copied
+          ? 'Đã gửi thông báo mời đánh giá tới thiết bị khách hàng & sao chép link đánh giá!'
+          : 'Đã gửi thông báo mời đánh giá tới thiết bị đặt lịch của khách hàng!',
+        { icon: '📲', duration: 5500 }
+      );
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Không thể gửi lời mời đánh giá lúc này');
+    } finally {
+      setSendingReviewReqId(null);
     }
   };
 
@@ -1503,12 +1521,14 @@ export default function Dashboard() {
                                     </button>
                                   ) : (
                                     <button 
-                                      onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
-                                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-                                      title="Nhập đánh giá của bệnh nhân"
+                                      type="button"
+                                      disabled={sendingReviewReqId === apt.id}
+                                      onClick={() => handleRequestCustomerReview(apt)} 
+                                      className="flex-1 text-xs py-2 px-2 rounded-xl font-semibold transition-all bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 hover:border-teal-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                                      title="Khách chưa đánh giá. Bấm để gửi lại thông báo & sao chép link đánh giá cho khách hàng"
                                     >
-                                      <Star className="w-3.5 h-3.5 text-amber-500" />
-                                      Đánh giá
+                                      <Send className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                      <span>Chờ khách ĐG · Nhắc</span>
                                     </button>
                                   )
                                 )}
@@ -1552,12 +1572,14 @@ export default function Dashboard() {
                                     </button>
                                   ) : (
                                     <button 
-                                      onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
-                                      className="flex-1 text-xs py-2 rounded-xl font-semibold transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-                                      title="Nhập đánh giá của bệnh nhân"
+                                      type="button"
+                                      disabled={sendingReviewReqId === apt.id}
+                                      onClick={() => handleRequestCustomerReview(apt)} 
+                                      className="flex-1 text-xs py-2 px-2 rounded-xl font-semibold transition-all bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 hover:border-teal-200 active:scale-95 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                                      title="Khách chưa đánh giá. Bấm để gửi lại thông báo & sao chép link đánh giá cho khách hàng"
                                     >
-                                      <Star className="w-3.5 h-3.5 text-amber-500" />
-                                      Đánh giá
+                                      <Send className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                      <span>Chờ khách ĐG · Nhắc</span>
                                     </button>
                                   )
                                 )}
@@ -1695,12 +1717,14 @@ export default function Dashboard() {
                                         </button>
                                       ) : (
                                         <button 
-                                          onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
-                                          className="text-xs px-2.5 py-1.5 rounded-lg font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1 cursor-pointer"
-                                          title="Nhập đánh giá của bệnh nhân"
+                                          type="button"
+                                          disabled={sendingReviewReqId === apt.id}
+                                          onClick={() => handleRequestCustomerReview(apt)} 
+                                          className="text-xs px-2.5 py-1.5 rounded-lg font-semibold bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 hover:border-teal-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                          title="Khách chưa đánh giá. Bấm để gửi lại thông báo & sao chép link đánh giá gửi cho khách"
                                         >
-                                          <Star className="w-3 h-3 text-amber-500" />
-                                          Đánh giá
+                                          <Send className="w-3 h-3 text-teal-600 shrink-0" />
+                                          <span>Nhắc khách ĐG</span>
                                         </button>
                                       )
                                     )}
@@ -1744,12 +1768,14 @@ export default function Dashboard() {
                                         </button>
                                       ) : (
                                         <button 
-                                          onClick={() => setCompleteReviewModalData({ isOpen: true, appointment: apt })} 
-                                          className="text-xs px-2.5 py-1 rounded-md font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 flex items-center gap-1 cursor-pointer"
-                                          title="Nhập đánh giá của bệnh nhân"
+                                          type="button"
+                                          disabled={sendingReviewReqId === apt.id}
+                                          onClick={() => handleRequestCustomerReview(apt)} 
+                                          className="text-xs px-2.5 py-1 rounded-md font-semibold bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 hover:border-teal-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                          title="Khách chưa đánh giá. Bấm để gửi lại thông báo & sao chép link đánh giá gửi cho khách"
                                         >
-                                          <Star className="w-3 h-3 text-amber-500" />
-                                          Đánh giá
+                                          <Send className="w-3 h-3 text-teal-600 shrink-0" />
+                                          <span>Nhắc khách ĐG</span>
                                         </button>
                                       )
                                     )}
@@ -1944,27 +1970,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Appointment Review & Complete Modal */}
-      <AppointmentReviewModal
-        isOpen={completeReviewModalData.isOpen}
-        onClose={() => setCompleteReviewModalData({ isOpen: false, appointment: null })}
-        appointment={completeReviewModalData.appointment}
-        isStaffMode={true}
-        onSuccess={() => {
-          if (completeReviewModalData.appointment?.id) {
-            useBroadcastStore.getState().dismissAppointment(completeReviewModalData.appointment.id);
-          }
-          invalidateClinicCache();
-          fetchAppointments();
-          fetchClinicServices();
-        }}
-        onCompleteWithoutReview={() => {
-          if (completeReviewModalData.appointment?.id) {
-            handleCompleteWithoutReview(completeReviewModalData.appointment.id);
-          }
-        }}
-      />
-
       {/* Admin Review Management Modal */}
       <AdminReviewManageModal
         isOpen={manageReviewModalData.isOpen}
@@ -1975,7 +1980,6 @@ export default function Dashboard() {
           fetchAppointments();
           fetchClinicServices();
         }}
-        onEditReview={(apt) => setCompleteReviewModalData({ isOpen: true, appointment: apt })}
       />
 
       

@@ -21,8 +21,10 @@ interface ServiceItemBrief {
 interface AppointmentReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onDismiss?: () => void;
   appointment: {
     id: string;
+    clinicName?: string | null;
     patientName?: string;
     serviceId?: string | null;
     serviceIds?: string[] | null;
@@ -37,6 +39,7 @@ interface AppointmentReviewModalProps {
   } | null;
   isStaffMode?: boolean;
   phone?: string;
+  bookingCode?: string;
   onSuccess: (data?: any) => void;
   onCompleteWithoutReview?: () => void;
 }
@@ -91,9 +94,11 @@ function resolveRegisteredServices(
 export default function AppointmentReviewModal({
   isOpen,
   onClose,
+  onDismiss,
   appointment,
   isStaffMode = false,
   phone,
+  bookingCode,
   onSuccess,
   onCompleteWithoutReview,
 }: AppointmentReviewModalProps) {
@@ -171,6 +176,7 @@ export default function AppointmentReviewModal({
   };
 
   const effectivePhone = (phone || manualPhone || '').trim();
+  const effectiveBookingCode = (bookingCode || '').trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,7 +184,7 @@ export default function AppointmentReviewModal({
       toast.error('Vui lòng chọn số sao đánh giá (1-5 sao)');
       return;
     }
-    if (!isStaffMode && !effectivePhone) {
+    if (!isStaffMode && !effectivePhone && !effectiveBookingCode) {
       toast.error('Vui lòng nhập số điện thoại đã đặt lịch để xác thực đánh giá');
       return;
     }
@@ -216,7 +222,8 @@ export default function AppointmentReviewModal({
           serviceRatings: finalServiceRatings,
           reviewComment: comment,
           reviewTags: selectedTags,
-          phone: effectivePhone,
+          phone: effectivePhone || undefined,
+          bookingCode: effectiveBookingCode || undefined,
         });
         setSubmittedSuccess(true);
         toast.success(res.data?.message || 'Cảm ơn bạn đã đánh giá dịch vụ!', { icon: '🌟' });
@@ -252,7 +259,10 @@ export default function AppointmentReviewModal({
         <div className="relative bg-gradient-to-br from-teal-600 via-emerald-600 to-teal-700 p-6 text-white text-center shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (onDismiss) onDismiss();
+              onClose();
+            }}
             className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition cursor-pointer"
             title="Đóng"
           >
@@ -264,13 +274,15 @@ export default function AppointmentReviewModal({
           </div>
 
           <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">
-            {isStaffMode ? 'Xác nhận hoàn tất & Đánh giá ca khám' : 'Đánh giá dịch vụ đợt khám này'}
+            {isStaffMode ? 'Xác nhận hoàn tất & Đánh giá ca khám' : 'Cảm ơn bạn đã hoàn tất khám!'}
           </h3>
 
           <p className="text-xs sm:text-sm text-teal-50 mt-1 max-w-sm mx-auto leading-relaxed">
             {isStaffMode
               ? 'Ghi nhận điểm sao và nhận xét thực tế cho từng dịch vụ trong đợt đăng ký'
-              : 'Điểm sao của bạn giúp phòng khám nâng cao chất lượng và hỗ trợ khách hàng mới tham khảo'}
+              : appointment.clinicName
+                ? `Hãy chấm sao trải nghiệm dịch vụ tại ${appointment.clinicName} để giúp phòng khám phục vụ tốt hơn`
+                : 'Điểm sao của bạn được gửi trực tiếp về phòng khám theo từng dịch vụ bạn đã sử dụng'}
           </p>
 
           <div className="mt-3.5 p-2.5 rounded-xl bg-black/15 backdrop-blur-md border border-white/10 flex items-center justify-center gap-3 text-xs font-medium text-white/95">
@@ -280,7 +292,7 @@ export default function AppointmentReviewModal({
             </span>
             {appointment.patientName && (
               <span className="border-l border-white/20 pl-3 truncate shrink-0">
-                BN: <strong>{appointment.patientName}</strong>
+                KH: <strong>{appointment.patientName}</strong>
               </span>
             )}
           </div>
@@ -396,8 +408,8 @@ export default function AppointmentReviewModal({
                 </div>
               )}
 
-              {/* Phone verification fallback in public mode if phone prop is missing */}
-              {!isStaffMode && !phone && (
+              {/* Phone verification fallback in public mode only when neither phone nor device bookingCode is present */}
+              {!isStaffMode && !phone && !effectiveBookingCode && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-teal-600" />
@@ -496,7 +508,10 @@ export default function AppointmentReviewModal({
                   <>
                     <button
                       type="button"
-                      onClick={onClose}
+                      onClick={() => {
+                        if (onDismiss) onDismiss();
+                        onClose();
+                      }}
                       disabled={submitting}
                       className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-semibold transition cursor-pointer text-center"
                     >

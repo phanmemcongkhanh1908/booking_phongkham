@@ -6,6 +6,7 @@ import api from '../services/api';
 import { useRealtimeBooking } from '../hooks/useRealtimeBooking';
 import { useBroadcastStore, normalizeTenantId } from '../store/broadcastStore';
 import BroadcastAlertBar from './BroadcastAlertBar';
+import CustomerReviewWatcher from './CustomerReviewWatcher';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function NotificationManager() {
@@ -161,7 +162,7 @@ export default function NotificationManager() {
   return (
     <>
       <Toaster position="top-right" />
-      {location.pathname.startsWith('/admin') && <BroadcastAlertBar />}
+      {location.pathname.startsWith('/admin') ? <BroadcastAlertBar /> : <CustomerReviewWatcher />}
     </>
   );
 }

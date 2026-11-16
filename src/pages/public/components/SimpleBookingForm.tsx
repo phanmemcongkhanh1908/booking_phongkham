@@ -14,6 +14,11 @@ import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/c
 import { PWAInstallBanner } from './PWAInstallBanner';
 import CustomerBookingHistoryModal, { BookingHistoryItem } from '../../../components/CustomerBookingHistoryModal';
 import ServiceReviewsModal from '../../../components/ServiceReviewsModal';
+import { formatClinicSlogan } from '../../../utils/maps';
+import {
+  CUSTOMER_REVIEW_SUBMITTED_EVENT,
+  recordCustomerDeviceBooking,
+} from '../../../utils/customerDeviceBookings';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -161,22 +166,28 @@ export default function SimpleBookingForm() {
   // Silent background revalidation so live star scores & visibility toggles stay fresh immediately
   useEffect(() => {
     let cancelled = false;
-    api
-      .get('/public/services', {
-        params: {
-          ...(activeSlug ? { slug: activeSlug } : {}),
-          ...(storeTenantId ? { tenantId: storeTenantId } : {}),
-        },
-      })
-      .then((res) => {
-        if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          setServices(res.data.data);
-          setLoadingServices(false);
-        }
-      })
-      .catch(() => {});
+    const fetchLatestServices = () => {
+      api
+        .get('/public/services', {
+          params: {
+            ...(activeSlug ? { slug: activeSlug } : {}),
+            ...(storeTenantId ? { tenantId: storeTenantId } : {}),
+          },
+        })
+        .then((res) => {
+          if (!cancelled && res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+            setServices(res.data.data);
+            setLoadingServices(false);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchLatestServices();
+    window.addEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, fetchLatestServices);
     return () => {
       cancelled = true;
+      window.removeEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, fetchLatestServices);
     };
   }, [activeSlug, storeTenantId]);
 
@@ -349,6 +360,19 @@ export default function SimpleBookingForm() {
         const appointmentData = res.data.data;
         if (appointmentData && appointmentData.appointmentId) {
           localStorage.setItem('verifiedPatient', JSON.stringify({ phone: formData.phone, fullName: formData.fullName }));
+          recordCustomerDeviceBooking({
+            id: appointmentData.appointmentId,
+            tenantId: appointmentData.tenantId || storeTenantId || null,
+            clinicSlug: activeSlug || clinicProfile?.slug || null,
+            clinicName: clinicProfile?.clinicName || clinicProfile?.name || null,
+            patientPhone: formData.phone.trim(),
+            patientName: formData.fullName.trim(),
+            serviceId: appointmentData.serviceId || selectedServiceIds[0] || null,
+            serviceIds: appointmentData.serviceIds || selectedServiceIds,
+            serviceName: appointmentData.serviceName || combinedServiceName || null,
+            providerName: appointmentData.providerName || null,
+            startAt: appointmentData.startAt || selectedSlot?.startAt || null,
+          });
         }
 
         setAppointmentSuccess(
@@ -411,8 +435,8 @@ export default function SimpleBookingForm() {
             Bác sĩ phụ trách: <span className="font-extrabold text-teal-950">{doctorDisplayName}</span>
           </p>
         )}
-        <p className="text-xs sm:text-base text-slate-500 font-medium max-w-xl mx-auto line-clamp-2 sm:line-clamp-none">
-          {clinicProfile?.slogan || 'Hoàn tất thủ tục đặt lịch nhanh chóng, tiện lợi chỉ với vài thao tác cơ bản.'}
+        <p className="text-xs sm:text-base text-slate-500 font-medium max-w-xl mx-auto">
+          {formatClinicSlogan(clinicProfile?.slogan) || 'Hoàn tất thủ tục đặt lịch nhanh chóng, tiện lợi chỉ với vài thao tác cơ bản.'}
         </p>
       </div>
 

@@ -11,10 +11,12 @@ import {
   CheckCircle2, 
   Lock,
   Stethoscope,
-  HeartHandshake
+  HeartHandshake,
+  Navigation
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { buildGoogleMapsDirectionsUrl, formatClinicSlogan } from '../../../utils/maps';
 
 interface BookingSummaryCardProps {
   currentStep: number;
@@ -78,9 +80,9 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
               <h3 className="text-base sm:text-lg font-bold tracking-tight text-white leading-snug">
                 {clinicName}
               </h3>
-              {slogan && (
-                <p className="text-xs text-slate-300/80 italic mt-0.5 line-clamp-1">
-                  “{slogan}”
+              {formatClinicSlogan(slogan) && (
+                <p className="text-xs text-slate-300/80 italic mt-0.5">
+                  “{formatClinicSlogan(slogan)}”
                 </p>
               )}
               {clinicProfile?.doctorName && (
@@ -187,10 +189,21 @@ export default function BookingSummaryCard({ currentStep }: BookingSummaryCardPr
           {(address || phone) && (
             <div className="pt-3 space-y-2 text-xs text-slate-600">
               {address && (
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                  <span className="line-clamp-2 leading-relaxed">{address}</span>
-                </div>
+                <a
+                  href={buildGoogleMapsDirectionsUrl(address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2 text-slate-600 hover:text-teal-700 transition-colors group"
+                  title="Nhấn để mở Google Maps chỉ đường tới phòng khám"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed group-hover:underline underline-offset-2">
+                    {address}{' '}
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-teal-700 whitespace-nowrap">
+                      (<Navigation className="w-2.5 h-2.5 inline" /> Chỉ đường)
+                    </span>
+                  </span>
+                </a>
               )}
               {phone && (
                 <div className="flex items-center gap-2">

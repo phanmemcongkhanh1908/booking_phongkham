@@ -41,6 +41,7 @@ import {
 import toast from 'react-hot-toast';
 import AnalyticsPrintModal, { PrintReportConfig } from './components/AnalyticsPrintModal';
 import PrintMedicalDocument from './components/PrintMedicalDocument';
+import ServiceRatingTrendChart, { RatingAnalyticsData } from './components/ServiceRatingTrendChart';
 
 // Harmonic, high-contrast modern palette
 const SERVICE_COLORS = [
@@ -95,6 +96,7 @@ interface AnalyticsData {
   returningRate?: number;
   totalPatients?: number;
   returningPatients?: number;
+  ratingAnalytics?: RatingAnalyticsData;
 }
 
 // Formatters
@@ -226,6 +228,15 @@ export default function Analytics() {
     };
   }, [autoRefresh, fetchAnalytics]);
 
+  // Live refresh when customer submits a new rating or appointment updates
+  useEffect(() => {
+    const handleLiveRefresh = () => {
+      fetchAnalytics();
+    };
+    window.addEventListener('admin-appointments-refresh', handleLiveRefresh);
+    return () => window.removeEventListener('admin-appointments-refresh', handleLiveRefresh);
+  }, [fetchAnalytics]);
+
   // Google Drive Quota
   useEffect(() => {
     if (isConnected && accessToken) {
@@ -300,6 +311,20 @@ export default function Analytics() {
       }));
       const wsTimeline = XLSX.utils.json_to_sheet(timelineRows);
       XLSX.utils.book_append_sheet(wb, wsTimeline, 'Biến động theo ngày');
+
+      // Sheet 4: Service Rating Trend
+      const ratingTrendRows = (data.ratingAnalytics?.ratingTrendByDay || [])
+        .filter((d) => d.reviewCount > 0)
+        .map((d) => ({
+          'Ngày': d.date,
+          'Điểm trung bình (★)': d.avgRating ?? 0,
+          'Số lượt đánh giá': d.reviewCount,
+          'Tỷ lệ hài lòng (%)': d.satisfactionRate !== null ? `${d.satisfactionRate}%` : '—',
+        }));
+      if (ratingTrendRows.length > 0) {
+        const wsRatings = XLSX.utils.json_to_sheet(ratingTrendRows);
+        XLSX.utils.book_append_sheet(wb, wsRatings, 'Đánh giá dịch vụ');
+      }
 
       const fileName = `Bao_Cao_Nha_Khoa_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -851,6 +876,16 @@ export default function Analytics() {
             )}
           </CardContent>
         </Card>
+
+        {/* CHART: Biểu đồ Đánh giá Dịch vụ (Rating) theo Thời gian */}
+        <div className="lg:col-span-2">
+          <ServiceRatingTrendChart
+            ratingAnalytics={data.ratingAnalytics}
+            timeRange={timeRange}
+            onResetTimeRange={() => setTimeRange('all')}
+            isMobile={isMobile}
+          />
+        </div>
 
         {/* CHART 3: Cơ cấu Doanh thu Dịch vụ Mũi Nhọn (Modern Donut Chart with Breakdown List) */}
         <Card className="shadow-xs border-slate-200/80">

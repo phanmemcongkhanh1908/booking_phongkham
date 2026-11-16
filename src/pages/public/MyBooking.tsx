@@ -14,6 +14,11 @@ import GoogleCalendarSyncCard from './components/GoogleCalendarSyncCard';
 import { useBookingStore } from '../../store/booking';
 import { fetchClinicSettings, invalidateClinicCache } from '../../services/clinicResolver';
 import CustomerBookingHistoryModal, { BookingHistoryItem, resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
+import {
+  CUSTOMER_REVIEW_SUBMITTED_EVENT,
+  markDeviceBookingReviewed,
+  syncCustomerLookupBookings,
+} from '../../utils/customerDeviceBookings';
 
 interface AppointmentData {
   id: string;
@@ -118,6 +123,7 @@ export default function MyBooking() {
   
   const handleReviewSuccess = (updatedData?: any) => {
     if (!reviewModalApt) return;
+    markDeviceBookingReviewed(reviewModalApt.id);
     setAppointments(prev => prev.map(a => {
       if (a.id === reviewModalApt.id) {
         return {
@@ -185,6 +191,7 @@ export default function MyBooking() {
         setVerifiedPhone(searchPhone);
         setIsFromLocalStorage(false);
         setHasHistory(res.data.hasHistory || false);
+        syncCustomerLookupBookings(res.data.data || [], searchPhone, effectiveSlug || null);
         
         if (submitPin) {
           setShowPinInput(false);
@@ -248,6 +255,7 @@ export default function MyBooking() {
             setAllBookingHistory(Array.isArray(res.data.allBookingHistory) ? res.data.allBookingHistory : (res.data.data || []));
             setVerifiedPhone(vp.phone);
             setHasHistory(res.data.hasHistory || false);
+            syncCustomerLookupBookings(res.data.data || [], vp.phone, effectiveSlug || null);
           } else {
             localStorage.removeItem('verifiedPatient');
           }
@@ -260,7 +268,16 @@ export default function MyBooking() {
     };
 
     fetchAppointments();
-  }, []);
+
+    const handleGlobalReviewSubmitted = () => {
+      fetchAppointments();
+      setReputationRefreshKey((k) => k + 1);
+    };
+    window.addEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, handleGlobalReviewSubmitted);
+    return () => {
+      window.removeEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, handleGlobalReviewSubmitted);
+    };
+  }, [effectiveSlug]);
 
   return (
     <div className="min-h-screen bg-bg-base p-4 md:p-8">

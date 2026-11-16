@@ -41,6 +41,7 @@ self.addEventListener('push', (event) => {
   }
 
   const isAdminBooking = data.type === 'admin_booking' || data.type === 'admin_test';
+  const isPatientReview = data.type === 'patient_review_request';
 
   const notificationOptions = {
     body: data.body,
@@ -53,7 +54,7 @@ self.addEventListener('push', (event) => {
       : [200, 100, 200],
     tag: data.tag || (data.appointmentId ? `apt-${data.appointmentId}` : 'dental-smart-appointment'),
     renotify: true,
-    requireInteraction: isAdminBooking || Boolean(data.requireInteraction),
+    requireInteraction: isAdminBooking || isPatientReview || Boolean(data.requireInteraction),
     data: {
       url: data.url || (isAdminBooking ? '/admin/dashboard' : '/lich-hen-cua-toi'),
       appointmentId: data.appointmentId || null,
@@ -72,6 +73,17 @@ self.addEventListener('push', (event) => {
             title: 'Đóng',
           },
         ]
+      : isPatientReview
+      ? [
+          {
+            action: 'open-review',
+            title: 'Đánh giá dịch vụ ngay',
+          },
+          {
+            action: 'dismiss',
+            title: 'Để sau',
+          },
+        ]
       : [
           {
             action: 'view-appointment',
@@ -84,17 +96,30 @@ self.addEventListener('push', (event) => {
     (async () => {
       await self.registration.showNotification(data.title, notificationOptions);
 
+      const windowClients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+
       // If Admin app/PWA is currently open in foreground or suspended tab, notify it immediately
       if (isAdminBooking) {
-        const windowClients = await self.clients.matchAll({
-          type: 'window',
-          includeUncontrolled: true,
-        });
         for (const client of windowClients) {
           if (client.url && client.url.includes('/admin')) {
             try {
               client.postMessage({
                 type: 'SW_PUSH_BOOKING',
+                payload: data,
+              });
+            } catch {}
+          }
+        }
+      } else if (isPatientReview) {
+        // Notify any open customer booking/lookup window on this device
+        for (const client of windowClients) {
+          if (client.url && !client.url.includes('/admin')) {
+            try {
+              client.postMessage({
+                type: 'SW_PATIENT_REVIEW_REQUEST',
                 payload: data,
               });
             } catch {}
@@ -117,17 +142,18 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = notifData.url || '/lich-hen-cua-toi';
   const appointmentId = notifData.appointmentId || null;
   const isAdmin = notifData.type === 'admin_booking' || notifData.type === 'admin_test' || String(targetUrl).includes('/admin');
+  const isPatientReview = notifData.type === 'patient_review_request';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
-      // Prefer focusing an existing Admin window when clicking an Admin notification
+      // Prefer focusing an existing window in the matching context (admin vs customer)
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
         const matchesContext = isAdmin ? client.url.includes('/admin') : !client.url.includes('/admin');
         if (client.url && matchesContext && 'focus' in client) {
           try {
             client.postMessage({
-              type: 'OPEN_BOOKING_POPUP',
+              type: isPatientReview ? 'OPEN_CUSTOMER_REVIEW_POPUP' : 'OPEN_BOOKING_POPUP',
               appointmentId,
               url: targetUrl,
             });

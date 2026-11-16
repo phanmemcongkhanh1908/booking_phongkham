@@ -10,11 +10,13 @@ import {
   Sparkles,
   UserCheck,
   Clock,
-  MapPin
+  MapPin,
+  Navigation
 } from 'lucide-react';
 import api from '../../services/api';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
 import { getClinicBasePath, extractCustomClinicSubdomain } from '../../services/clinicResolver';
+import { buildGoogleMapsDirectionsUrl, formatClinicSlogan } from '../../utils/maps';
 import ServiceSelection from './components/ServiceSelection';
 import DateTimeSelection from './components/DateTimeSelection';
 import PatientForm from './components/PatientForm';
@@ -161,39 +163,67 @@ export default function Booking() {
     <div className="min-h-screen bg-slate-50/60 text-slate-800 flex flex-col selection:bg-teal-600/20 antialiased font-sans">
       {/* Top Luxury Healthcare Navigation Header */}
       {!isCompact && (<header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-20 flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 min-h-[3.5rem] sm:min-h-[5rem] py-2 sm:py-2.5 flex items-start sm:items-center justify-between gap-3">
           {/* Brand & Clinic Info */}
-          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
-            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-teal-900/15 shrink-0 ring-1 ring-white/20">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
+            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-teal-900/15 shrink-0 ring-1 ring-white/20 mt-0.5 sm:mt-0">
               <Stethoscope className="w-4 h-4 sm:w-6 sm:h-6" />
             </div>
 
             <div className="min-w-0 flex-1">
-              {/* Mobile View: Clean 2-line non-wrapping layout */}
-              <div className="sm:hidden min-w-0">
-                <h1 className="text-sm font-black text-slate-900 tracking-tight truncate leading-tight">
+              {/* Mobile View: Clean multi-line layout with full hours & clickable address */}
+              <div className="sm:hidden min-w-0 space-y-1">
+                <h1 className="text-sm font-black text-slate-900 tracking-tight leading-tight">
                   {clinicDisplayName}
                 </h1>
                 {doctorDisplayName ? (
-                  <p className="text-[11px] text-emerald-700 font-semibold truncate flex items-center gap-1 leading-none mt-0.5">
+                  <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 leading-tight">
                     <UserCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                    <span className="truncate">{doctorDisplayName}</span>
+                    <span>{doctorDisplayName}</span>
                   </p>
-                ) : clinicProfile?.slogan ? (
-                  <p className="text-[10px] text-teal-800 font-medium italic truncate mt-0.5">
-                    “{clinicProfile.slogan}”
+                ) : formatClinicSlogan(clinicProfile?.slogan) ? (
+                  <p className="text-[10px] text-teal-800 font-medium italic">
+                    “{formatClinicSlogan(clinicProfile?.slogan)}”
                   </p>
                 ) : (
-                  <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                  <p className="text-[10px] text-slate-400 font-medium">
                     Đặt lịch khám trực tuyến
                   </p>
+                )}
+                {businessHours && (
+                  <p className={`inline-flex items-start gap-1 text-[10px] font-bold leading-snug ${
+                    isCurrentlyOpen ? 'text-emerald-700' : 'text-amber-700'
+                  }`}>
+                    <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                    <span>{isCurrentlyOpen ? 'Đang mở cửa' : 'Tạm đóng'} • {businessHours.workingHoursStr}</span>
+                  </p>
+                )}
+                {clinicProfile?.address && (
+                  <div>
+                    <a
+                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-1 text-[11px] text-slate-600 hover:text-teal-700 transition-colors leading-snug"
+                      title="Nhấn để mở bản đồ chỉ đường tới phòng khám"
+                    >
+                      <MapPin className="w-3 h-3 text-teal-600 shrink-0 mt-0.5" />
+                      <span className="underline decoration-slate-300 underline-offset-2">
+                        {clinicProfile.address}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-teal-700 shrink-0 ml-0.5">
+                        <Navigation className="w-2.5 h-2.5" />
+                        Chỉ đường
+                      </span>
+                    </a>
+                  </div>
                 )}
               </div>
 
               {/* Tablet & Desktop View */}
-              <div className="hidden sm:block min-w-0">
+              <div className="hidden sm:block min-w-0 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight truncate">
+                  <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight">
                     {clinicDisplayName}
                   </h1>
                   <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/70">
@@ -207,32 +237,46 @@ export default function Booking() {
                     </span>
                   )}
                   {businessHours && (
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors whitespace-normal text-left leading-snug ${
                       isCurrentlyOpen 
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80' 
                         : 'bg-amber-50 text-amber-800 border-amber-200/80'
                     }`} title={businessHours.scheduleSummary}>
-                      <Clock className="w-3 h-3" />
+                      <Clock className="w-3 h-3 shrink-0" />
                       <span>{isCurrentlyOpen ? 'Đang mở cửa' : 'Tạm đóng'} • {businessHours.workingHoursStr}</span>
                     </span>
                   )}
-                  {clinicProfile?.address && (
-                    <span className="hidden xl:inline-flex items-center gap-1 text-[11px] text-slate-500 truncate max-w-[260px]" title={clinicProfile.address}>
-                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="truncate">{clinicProfile.address}</span>
-                    </span>
-                  )}
                 </div>
-                
-                {clinicProfile?.slogan ? (
-                  <p className="text-xs text-teal-800 font-medium italic truncate mt-0.5">
-                    “{clinicProfile.slogan}”
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-500 truncate mt-0.5">
-                    Hệ thống đặt lịch khám trực tuyến & bảo mật thông tin
-                  </p>
-                )}
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                  {clinicProfile?.address && (
+                    <a
+                      href={buildGoogleMapsDirectionsUrl(clinicProfile.address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-1.5 text-xs text-slate-600 hover:text-teal-700 transition-colors group"
+                      title="Nhấn để mở Google Maps chỉ đường tới phòng khám"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <span className="leading-snug group-hover:underline underline-offset-2">
+                        {clinicProfile.address}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-teal-700 whitespace-nowrap shrink-0">
+                        (<Navigation className="w-3 h-3 inline" /> Chỉ đường)
+                      </span>
+                    </a>
+                  )}
+
+                  {formatClinicSlogan(clinicProfile?.slogan) ? (
+                    <p className="text-xs text-teal-800 font-medium italic">
+                      “{formatClinicSlogan(clinicProfile?.slogan)}”
+                    </p>
+                  ) : !clinicProfile?.address ? (
+                    <p className="text-xs text-slate-500">
+                      Hệ thống đặt lịch khám trực tuyến & bảo mật thông tin
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

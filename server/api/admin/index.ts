@@ -4,7 +4,11 @@ import { services, providers, settings, appointments, patients, users } from "..
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../../core/middleware.js";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../core/errors.js";
-import { enrichServicesWithReviewStats } from "../../services/reviewAggregation.js";
+import {
+  enrichServicesWithReviewStats,
+  computeRatingAnalyticsOverTime,
+  normalizeTenantId,
+} from "../../services/reviewAggregation.js";
 
 const adminRouter = Router();
 
@@ -648,12 +652,28 @@ import { sql } from "drizzle-orm";
 adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
   try {
     const range = String(req.query.range || "all"); // 7, 14, 30, 90, all
-    const allAppointments = await db.select().from(appointments);
-    const allServices = await db.select().from(services);
+    const requestTenantId = normalizeTenantId(req.user?.tenantId);
+    const [rawAppointments, allServices] = await Promise.all([
+      db.select().from(appointments),
+      db.select().from(services),
+    ]);
+
+    const allAppointments = (rawAppointments as any[]).filter(
+      (a) => normalizeTenantId(a.tenantId) === requestTenantId
+    );
     
     const serviceMap: any = {};
-    allServices.forEach((s: any) => {
-      serviceMap[s.id] = s;
+    const sortedServices = [...(allServices as any[])].sort((a, b) => {
+      const aOwned = normalizeTenantId(a.tenantId) === requestTenantId ? 1 : 0;
+      const bOwned = normalizeTenantId(b.tenantId) === requestTenantId ? 1 : 0;
+      return bOwned - aOwned;
+    });
+    sortedServices.forEach((s: any) => {
+      if (requestTenantId !== null && s.tenantId && normalizeTenantId(s.tenantId) !== requestTenantId) {
+        return;
+      }
+      if (s.id && !serviceMap[s.id]) serviceMap[s.id] = s;
+      if (s.originalId && !serviceMap[s.originalId]) serviceMap[s.originalId] = s;
     });
 
     const serviceStatsMap: Record<string, { id: string; name: string; count: number; revenue: number; durationMins: number }> = {};
@@ -804,6 +824,13 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
       { status: "CANCELLED", label: "Đã hủy / Vắng mặt", count: statusCounts.CANCEL_PATIENT + statusCounts.CANCEL_CLINIC + statusCounts.NO_SHOW, color: "#ef4444" },
     ].filter(s => s.count > 0);
 
+    const ratingAnalytics = computeRatingAnalyticsOverTime({
+      appointments: allAppointments,
+      services: allServices as any[],
+      tenantId: requestTenantId,
+      range,
+    });
+
     res.json({
       success: true,
       data: {
@@ -831,6 +858,7 @@ adminRouter.get("/analytics", requireAuth, async (req, res, next) => {
         returningRate,
         totalPatients: totalPatientsCount,
         returningPatients,
+        ratingAnalytics,
       },
     });
   } catch (error) {
@@ -894,20 +922,32 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
         const u = userRows[0];
         const currentProfile = settingsObj.clinicProfile || {};
         const isDefaultRoot = !currentProfile.clinicName || currentProfile.name === "Nha Khoa Dental Smart" || currentProfile.clinicName === "Nha Khoa Dental Smart";
-        
+        const resolvedHours =
+          (isDefaultRoot
+            ? (u.workingHoursStr || currentProfile.workingHours || currentProfile.workingHoursStr)
+            : (currentProfile.workingHours || currentProfile.workingHoursStr || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00";
+
         settingsObj.clinicProfile = {
           clinicName: (isDefaultRoot ? (u.clinicName || currentProfile.clinicName) : (currentProfile.clinicName || currentProfile.name || u.clinicName)) || "Nha Khoa",
           name: (isDefaultRoot ? (u.clinicName || currentProfile.name) : (currentProfile.name || currentProfile.clinicName || u.clinicName)) || "Nha Khoa",
           doctorName: (isDefaultRoot ? (u.doctorName || currentProfile.doctorName) : (currentProfile.doctorName || u.doctorName)) || "",
-          slogan: (isDefaultRoot ? (u.slogan || currentProfile.slogan) : (currentProfile.slogan || u.slogan)) || "",
+          slogan: (isDefaultRoot ? (u.slogan || currentProfile.slogan) : (currentProfile.slogan ?? u.slogan)) || "",
           address: (isDefaultRoot ? (u.address || currentProfile.address) : (currentProfile.address || u.address)) || "",
           phone: (isDefaultRoot ? (u.phone || u.hotline || currentProfile.phone) : (currentProfile.phone || currentProfile.hotline || u.phone)) || "",
           hotline: (isDefaultRoot ? (u.hotline || u.phone || currentProfile.hotline) : (currentProfile.hotline || currentProfile.phone || u.hotline)) || "",
-          workingHours: (isDefaultRoot ? (u.workingHoursStr || currentProfile.workingHours) : (currentProfile.workingHours || currentProfile.workingHoursStr || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00",
-          workingHoursStr: (isDefaultRoot ? (u.workingHoursStr || currentProfile.workingHoursStr) : (currentProfile.workingHoursStr || currentProfile.workingHours || u.workingHoursStr)) || "T2 - CN: 08:00 - 20:00",
+          workingHours: resolvedHours,
+          workingHoursStr: resolvedHours,
           slug: u.slug || currentProfile.slug || "",
         };
       }
+    } else if (settingsObj.clinicProfile) {
+      const cp = settingsObj.clinicProfile;
+      const resolvedHours = cp.workingHours || cp.workingHoursStr || "T2 - CN: 08:00 - 20:00";
+      settingsObj.clinicProfile = {
+        ...cp,
+        workingHours: resolvedHours,
+        workingHoursStr: resolvedHours,
+      };
     }
     
     // Mask sensitive data
@@ -953,45 +993,64 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
         .onConflictDoUpdate({ target: settings.id, set: { value: telegramBotUsername } });
     }
     if (clinicProfile !== undefined) {
+      const normalizedHours = String(clinicProfile.workingHours ?? clinicProfile.workingHoursStr ?? "").trim();
+      const normalizedClinicName = clinicProfile.clinicName || clinicProfile.name || "";
+      const normalizedPhone = clinicProfile.phone || clinicProfile.hotline || "";
+      const normalizedClinicProfile = {
+        ...clinicProfile,
+        clinicName: normalizedClinicName,
+        name: normalizedClinicName,
+        phone: normalizedPhone,
+        hotline: clinicProfile.hotline || normalizedPhone,
+        workingHours: normalizedHours,
+        workingHoursStr: normalizedHours,
+      };
+
       await db.insert(settings)
-        .values({ id: 'clinicProfile', key: 'clinicProfile', value: clinicProfile, tenantId: myTenantId })
-        .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
+        .values({ id: 'clinicProfile', key: 'clinicProfile', value: normalizedClinicProfile, tenantId: myTenantId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: normalizedClinicProfile } });
       await db.insert(settings)
-        .values({ id: 'clinic_profile', key: 'clinic_profile', value: clinicProfile, tenantId: myTenantId })
-        .onConflictDoUpdate({ target: settings.id, set: { value: clinicProfile } });
+        .values({ id: 'clinic_profile', key: 'clinic_profile', value: normalizedClinicProfile, tenantId: myTenantId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: normalizedClinicProfile } });
+
+      let effectiveSlug = normalizedClinicProfile.slug || (req.user as any)?.slug || "";
 
       // Synchronize back to users record and Firestore
       if (req.user?.userId) {
         const userUpdate: any = {};
-        if (clinicProfile.clinicName || clinicProfile.name) userUpdate.clinicName = clinicProfile.clinicName || clinicProfile.name;
-        if (clinicProfile.doctorName !== undefined) userUpdate.doctorName = clinicProfile.doctorName;
-        if (clinicProfile.address !== undefined) userUpdate.address = clinicProfile.address;
-        if (clinicProfile.phone || clinicProfile.hotline) {
-          userUpdate.phone = clinicProfile.phone || clinicProfile.hotline;
-          userUpdate.hotline = clinicProfile.hotline || clinicProfile.phone;
+        if (normalizedClinicName) userUpdate.clinicName = normalizedClinicName;
+        if (normalizedClinicProfile.doctorName !== undefined) userUpdate.doctorName = normalizedClinicProfile.doctorName;
+        if (normalizedClinicProfile.address !== undefined) userUpdate.address = normalizedClinicProfile.address;
+        if (normalizedPhone) {
+          userUpdate.phone = normalizedPhone;
+          userUpdate.hotline = normalizedClinicProfile.hotline || normalizedPhone;
         }
-        if (clinicProfile.workingHours || clinicProfile.workingHoursStr) {
-          userUpdate.workingHoursStr = clinicProfile.workingHours || clinicProfile.workingHoursStr;
+        if (clinicProfile.workingHours !== undefined || clinicProfile.workingHoursStr !== undefined) {
+          userUpdate.workingHoursStr = normalizedHours;
         }
-        if (clinicProfile.slogan !== undefined) userUpdate.slogan = clinicProfile.slogan;
+        if (normalizedClinicProfile.slogan !== undefined) userUpdate.slogan = normalizedClinicProfile.slogan;
         if (Object.keys(userUpdate).length > 0) {
-          await db.update(users).set(userUpdate).where(eq(users.id, req.user.userId));
+          const updatedUsers = await db.update(users).set(userUpdate).where(eq(users.id, req.user.userId)).returning();
+          if (!effectiveSlug && updatedUsers[0]?.slug) {
+            effectiveSlug = updatedUsers[0].slug;
+          }
         }
-
-        const effectiveSlug = clinicProfile.slug || (req.user as any)?.slug;
-        if (effectiveSlug) {
-          const { syncClinicToFirestore, invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
-          invalidateClinicSlugCache(effectiveSlug);
-          syncClinicToFirestore(effectiveSlug, {
-            ...clinicProfile,
-            tenantId: myTenantId,
-            slug: effectiveSlug
-          }).catch(err => console.warn("[Firestore] Sync on setting update failed:", err));
-        }
-      } else if ((req.user as any)?.slug) {
-        const { invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
-        invalidateClinicSlugCache((req.user as any).slug);
       }
+
+      if (!effectiveSlug && myTenantId && myTenantId.startsWith("tenant_")) {
+        effectiveSlug = myTenantId.replace(/^tenant_/i, "");
+      }
+
+      const { syncClinicToFirestore, invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+      invalidateClinicSlugCache(effectiveSlug || undefined);
+      if (effectiveSlug) {
+        syncClinicToFirestore(effectiveSlug, {
+          ...normalizedClinicProfile,
+          tenantId: myTenantId,
+          slug: effectiveSlug
+        }).catch(err => console.warn("[Firestore] Sync on setting update failed:", err));
+      }
+      persistStore();
     }
     if (emailConfig !== undefined) {
       await db.insert(settings)

@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
+import { recordCustomerDeviceBooking } from '../../../utils/customerDeviceBookings';
 
 export default function BookingConfirmation() {
   const { 
@@ -140,9 +141,23 @@ export default function BookingConfirmation() {
         setIsNavigatingSuccess(true);
         const appointmentData = res.data.data;
         if (appointmentData && appointmentData.appointmentId) {
+          const bookingState = useBookingStore.getState();
           localStorage.setItem('verifiedPatient', JSON.stringify({ phone: cleanPhone, fullName: patientDraft.fullName.trim() }));
+          recordCustomerDeviceBooking({
+            id: appointmentData.appointmentId,
+            tenantId: appointmentData.tenantId || bookingState.tenantId || null,
+            clinicSlug: getActiveRouteClinicSlug() || bookingState.clinicProfile?.slug || null,
+            clinicName: bookingState.clinicProfile?.clinicName || bookingState.clinicProfile?.name || null,
+            patientPhone: cleanPhone,
+            patientName: patientDraft.fullName.trim(),
+            serviceId: appointmentData.serviceId || serviceId || null,
+            serviceIds: appointmentData.serviceIds || targetServiceIds || null,
+            serviceName: appointmentData.serviceName || serviceName || null,
+            providerName: appointmentData.providerName || null,
+            startAt: appointmentData.startAt || slotStartTime || null,
+          });
           
-          useBookingStore.getState().setAppointmentSuccess(
+          bookingState.setAppointmentSuccess(
             appointmentData.appointmentId,
             patientDraft.fullName,
             cleanPhone,

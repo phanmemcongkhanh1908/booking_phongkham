@@ -58,25 +58,27 @@ export function useClinicSettings(explicitSlug?: string): UseClinicSettingsResul
     if (isRefresh) {
       invalidateClinicCache(targetIdentifier);
     }
-    setLoading(true);
+    const hasInitialCache = Boolean(getCachedClinicSettings(targetIdentifier));
+    if (!hasInitialCache) {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const data = await fetchClinicSettings(targetIdentifier);
+      // Serve cached immediately if available, and revalidate fresh data from backend
+      const data = await fetchClinicSettings(targetIdentifier, { forceRefresh: true });
       setBundle(data);
     } catch (err: any) {
       console.warn('[useClinicSettings] Error loading clinic settings:', err);
-      setError(err?.message || 'Không thể tải thông tin phòng khám');
+      if (!hasInitialCache) {
+        setError(err?.message || 'Không thể tải thông tin phòng khám');
+      }
     } finally {
       setLoading(false);
     }
   }, [targetIdentifier]);
 
   useEffect(() => {
-    let active = true;
     loadSettings().catch(() => {});
-    return () => {
-      active = false;
-    };
   }, [loadSettings]);
 
   const clinicProfile = bundle?.clinicProfile || (storeClinicProfile as ClinicBrandingInfo) || null;

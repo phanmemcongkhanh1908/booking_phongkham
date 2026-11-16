@@ -416,3 +416,405 @@ export async function getPublicReviewsSummary(params: {
     reviews: visibleReviews.slice(0, Math.max(1, limit)),
   };
 }
+
+export interface RatingBucketServiceStat {
+  avgRating: number;
+  reviewCount: number;
+  satisfactionRate: number;
+}
+
+export interface RatingTrendDayPoint {
+  date: string;
+  avgRating: number | null;
+  reviewCount: number;
+  satisfactionRate: number | null;
+  starBreakdown: Record<1 | 2 | 3 | 4 | 5, number>;
+  byService: Record<string, RatingBucketServiceStat>;
+}
+
+export interface RatingTrendWeekPoint {
+  week: string;
+  startDate: string;
+  endDate: string;
+  avgRating: number | null;
+  reviewCount: number;
+  satisfactionRate: number | null;
+  starBreakdown: Record<1 | 2 | 3 | 4 | 5, number>;
+  byService: Record<string, RatingBucketServiceStat>;
+}
+
+export interface RatedServiceSummary {
+  serviceId: string;
+  serviceName: string;
+  avgRating: number;
+  reviewCount: number;
+  satisfactionRate: number;
+  fiveStarCount: number;
+  lowRatingCount: number;
+  latestRatedAt: string | null;
+}
+
+export interface RatingAnalyticsResult {
+  summary: {
+    averageRating: number | null;
+    totalReviews: number;
+    satisfactionRate: number;
+    fiveStarRate: number;
+    lowRatingCount: number;
+    hiddenRatingsCount: number;
+    trendDelta: number | null;
+    starDistribution: Array<{ star: 1 | 2 | 3 | 4 | 5; count: number; percent: number }>;
+  };
+  ratingTrendByDay: RatingTrendDayPoint[];
+  ratingTrendByWeek: RatingTrendWeekPoint[];
+  ratedServices: RatedServiceSummary[];
+}
+
+function toVnDateStr(dateInput: any): string | null {
+  if (!dateInput) return null;
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function shiftDateStr(dateStr: string, deltaDays: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  return dt.toISOString().slice(0, 10);
+}
+
+function toIsoWeekKey(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((dt.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${dt.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+export function computeRatingAnalyticsOverTime(params: {
+  appointments: any[];
+  services: any[];
+  tenantId: string | null;
+  range: string;
+}): RatingAnalyticsResult {
+  const { appointments: rawAppointments, services: rawServices, tenantId, range } = params;
+  const targetTenant = normalizeTenantId(tenantId);
+
+  // Build canonical service map prioritizing clinic-owned services over root templates
+  const canonicalServiceMap = new Map<string, any>();
+  const sortedServices = [...(rawServices || [])].sort((a: any, b: any) => {
+    const aOwned = normalizeTenantId(a.tenantId) === targetTenant ? 1 : 0;
+    const bOwned = normalizeTenantId(b.tenantId) === targetTenant ? 1 : 0;
+    return bOwned - aOwned;
+  });
+
+  for (const sv of sortedServices) {
+    const svTenant = normalizeTenantId(sv.tenantId);
+    if (targetTenant !== null && svTenant !== null && svTenant !== targetTenant) {
+      continue;
+    }
+    if (sv.id && !canonicalServiceMap.has(String(sv.id))) {
+      canonicalServiceMap.set(String(sv.id), sv);
+    }
+    if (sv.originalId && !canonicalServiceMap.has(String(sv.originalId))) {
+      canonicalServiceMap.set(String(sv.originalId), sv);
+    }
+  }
+
+  const daysRange = range === "7" ? 7 : range === "14" ? 14 : range === "30" ? 30 : 0;
+  const todayStr = toVnDateStr(new Date())!;
+  const cutoffStr = daysRange > 0 ? shiftDateStr(todayStr, -(daysRange - 1)) : null;
+
+  type ExtractedReview = {
+    dateStr: string;
+    timestamp: number;
+    overallRating: number;
+    isRatingHidden: boolean;
+    perService: Array<{ serviceId: string; serviceName: string; rating: number }>;
+  };
+
+  const extractedReviews: ExtractedReview[] = [];
+
+  for (const apt of rawAppointments || []) {
+    if (normalizeTenantId(apt.tenantId) !== targetTenant) continue;
+
+    // Resolve per-service ratings + overall appointment rating
+    const aptKeys = resolveAppointmentServiceKeys(apt);
+    const serviceScoresMap = new Map<string, { serviceId: string; serviceName: string; rating: number }>();
+
+    // Collect explicit entries from apt.serviceRatings
+    if (apt.serviceRatings && typeof apt.serviceRatings === "object" && !Array.isArray(apt.serviceRatings)) {
+      for (const [rawKey, rawVal] of Object.entries(apt.serviceRatings)) {
+        const cleanKey = String(rawKey || "").trim();
+        if (!cleanKey) continue;
+        const rawScore = typeof rawVal === "object" && rawVal !== null ? (rawVal as any).rating : rawVal;
+        const clamped = clampRatingValue(rawScore);
+        if (clamped === null) continue;
+        const svc = canonicalServiceMap.get(cleanKey);
+        const canonicalId = svc?.id || cleanKey;
+        const canonicalName = svc?.name || apt.customServiceName || "Dịch vụ nha khoa";
+        serviceScoresMap.set(canonicalId, {
+          serviceId: canonicalId,
+          serviceName: canonicalName,
+          rating: clamped,
+        });
+      }
+    }
+
+    const mainRating = clampRatingValue(apt.rating);
+    for (const rawKey of aptKeys) {
+      const svc = canonicalServiceMap.get(rawKey);
+      const canonicalId = svc?.id || rawKey;
+      if (!serviceScoresMap.has(canonicalId) && mainRating !== null) {
+        serviceScoresMap.set(canonicalId, {
+          serviceId: canonicalId,
+          serviceName: svc?.name || apt.customServiceName || "Dịch vụ nha khoa",
+          rating: mainRating,
+        });
+      }
+    }
+
+    const perService = Array.from(serviceScoresMap.values());
+    let overallRating = mainRating;
+    if (overallRating === null && perService.length > 0) {
+      const sum = perService.reduce((acc, s) => acc + s.rating, 0);
+      overallRating = Number((sum / perService.length).toFixed(2));
+    }
+    if (overallRating === null) continue;
+
+    const dateSource = apt.reviewedAt || apt.updatedAt || apt.startAt || apt.createdAt;
+    const dateStr = toVnDateStr(dateSource);
+    if (!dateStr) continue;
+
+    if (cutoffStr && (dateStr < cutoffStr || dateStr > todayStr)) {
+      continue;
+    }
+
+    const ts = new Date(dateSource).getTime() || 0;
+    extractedReviews.push({
+      dateStr,
+      timestamp: ts,
+      overallRating,
+      isRatingHidden: apt.isRatingHidden === true,
+      perService,
+    });
+  }
+
+  extractedReviews.sort((a, b) => a.timestamp - b.timestamp || a.dateStr.localeCompare(b.dateStr));
+
+  const totalDist = emptyDistribution();
+  let totalSum = 0;
+  let totalReviews = 0;
+  let positiveCount = 0;
+  let fiveStarCount = 0;
+  let lowRatingCount = 0;
+  let hiddenRatingsCount = 0;
+
+  type MutableBucket = {
+    sum: number;
+    count: number;
+    positive: number;
+    starBreakdown: Record<1 | 2 | 3 | 4 | 5, number>;
+    serviceAccum: Map<string, { sum: number; count: number; positive: number }>;
+  };
+
+  const createBucket = (): MutableBucket => ({
+    sum: 0,
+    count: 0,
+    positive: 0,
+    starBreakdown: emptyDistribution(),
+    serviceAccum: new Map(),
+  });
+
+  const dayMap = new Map<string, MutableBucket>();
+  const weekMap = new Map<string, MutableBucket & { startDate: string; endDate: string }>();
+  const serviceSummaryMap = new Map<
+    string,
+    {
+      serviceId: string;
+      serviceName: string;
+      sum: number;
+      count: number;
+      positive: number;
+      fiveStarCount: number;
+      lowRatingCount: number;
+      latestTs: number;
+      latestDate: string | null;
+    }
+  >();
+
+  if (daysRange > 0 && cutoffStr) {
+    for (let i = daysRange - 1; i >= 0; i--) {
+      const dStr = shiftDateStr(todayStr, -i);
+      dayMap.set(dStr, createBucket());
+    }
+  }
+
+  for (const rev of extractedReviews) {
+    totalReviews += 1;
+    totalSum += rev.overallRating;
+    if (rev.overallRating >= 4) positiveCount += 1;
+    const roundedStar = Math.min(5, Math.max(1, Math.round(rev.overallRating))) as 1 | 2 | 3 | 4 | 5;
+    totalDist[roundedStar] += 1;
+    if (roundedStar === 5) fiveStarCount += 1;
+    if (roundedStar <= 3) lowRatingCount += 1;
+    if (rev.isRatingHidden) hiddenRatingsCount += 1;
+
+    // Day bucket
+    if (!dayMap.has(rev.dateStr)) {
+      dayMap.set(rev.dateStr, createBucket());
+    }
+    const dayBucket = dayMap.get(rev.dateStr)!;
+    dayBucket.sum += rev.overallRating;
+    dayBucket.count += 1;
+    if (rev.overallRating >= 4) dayBucket.positive += 1;
+    dayBucket.starBreakdown[roundedStar] += 1;
+
+    // Week bucket
+    const weekKey = toIsoWeekKey(rev.dateStr);
+    if (!weekMap.has(weekKey)) {
+      weekMap.set(weekKey, {
+        ...createBucket(),
+        startDate: rev.dateStr,
+        endDate: rev.dateStr,
+      });
+    }
+    const weekBucket = weekMap.get(weekKey)!;
+    if (rev.dateStr < weekBucket.startDate) weekBucket.startDate = rev.dateStr;
+    if (rev.dateStr > weekBucket.endDate) weekBucket.endDate = rev.dateStr;
+    weekBucket.sum += rev.overallRating;
+    weekBucket.count += 1;
+    if (rev.overallRating >= 4) weekBucket.positive += 1;
+    weekBucket.starBreakdown[roundedStar] += 1;
+
+    // Per-service aggregation
+    for (const svc of rev.perService) {
+      const sPositive = svc.rating >= 4 ? 1 : 0;
+      const sRounded = Math.min(5, Math.max(1, Math.round(svc.rating)));
+
+      const dSvc = dayBucket.serviceAccum.get(svc.serviceId) || { sum: 0, count: 0, positive: 0 };
+      dSvc.sum += svc.rating;
+      dSvc.count += 1;
+      dSvc.positive += sPositive;
+      dayBucket.serviceAccum.set(svc.serviceId, dSvc);
+
+      const wSvc = weekBucket.serviceAccum.get(svc.serviceId) || { sum: 0, count: 0, positive: 0 };
+      wSvc.sum += svc.rating;
+      wSvc.count += 1;
+      wSvc.positive += sPositive;
+      weekBucket.serviceAccum.set(svc.serviceId, wSvc);
+
+      const existingSvc = serviceSummaryMap.get(svc.serviceId) || {
+        serviceId: svc.serviceId,
+        serviceName: svc.serviceName,
+        sum: 0,
+        count: 0,
+        positive: 0,
+        fiveStarCount: 0,
+        lowRatingCount: 0,
+        latestTs: 0,
+        latestDate: null,
+      };
+      existingSvc.sum += svc.rating;
+      existingSvc.count += 1;
+      existingSvc.positive += sPositive;
+      if (sRounded === 5) existingSvc.fiveStarCount += 1;
+      if (sRounded <= 3) existingSvc.lowRatingCount += 1;
+      if (rev.timestamp >= existingSvc.latestTs) {
+        existingSvc.latestTs = rev.timestamp;
+        existingSvc.latestDate = rev.dateStr;
+      }
+      serviceSummaryMap.set(svc.serviceId, existingSvc);
+    }
+  }
+
+  const finalizeByService = (accum: Map<string, { sum: number; count: number; positive: number }>) => {
+    const out: Record<string, RatingBucketServiceStat> = {};
+    for (const [sId, st] of accum.entries()) {
+      out[sId] = {
+        avgRating: Number((st.sum / st.count).toFixed(2)),
+        reviewCount: st.count,
+        satisfactionRate: Math.round((st.positive / st.count) * 100),
+      };
+    }
+    return out;
+  };
+
+  const ratingTrendByDay: RatingTrendDayPoint[] = Array.from(dayMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, b]) => ({
+      date,
+      avgRating: b.count > 0 ? Number((b.sum / b.count).toFixed(2)) : null,
+      reviewCount: b.count,
+      satisfactionRate: b.count > 0 ? Math.round((b.positive / b.count) * 100) : null,
+      starBreakdown: b.starBreakdown,
+      byService: finalizeByService(b.serviceAccum),
+    }));
+
+  const ratingTrendByWeek: RatingTrendWeekPoint[] = Array.from(weekMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, b]) => ({
+      week,
+      startDate: b.startDate,
+      endDate: b.endDate,
+      avgRating: b.count > 0 ? Number((b.sum / b.count).toFixed(2)) : null,
+      reviewCount: b.count,
+      satisfactionRate: b.count > 0 ? Math.round((b.positive / b.count) * 100) : null,
+      starBreakdown: b.starBreakdown,
+      byService: finalizeByService(b.serviceAccum),
+    }));
+
+  const ratedServices: RatedServiceSummary[] = Array.from(serviceSummaryMap.values())
+    .map((s) => ({
+      serviceId: s.serviceId,
+      serviceName: s.serviceName,
+      avgRating: Number((s.sum / s.count).toFixed(2)),
+      reviewCount: s.count,
+      satisfactionRate: Math.round((s.positive / s.count) * 100),
+      fiveStarCount: s.fiveStarCount,
+      lowRatingCount: s.lowRatingCount,
+      latestRatedAt: s.latestDate,
+    }))
+    .sort((a, b) => b.reviewCount - a.reviewCount || b.avgRating - a.avgRating);
+
+  // Trend delta: compare second half vs first half of chronological reviews in the period
+  let trendDelta: number | null = null;
+  if (extractedReviews.length >= 2) {
+    const mid = Math.floor(extractedReviews.length / 2);
+    const firstHalf = extractedReviews.slice(0, mid);
+    const secondHalf = extractedReviews.slice(mid);
+    const firstAvg = firstHalf.reduce((acc, r) => acc + r.overallRating, 0) / firstHalf.length;
+    const secondAvg = secondHalf.reduce((acc, r) => acc + r.overallRating, 0) / secondHalf.length;
+    trendDelta = Number((secondAvg - firstAvg).toFixed(2));
+  }
+
+  const starDistribution = ([5, 4, 3, 2, 1] as const).map((star) => ({
+    star,
+    count: totalDist[star],
+    percent: totalReviews > 0 ? Math.round((totalDist[star] / totalReviews) * 100) : 0,
+  }));
+
+  return {
+    summary: {
+      averageRating: totalReviews > 0 ? Number((totalSum / totalReviews).toFixed(2)) : null,
+      totalReviews,
+      satisfactionRate: totalReviews > 0 ? Math.round((positiveCount / totalReviews) * 100) : 0,
+      fiveStarRate: totalReviews > 0 ? Math.round((fiveStarCount / totalReviews) * 100) : 0,
+      lowRatingCount,
+      hiddenRatingsCount,
+      trendDelta,
+      starDistribution,
+    },
+    ratingTrendByDay,
+    ratingTrendByWeek,
+    ratedServices,
+  };
+}
+
