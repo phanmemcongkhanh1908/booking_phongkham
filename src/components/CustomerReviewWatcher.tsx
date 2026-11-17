@@ -4,8 +4,10 @@ import api from '../services/api';
 import { invalidateClinicCache } from '../services/clinicResolver';
 import { useBookingStore } from '../store/booking';
 import AppointmentReviewModal from './AppointmentReviewModal';
+import { customerRealtimeStream } from '../utils/customerRealtimeStream';
 import {
   CUSTOMER_BOOKINGS_UPDATED_EVENT,
+  getAllTrackedAppointmentIds,
   getDeviceBookingMeta,
   getUnreviewedTrackedAppointmentIds,
   markDeviceBookingDismissed,
@@ -156,48 +158,23 @@ export default function CustomerReviewWatcher() {
     };
   }, [isExcludedRoute, location.pathname, location.search, navigate, openPromptForAppointment]);
 
-  // 2. Real-time SSE connection for immediate popup on the customer booking device
+  // 2. Real-time SSE connection (shared singleton stream) for immediate popup on the customer booking device
   useEffect(() => {
-    if (isExcludedRoute || trackedIds.length === 0) return;
+    if (isExcludedRoute) return;
+    const allIds = getAllTrackedAppointmentIds(routeClinicSlug || null);
+    const mergedIds = Array.from(new Set([...allIds, ...trackedIds]));
+    if (mergedIds.length === 0) return;
 
-    let es: EventSource | null = null;
-    let reconnectTimer: any = null;
-    let closed = false;
-
-    const connect = () => {
-      if (closed) return;
-      try {
-        const query = encodeURIComponent(trackedIds.join(','));
-        es = new EventSource(`/api/public/appointments/stream?ids=${query}`);
-
-        es.addEventListener('APPOINTMENT_COMPLETED', (event: any) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (!payload?.id) return;
-            openPromptForAppointment(payload, true);
-          } catch {}
-        });
-
-        es.onerror = () => {
-          es?.close();
-          es = null;
-          if (!closed && document.visibilityState !== 'hidden') {
-            reconnectTimer = setTimeout(connect, 15000);
-          }
-        };
-      } catch {
-        reconnectTimer = setTimeout(connect, 20000);
+    const unsubscribe = customerRealtimeStream.subscribe(mergedIds, (eventType, payload) => {
+      if (eventType === 'APPOINTMENT_COMPLETED' && payload?.id) {
+        openPromptForAppointment(payload, true);
       }
-    };
-
-    connect();
+    });
 
     return () => {
-      closed = true;
-      es?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      unsubscribe();
     };
-  }, [isExcludedRoute, trackedIds.join(','), openPromptForAppointment]);
+  }, [isExcludedRoute, routeClinicSlug, trackedIds.join(','), openPromptForAppointment]);
 
   // 3. Service Worker push message bridge (when Web Push fires while tab is open or clicked)
   useEffect(() => {

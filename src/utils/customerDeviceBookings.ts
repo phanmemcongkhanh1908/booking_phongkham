@@ -10,18 +10,22 @@ export interface DeviceBookedAppointment {
   serviceName?: string | null;
   providerName?: string | null;
   startAt?: string | null;
+  lastKnownStatus?: string | null;
+  lastKnownStartAt?: string | null;
   createdAt: string;
   reviewedAt?: string | null;
   dismissedAt?: string | null;
 }
 
 const STORAGE_KEY = 'dental_device_booked_appointments';
+const SEEN_STATUS_KEY = 'dental_customer_seen_status_events';
 const MAX_STORED = 50;
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const DISMISS_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 export const CUSTOMER_BOOKINGS_UPDATED_EVENT = 'customer-device-bookings-updated';
 export const CUSTOMER_REVIEW_SUBMITTED_EVENT = 'customer-review-submitted';
+export const CUSTOMER_STATUS_UPDATED_EVENT = 'customer-appointment-status-updated';
 
 function safeReadList(): DeviceBookedAppointment[] {
   if (typeof window === 'undefined') return [];
@@ -51,6 +55,50 @@ function safeWriteList(list: DeviceBookedAppointment[]) {
   } catch {}
 }
 
+function safeReadSeenMap(): Record<string, number> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(SEEN_STATUS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function safeWriteSeenMap(map: Record<string, number>) {
+  if (typeof window === 'undefined') return;
+  try {
+    // Keep last 120 entries max
+    const entries = Object.entries(map)
+      .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+      .slice(0, 120);
+    localStorage.setItem(SEEN_STATUS_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
+}
+
+export function buildStatusNotificationKey(appointmentId: string, status: string, startAt?: string | null): string {
+  const normStatus = String(status || '').trim().toUpperCase();
+  const timePart = startAt ? String(new Date(startAt).getTime() || startAt) : 'no-time';
+  return `${appointmentId}:${normStatus}:${timePart}`;
+}
+
+export function hasSeenStatusNotification(appointmentId: string, status: string, startAt?: string | null): boolean {
+  const map = safeReadSeenMap();
+  const key = buildStatusNotificationKey(appointmentId, status, startAt);
+  return Boolean(map[key]);
+}
+
+export function markStatusNotificationSeen(appointmentId: string, status: string, startAt?: string | null) {
+  if (!appointmentId || !status) return;
+  const map = safeReadSeenMap();
+  const key = buildStatusNotificationKey(appointmentId, status, startAt);
+  map[key] = Date.now();
+  safeWriteSeenMap(map);
+}
+
 export function getDeviceBookedAppointments(): DeviceBookedAppointment[] {
   return safeReadList();
 }
@@ -61,11 +109,14 @@ export function recordCustomerDeviceBooking(
   if (!entry?.id) return;
   const list = safeReadList();
   const existingIdx = list.findIndex((item) => item.id === entry.id);
+  const initialStatus = entry.lastKnownStatus || (existingIdx >= 0 ? list[existingIdx].lastKnownStatus : 'REQUESTED') || 'REQUESTED';
   const nextItem: DeviceBookedAppointment = {
     ...(existingIdx >= 0 ? list[existingIdx] : {}),
     ...entry,
     id: String(entry.id).trim(),
     clinicSlug: entry.clinicSlug ? String(entry.clinicSlug).trim().toLowerCase() : existingIdx >= 0 ? list[existingIdx].clinicSlug : null,
+    lastKnownStatus: initialStatus,
+    lastKnownStartAt: entry.lastKnownStartAt || entry.startAt || (existingIdx >= 0 ? list[existingIdx].lastKnownStartAt : null) || null,
     createdAt: (existingIdx >= 0 ? list[existingIdx].createdAt : undefined) || entry.createdAt || new Date().toISOString(),
   };
 
@@ -75,6 +126,19 @@ export function recordCustomerDeviceBooking(
     list.unshift(nextItem);
   }
   safeWriteList(list);
+}
+
+export function updateDeviceBookingSnapshot(
+  appointmentId: string,
+  patch: Partial<Pick<DeviceBookedAppointment, 'lastKnownStatus' | 'lastKnownStartAt' | 'startAt' | 'providerName' | 'serviceName' | 'clinicSlug' | 'clinicName'>>
+) {
+  if (!appointmentId) return;
+  const list = safeReadList();
+  const idx = list.findIndex((i) => i.id === appointmentId);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...patch };
+    safeWriteList(list);
+  }
 }
 
 export function syncCustomerLookupBookings(
@@ -100,7 +164,7 @@ export function syncCustomerLookupBookings(
   for (const apt of appointments) {
     if (!apt?.id) continue;
     const statusUpper = String(apt.status || '').toUpperCase();
-    // Skip cancelled appointments from tracking
+    // Skip cancelled appointments from active review tracking
     if (['CANCEL_PATIENT', 'CANCEL_CLINIC', 'CANCELLED', 'NO_SHOW'].includes(statusUpper)) {
       const idx = list.findIndex((i) => i.id === apt.id);
       if (idx >= 0) {
@@ -114,14 +178,25 @@ export function syncCustomerLookupBookings(
     const idx = list.findIndex((i) => i.id === apt.id);
     if (idx >= 0) {
       const prev = list[idx];
+      const nextPatch: Partial<DeviceBookedAppointment> = {};
       if (isReviewed && !prev.reviewedAt) {
-        list[idx] = { ...prev, reviewedAt: apt.reviewedAt || new Date().toISOString() };
-        changed = true;
-      } else if (patientPhone && !prev.patientPhone) {
-        list[idx] = { ...prev, patientPhone };
+        nextPatch.reviewedAt = apt.reviewedAt || new Date().toISOString();
+      }
+      if (patientPhone && !prev.patientPhone) {
+        nextPatch.patientPhone = patientPhone;
+      }
+      if (statusUpper && prev.lastKnownStatus !== statusUpper) {
+        nextPatch.lastKnownStatus = statusUpper;
+      }
+      if (apt.startAt && prev.lastKnownStartAt !== apt.startAt) {
+        nextPatch.lastKnownStartAt = apt.startAt;
+        nextPatch.startAt = apt.startAt;
+      }
+      if (Object.keys(nextPatch).length > 0) {
+        list[idx] = { ...prev, ...nextPatch };
         changed = true;
       }
-    } else if (!isReviewed) {
+    } else {
       list.unshift({
         id: apt.id,
         clinicSlug: clinicSlug ? clinicSlug.trim().toLowerCase() : null,
@@ -132,8 +207,10 @@ export function syncCustomerLookupBookings(
         serviceName: apt.serviceName || null,
         providerName: apt.providerName || null,
         startAt: apt.startAt || null,
+        lastKnownStatus: statusUpper || null,
+        lastKnownStartAt: apt.startAt || null,
         createdAt: new Date().toISOString(),
-        reviewedAt: null,
+        reviewedAt: isReviewed ? apt.reviewedAt || new Date().toISOString() : null,
       });
       changed = true;
     }
@@ -142,6 +219,17 @@ export function syncCustomerLookupBookings(
   if (changed) {
     safeWriteList(list);
   }
+}
+
+export function getAllTrackedAppointmentIds(filterClinicSlug?: string | null): string[] {
+  const list = safeReadList();
+  const cleanFilter = filterClinicSlug ? filterClinicSlug.trim().toLowerCase() : '';
+  return list
+    .filter((item) => {
+      if (cleanFilter && item.clinicSlug && item.clinicSlug !== cleanFilter) return false;
+      return true;
+    })
+    .map((item) => item.id);
 }
 
 export function getUnreviewedTrackedAppointmentIds(filterClinicSlug?: string | null): string[] {
@@ -179,12 +267,13 @@ export function markDeviceBookingReviewed(appointmentId: string) {
   const idx = list.findIndex((i) => i.id === appointmentId);
   const nowIso = new Date().toISOString();
   if (idx >= 0) {
-    list[idx] = { ...list[idx], reviewedAt: nowIso };
+    list[idx] = { ...list[idx], reviewedAt: nowIso, lastKnownStatus: 'COMPLETED' };
   } else {
     list.unshift({
       id: appointmentId,
       createdAt: nowIso,
       reviewedAt: nowIso,
+      lastKnownStatus: 'COMPLETED',
     });
   }
   safeWriteList(list);

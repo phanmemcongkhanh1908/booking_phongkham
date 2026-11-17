@@ -16,6 +16,7 @@ import { fetchClinicSettings, invalidateClinicCache } from '../../services/clini
 import CustomerBookingHistoryModal, { BookingHistoryItem, resolveBookingMode } from '../../components/CustomerBookingHistoryModal';
 import {
   CUSTOMER_REVIEW_SUBMITTED_EVENT,
+  CUSTOMER_STATUS_UPDATED_EVENT,
   markDeviceBookingReviewed,
   syncCustomerLookupBookings,
 } from '../../utils/customerDeviceBookings';
@@ -319,6 +320,11 @@ export default function MyBooking() {
 
 
   useEffect(() => {
+    const queryPhone = searchParams.get('phone');
+    if (queryPhone && !searchPhone) {
+      setSearchPhone(queryPhone);
+    }
+
     const fetchAppointments = async () => {
       const vpStr = localStorage.getItem('verifiedPatient');
       if (!vpStr) {
@@ -381,9 +387,31 @@ export default function MyBooking() {
       fetchAppointments();
       setReputationRefreshKey((k) => k + 1);
     };
+    const handleGlobalStatusUpdated = (evt: Event) => {
+      const detail = (evt as CustomEvent)?.detail;
+      if (detail?.id) {
+        setAppointments((prev) =>
+          prev.map((a) =>
+            a.id === detail.id
+              ? {
+                  ...a,
+                  status: detail.status || a.status,
+                  startAt: detail.startAt || a.startAt,
+                  endAt: detail.endAt || a.endAt,
+                  cancelReason: detail.cancelReason !== undefined ? detail.cancelReason : a.cancelReason,
+                  providerName: detail.providerName || a.providerName,
+                }
+              : a
+          )
+        );
+      }
+      fetchAppointments();
+    };
     window.addEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, handleGlobalReviewSubmitted);
+    window.addEventListener(CUSTOMER_STATUS_UPDATED_EVENT, handleGlobalStatusUpdated);
     return () => {
       window.removeEventListener(CUSTOMER_REVIEW_SUBMITTED_EVENT, handleGlobalReviewSubmitted);
+      window.removeEventListener(CUSTOMER_STATUS_UPDATED_EVENT, handleGlobalStatusUpdated);
     };
   }, [effectiveSlug]);
 
@@ -501,7 +529,7 @@ export default function MyBooking() {
               </div>
             )}
             
-            <PushNotificationPrompt phone={searchPhone || verifiedPhone} />
+            <PushNotificationPrompt phone={searchPhone || verifiedPhone} clinicSlug={effectiveSlug || null} />
 
             <ClinicReputationWidget variant="compact" refreshKey={reputationRefreshKey} />
 

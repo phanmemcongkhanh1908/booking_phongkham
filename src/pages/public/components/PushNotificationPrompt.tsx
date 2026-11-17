@@ -20,11 +20,15 @@ const urlBase64ToUint8Array = (base64String: string) => {
 
 interface Props {
   phone: string;
+  clinicSlug?: string | null;
+  tenantId?: string | null;
 }
 
-export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
+export const PushNotificationPrompt: React.FC<Props> = ({ phone, clinicSlug, tenantId }) => {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [isIOSNonStandalone, setIsIOSNonStandalone] = useState(false);
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permissionState, setPermissionState] = useState<NotificationPermission | 'unknown'>('unknown');
   const [isInIframe, setIsInIframe] = useState(false);
@@ -32,9 +36,18 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
   const [testLoading, setTestLoading] = useState(false);
 
   useEffect(() => {
-    // Check if running inside iframe
     const inIframe = window.self !== window.top;
     setIsInIframe(inIframe);
+
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    const isIOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone =
+      typeof window !== 'undefined' &&
+      (window.matchMedia?.('(display-mode: standalone)')?.matches || (navigator as any).standalone === true);
+    const inApp = /Zalo|FBAN|FBAV|Messenger|Instagram|Line|TikTok/i.test(ua);
+
+    setIsInAppBrowser(inApp);
+    setIsIOSNonStandalone(isIOS && !isStandalone);
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPermissionState(Notification.permission);
@@ -42,22 +55,49 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
 
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true);
-      navigator.serviceWorker.ready.then(registration => {
-        registration.pushManager.getSubscription().then(sub => {
-          if (sub) setIsSubscribed(true);
-        });
-      }).catch(() => {
-        // service worker not registered or ready
-      });
+      navigator.serviceWorker.ready
+        .then(async (registration) => {
+          const existingSub = await registration.pushManager.getSubscription();
+          if (existingSub) {
+            setIsSubscribed(true);
+            if (phone) {
+              api.post('/push/subscribe', {
+                subscription: existingSub,
+                phone,
+                clinicSlug: clinicSlug || undefined,
+                tenantId: tenantId || undefined,
+              }).catch(() => {});
+            }
+          } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && phone) {
+            // Permission already granted: silently sync subscription right away
+            try {
+              const vapidRes = await api.get('/push/vapid-key');
+              const publicKey = vapidRes.data?.publicKey;
+              if (publicKey) {
+                const sub = await registration.pushManager.subscribe({
+                  userVisibleOnly: true,
+                  applicationServerKey: urlBase64ToUint8Array(publicKey),
+                });
+                await api.post('/push/subscribe', {
+                  subscription: sub,
+                  phone,
+                  clinicSlug: clinicSlug || undefined,
+                  tenantId: tenantId || undefined,
+                });
+                setIsSubscribed(true);
+              }
+            } catch {}
+          }
+        })
+        .catch(() => {});
     }
-  }, []);
+  }, [phone, clinicSlug, tenantId]);
 
   const openInNewTab = () => {
     window.open(window.location.href, '_blank', 'noopener,noreferrer');
   };
 
   const subscribeToPush = async () => {
-    // 1. If currently in iframe and permission is not granted yet, browser security blocks requestPermission
     if (isInIframe && permissionState !== 'granted') {
       setShowHelpModal(true);
       toast((t) => (
@@ -69,7 +109,6 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
       return;
     }
 
-    // 2. If permission is already denied in browser
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
       setShowHelpModal(true);
       return;
@@ -106,17 +145,17 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
         applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
 
-      // Send to server
       await api.post('/push/subscribe', {
         subscription,
-        phone
+        phone,
+        clinicSlug: clinicSlug || undefined,
+        tenantId: tenantId || undefined,
       });
 
       setIsSubscribed(true);
-      toast.success('Đã bật nhận thông báo nhắc lịch tự động!', { icon: '🔔' });
+      toast.success('Đã bật nhận thông báo chốt lịch & nhắc hẹn trên điện thoại!', { icon: '🔔' });
     } catch (err: any) {
       console.error('Lỗi khi đăng ký Push Notification:', err);
-      // If error mentions iframe or permission
       if (String(err?.message || '').toLowerCase().includes('iframe') || Notification.permission === 'denied') {
         setShowHelpModal(true);
       } else {
@@ -136,7 +175,7 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
     try {
       const res = await api.post('/push/test', { phone });
       if (res.data.success) {
-        toast.success('Đã gửi thông báo thử nghiệm! Vui lòng kiểm tra thanh thông báo.', { icon: '🔔' });
+        toast.success('Đã gửi thông báo thử nghiệm! Hãy kiểm tra thanh thông báo điện thoại.', { icon: '🔔' });
       }
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Không thể gửi thông báo thử nghiệm');
@@ -145,28 +184,57 @@ export const PushNotificationPrompt: React.FC<Props> = ({ phone }) => {
     }
   };
 
-  if (!isSupported) return null;
+  if (isInAppBrowser) {
+    return (
+      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1.5">
+        <p className="font-bold flex items-center gap-1.5">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>Để nhận thông báo trên thanh điện thoại, hãy mở bằng Chrome / Safari</span>
+        </p>
+        <p className="text-amber-800 leading-relaxed">
+          Trình duyệt bên trong Zalo / Facebook hạn chế thông báo đẩy. Hãy bấm biểu tượng menu góc màn hình và chọn <strong>“Mở bằng trình duyệt ngoài”</strong> (Safari hoặc Chrome).
+        </p>
+      </div>
+    );
+  }
+
+  if (!isSupported) {
+    if (isIOSNonStandalone) {
+      return (
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1.5">
+          <p className="font-bold flex items-center gap-1.5">
+            <Bell className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Nhận thông báo chốt lịch trên màn hình khóa iPhone / iPad</span>
+          </p>
+          <p className="text-blue-800 leading-relaxed">
+            Apple yêu cầu cài ứng dụng ra màn hình chính để bật thông báo hệ thống: trên Safari hãy bấm nút <strong>Chia sẻ (↑)</strong> ➔ chọn <strong>“Thêm vào Màn hình chính”</strong>, sau đó mở ứng dụng từ màn hình chính để bật thông báo 1 chạm.
+          </p>
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <>
-      <div className="mt-4 p-4 rounded-2xl bg-blue-50 border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
             <Bell className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-bold text-blue-900">Thông báo nhắc hẹn</h4>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm font-bold text-blue-950">Thông báo trên thanh điện thoại</h4>
               {permissionState === 'denied' && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
-                  Đang bị chặn bởi trình duyệt
+                  Đang bị chặn quyền
                 </span>
               )}
             </div>
-            <p className="text-xs text-blue-700 mt-0.5">
+            <p className="text-xs text-blue-800 mt-0.5 leading-relaxed">
               {isSubscribed 
-                ? 'Thiết bị này sẽ nhận thông báo đẩy trước giờ khám & khi đổi trạng thái.' 
-                : 'Bật thông báo để không quên lịch hẹn của bạn.'}
+                ? 'Đã kết nối — Bạn sẽ nhận thông báo ngay khi phòng khám chốt lịch, đổi giờ & nhắc trước 1 giờ.' 
+                : 'Bật ngay để nhận thông báo đẩy khi phòng khám Xác nhận chốt lịch & nhắc lịch trước 1 giờ.'}
             </p>
           </div>
         </div>

@@ -74,8 +74,8 @@ const app = express();
   });
 
   app.post('/api/push/subscribe', async (req, res) => {
-    const { subscription, phone, patientId } = req.body;
-    if (!subscription || (!phone && !patientId)) {
+    const { subscription, phone, patientId, clinicSlug, tenantId } = req.body;
+    if (!subscription?.endpoint || (!phone && !patientId)) {
       return res.status(400).json({ error: 'Subscription and phone/patientId required' });
     }
     
@@ -84,13 +84,20 @@ const app = express();
       const { patients, pushSubscriptions } = await import('./server/db/schema.js');
       const { eq } = await import('drizzle-orm');
 
-      const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
-      let resolvedPatientId = patientId;
+      const rawDigits = phone ? String(phone).replace(/\D/g, '') : '';
+      const cleanPhone = rawDigits.startsWith('84') && rawDigits.length >= 10 ? `0${rawDigits.slice(2)}` : rawDigits;
+      let resolvedPatientId = patientId || null;
 
       if (!resolvedPatientId && cleanPhone) {
-        const pts = await db.select().from(patients).where(eq(patients.phone, cleanPhone));
-        if (pts.length > 0) {
-          resolvedPatientId = pts[0].id;
+        const allPts = await db.select().from(patients);
+        const suffix9 = cleanPhone.slice(-9);
+        const matchedPt = (allPts as any[]).find((p) => {
+          const pDigits = String(p?.phone || '').replace(/\D/g, '');
+          const pNorm = pDigits.startsWith('84') && pDigits.length >= 10 ? `0${pDigits.slice(2)}` : pDigits;
+          return pNorm === cleanPhone || (suffix9.length >= 9 && pNorm.slice(-9) === suffix9);
+        });
+        if (matchedPt) {
+          resolvedPatientId = matchedPt.id;
         }
       }
 
@@ -98,8 +105,11 @@ const app = express();
       const existing = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, subscription.endpoint));
       if (existing.length > 0) {
         await db.update(pushSubscriptions).set({
+          subscriberType: 'patient',
           patientId: resolvedPatientId || existing[0].patientId,
           phone: cleanPhone || existing[0].phone,
+          tenantId: tenantId || existing[0].tenantId || null,
+          clinicSlug: clinicSlug || existing[0].clinicSlug || null,
           p256dh: subscription.keys?.p256dh,
           auth: subscription.keys?.auth,
           updatedAt: new Date(),
@@ -107,8 +117,11 @@ const app = express();
       } else {
         await db.insert(pushSubscriptions).values({
           id: 'sub_' + Math.random().toString(36).substring(2, 12),
+          subscriberType: 'patient',
           patientId: resolvedPatientId || null,
           phone: cleanPhone || phone || null,
+          tenantId: tenantId || null,
+          clinicSlug: clinicSlug || null,
           endpoint: subscription.endpoint,
           p256dh: subscription.keys?.p256dh,
           auth: subscription.keys?.auth,
@@ -127,15 +140,23 @@ const app = express();
     const { phone, patientId } = req.body;
     try {
       const { sendWebPush } = await import('./server/services/notification.js');
-      await sendWebPush(
+      const delivery = await sendWebPush(
         { patientId, phone },
         {
-          title: "🔔 Thử nghiệm thông báo đẩy",
-          body: "Tính năng thông báo Web Push đã hoạt động! Bạn sẽ nhận được thông báo tự động khi lịch khám được duyệt hoặc đổi trạng thái.",
-          url: "/lich-hen-cua-toi"
+          title: "🔔 Thông báo trên điện thoại đã sẵn sàng",
+          body: "Khi phòng khám xác nhận chốt lịch hoặc thay đổi giờ khám, thông báo sẽ hiện ngay trên thanh thông báo & màn hình thiết bị này.",
+          url: "/lich-hen-cua-toi",
+          type: "patient_test",
+          requireInteraction: true,
         }
       );
-      res.json({ success: true, message: 'Đã gửi thông báo thử nghiệm.' });
+      if (!delivery || delivery.sent === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Chưa tìm thấy thiết bị đăng ký Web Push cho số điện thoại này. Vui lòng bấm Bật ngay trước.',
+        });
+      }
+      res.json({ success: true, sent: delivery.sent, message: 'Đã gửi thông báo thử nghiệm.' });
     } catch (err: any) {
       console.error('Push test error:', err);
       res.status(500).json({ error: err?.message || 'Internal Server Error' });

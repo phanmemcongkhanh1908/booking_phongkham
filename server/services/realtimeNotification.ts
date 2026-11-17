@@ -211,6 +211,28 @@ class RealtimeNotificationService extends EventEmitter {
       }
     }
   }
+
+  public emitPatientStatusUpdated(payload: any) {
+    this.emit('APPOINTMENT_STATUS_UPDATED', payload);
+    const targetAptId = payload?.id ? String(payload.id).trim() : '';
+    if (!targetAptId) return;
+
+    const data = `event: APPOINTMENT_STATUS_UPDATED\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of this.patientClients) {
+      try {
+        if (!client.res.writable || client.res.destroyed) {
+          this.patientClients.delete(client);
+          continue;
+        }
+        if (!client.appointmentIds.has(targetAptId)) {
+          continue;
+        }
+        client.res.write(data);
+      } catch (err) {
+        this.patientClients.delete(client);
+      }
+    }
+  }
 }
 
 export const realtimeNotification = new RealtimeNotificationService();

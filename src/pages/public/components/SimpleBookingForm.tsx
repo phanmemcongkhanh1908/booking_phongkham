@@ -381,6 +381,7 @@ export default function SimpleBookingForm() {
             serviceName: appointmentData.serviceName || combinedServiceName || null,
             providerName: appointmentData.providerName || null,
             startAt: appointmentData.startAt || selectedSlot?.startAt || null,
+            lastKnownStatus: appointmentData.status || 'REQUESTED',
           });
           void saveSingleOfflineAppointment(
             {

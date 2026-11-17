@@ -93,9 +93,7 @@ export async function runOneHourReminderSweep(now = new Date()) {
         const baseBookingUrl = apt.clinicSlug
           ? `/b/${encodeURIComponent(apt.clinicSlug)}/lich-hen`
           : "/lich-hen-cua-toi";
-        const targetUrl = apt.patientPhone
-          ? `${baseBookingUrl}?phone=${encodeURIComponent(apt.patientPhone)}`
-          : baseBookingUrl;
+        const targetUrl = `${baseBookingUrl}?highlightAppointmentId=${encodeURIComponent(apt.id)}${apt.patientPhone ? `&phone=${encodeURIComponent(apt.patientPhone)}` : ""}`;
 
         await sendWebPush(
           {
@@ -109,6 +107,14 @@ export async function runOneHourReminderSweep(now = new Date()) {
             tag: `1h-reminder-${apt.id}`,
             appointmentId: apt.id,
             type: "appointment_1h_reminder",
+            status: "CONFIRMED",
+            clinicName: apt.clinicName,
+            clinicSlug: apt.clinicSlug || null,
+            serviceName: apt.serviceName,
+            providerName: apt.providerName || undefined,
+            patientName: apt.patientName,
+            startAt: apt.startAt,
+            endAt: apt.endAt,
             tenantId: apt.tenantId || null,
             requireInteraction: true,
           }

@@ -19,7 +19,8 @@ export interface NotificationResult {
 export async function notifyPatientAppointment(
   appointmentId: string,
   event: "CREATED" | "CONFIRMED" | "CANCELLED" | "RESCHEDULED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "NO_SHOW" | string,
-  cancelReason?: string
+  cancelReason?: string,
+  options?: { skipWebPush?: boolean }
 ): Promise<NotificationResult> {
   const result: NotificationResult = {
     telegramSent: false,
@@ -32,6 +33,7 @@ export async function notifyPatientAppointment(
     const aptRecords = await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
         status: appointments.status,
         notes: appointments.notes,
@@ -40,6 +42,7 @@ export async function notifyPatientAppointment(
         patientPhone: patients.phone,
         patientTelegramId: patients.telegramId,
         serviceName: services.name,
+        customServiceName: appointments.customServiceName,
         providerName: providers.name,
       })
       .from(appointments)
@@ -56,7 +59,7 @@ export async function notifyPatientAppointment(
 
     const apt = aptRecords[0];
 
-    // Load clinic profile from settings
+    // Load tenant-scoped clinic profile from settings
     let clinicProfile: any = {
       clinicName: "Nha Khoa Dental Smart",
       doctorName: "Bác sĩ chuyên khoa",
@@ -65,9 +68,20 @@ export async function notifyPatientAppointment(
     };
 
     try {
-      const settingRes = await db.select().from(settings).where(eq(settings.id, "clinicProfile")).limit(1);
-      if (settingRes.length > 0 && typeof settingRes[0].value === "object") {
-        clinicProfile = { ...clinicProfile, ...settingRes[0].value };
+      const allSettings = await db.select().from(settings);
+      const aptTenantStr = apt.tenantId ? String(apt.tenantId).trim() : "";
+      const settingMatch =
+        (aptTenantStr
+          ? (allSettings as any[]).find(
+              (s) =>
+                s.id === `${aptTenantStr}__clinicProfile` ||
+                (s.id === "clinicProfile" && String(s.tenantId || "").trim() === aptTenantStr)
+            )
+          : null) ||
+        (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+        (allSettings as any[]).find((s) => s.id === "clinicProfile");
+      if (settingMatch && typeof settingMatch.value === "object") {
+        clinicProfile = { ...clinicProfile, ...settingMatch.value };
       }
     } catch (e) {
       console.warn("Could not read clinicProfile settings:", e);
@@ -92,12 +106,14 @@ export async function notifyPatientAppointment(
           .trim()
       : "";
 
+    const resolvedServiceTitle = apt.customServiceName || apt.serviceName || "Khám nha khoa";
+
     const notificationPayload: AppointmentNotificationData = {
       appointmentId: apt.id,
       patientName: apt.patientName || "Quý khách",
       patientPhone: apt.patientPhone || "",
       patientEmail: email,
-      serviceName: apt.serviceName || "Khám nha khoa",
+      serviceName: resolvedServiceTitle,
       providerName: apt.providerName || clinicProfile.doctorName,
       startAt: apt.startAt,
       status: apt.status,
@@ -149,7 +165,7 @@ export async function notifyPatientAppointment(
               : event === "CREATED"
               ? `Yêu cầu đặt lịch hẹn của bạn tại *${clinicProfile.clinicName}* đã được ghi nhận:\n\n`
               : `Lịch hẹn của bạn tại *${clinicProfile.clinicName}* đã được hủy.\n\n`) +
-            `🦷 *Dịch vụ:* ${apt.serviceName}\n` +
+            `🦷 *Dịch vụ:* ${resolvedServiceTitle}\n` +
             `👨‍⚕️ *Bác sĩ:* ${apt.providerName || clinicProfile.doctorName}\n` +
             `⏰ *Thời gian:* ${timeStr}\n` +
             `📍 *Địa chỉ:* ${clinicProfile.address}\n` +
@@ -168,11 +184,13 @@ export async function notifyPatientAppointment(
     }
 
     // 3. Send WEB PUSH (VAPID)
-    try {
-      await sendAppointmentStatusPush(appointmentId, event, { cancelReason });
-      result.webPushSent = true;
-    } catch (err: any) {
-      console.warn("[WebPush] Lỗi gửi thông báo cho bệnh nhân:", err);
+    if (!options?.skipWebPush) {
+      try {
+        await sendAppointmentStatusPush(appointmentId, event, { cancelReason });
+        result.webPushSent = true;
+      } catch (err: any) {
+        console.warn("[WebPush] Lỗi gửi thông báo cho bệnh nhân:", err);
+      }
     }
 
   } catch (err: any) {

@@ -6,8 +6,9 @@ import { Crosshair, MapPin } from 'lucide-react';
 interface ClinicLocationMapProps {
   latitude: number | null;
   longitude: number | null;
-  onChange: (lat: number, lng: number) => void;
+  onChange?: (lat: number, lng: number) => void;
   clinicName?: string;
+  readOnly?: boolean;
 }
 
 const DEFAULT_CENTER: [number, number] = [10.776889, 106.700806]; // TP.HCM center fallback
@@ -32,6 +33,7 @@ export const ClinicLocationMap: React.FC<ClinicLocationMapProps> = ({
   longitude,
   onChange,
   clinicName,
+  readOnly = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -59,7 +61,7 @@ export const ClinicLocationMap: React.FC<ClinicLocationMapProps> = ({
     const map = L.map(containerRef.current, {
       center: initialCenter,
       zoom: initialZoom,
-      scrollWheelZoom: true,
+      scrollWheelZoom: !readOnly,
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -68,40 +70,42 @@ export const ClinicLocationMap: React.FC<ClinicLocationMapProps> = ({
     }).addTo(map);
 
     const marker = L.marker(initialCenter, {
-      draggable: true,
+      draggable: !readOnly,
       icon: createClinicPinIcon(),
       title: clinicName || 'Vị trí phòng khám',
     }).addTo(map);
 
-    marker.on('dragend', () => {
-      const pos = marker.getLatLng();
-      onChangeRef.current(
-        Number(pos.lat.toFixed(6)),
-        Number(pos.lng.toFixed(6))
-      );
-    });
+    if (!readOnly) {
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        onChangeRef.current?.(
+          Number(pos.lat.toFixed(6)),
+          Number(pos.lng.toFixed(6))
+        );
+      });
 
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      const lat = Number(e.latlng.lat.toFixed(6));
-      const lng = Number(e.latlng.lng.toFixed(6));
-      marker.setLatLng([lat, lng]);
-      onChangeRef.current(lat, lng);
-    });
+      map.on('click', (e: L.LeafletMouseEvent) => {
+        const lat = Number(e.latlng.lat.toFixed(6));
+        const lng = Number(e.latlng.lng.toFixed(6));
+        marker.setLatLng([lat, lng]);
+        onChangeRef.current?.(lat, lng);
+      });
+    }
 
     mapRef.current = map;
     markerRef.current = marker;
 
-    // Ensure proper layout when mounted inside cards/accordions
+    // Ensure proper layout when mounted inside cards/accordions/modals
     setTimeout(() => {
       map.invalidateSize();
-    }, 150);
+    }, 180);
 
     return () => {
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -134,7 +138,11 @@ export const ClinicLocationMap: React.FC<ClinicLocationMapProps> = ({
       <div className="px-3 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px]">
         <div className="flex items-center gap-1.5 text-slate-700 font-medium">
           <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-          <span>Nhấp trực tiếp lên bản đồ hoặc kéo ghim xanh để đặt đúng cổng phòng khám</span>
+          <span>
+            {readOnly
+              ? `Vị trí ghim bản đồ — ${clinicName || 'Phòng khám'}`
+              : 'Nhấp trực tiếp lên bản đồ hoặc kéo ghim xanh để đặt đúng cổng phòng khám'}
+          </span>
         </div>
         <button
           type="button"
@@ -147,8 +155,8 @@ export const ClinicLocationMap: React.FC<ClinicLocationMapProps> = ({
       </div>
       <div
         ref={containerRef}
-        className="w-full h-64 sm:h-72 z-0"
-        style={{ minHeight: '260px' }}
+        className={`w-full z-0 ${readOnly ? 'h-48 sm:h-56' : 'h-64 sm:h-72'}`}
+        style={{ minHeight: readOnly ? '192px' : '260px' }}
       />
     </div>
   );

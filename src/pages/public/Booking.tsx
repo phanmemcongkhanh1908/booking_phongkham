@@ -11,7 +11,9 @@ import {
   UserCheck,
   Clock,
   MapPin,
-  Navigation
+  Navigation,
+  Building2,
+  ClipboardList
 } from 'lucide-react';
 import api from '../../services/api';
 import { useClinicSettings } from '../../hooks/useClinicSettings';
@@ -26,7 +28,9 @@ import MobileSummaryDrawer from './components/MobileSummaryDrawer';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import SimpleBookingForm from './components/SimpleBookingForm';
+import ClinicInfoModal from './components/ClinicInfoModal';
 import { useClinicManifestBinding } from '../../hooks/usePWAInstall';
+import { CUSTOMER_BOOKINGS_UPDATED_EVENT, getAllTrackedAppointmentIds } from '../../utils/customerDeviceBookings';
 
 const SuccessView = React.lazy(() => import('./components/SuccessView'));
 
@@ -44,6 +48,8 @@ export default function Booking() {
   const { 
     clinicProfile, 
     businessHours, 
+    services: bundleServices,
+    providers: bundleProviders,
     isCurrentlyOpen, 
     bookingFormConfig,
     announcementBanner 
@@ -52,6 +58,23 @@ export default function Booking() {
   useClinicManifestBinding(slug || null, clinicProfile?.clinicName || clinicProfile?.name || null);
 
   const setStepStore = useBookingStore(s => s.setStep);
+  const setService = useBookingStore(s => s.setService);
+  const clearHold = useBookingStore(s => s.clearHold);
+  const [infoModalOpen, setInfoModalOpen] = React.useState(false);
+  const [trackedBookingCount, setTrackedBookingCount] = React.useState(0);
+
+  React.useEffect(() => {
+    const syncCount = () => {
+      setTrackedBookingCount(getAllTrackedAppointmentIds(slug || clinicProfile?.slug || null).length);
+    };
+    syncCount();
+    window.addEventListener(CUSTOMER_BOOKINGS_UPDATED_EVENT, syncCount);
+    window.addEventListener('storage', syncCount);
+    return () => {
+      window.removeEventListener(CUSTOMER_BOOKINGS_UPDATED_EVENT, syncCount);
+      window.removeEventListener('storage', syncCount);
+    };
+  }, [slug, clinicProfile?.slug]);
 
   const steps = [
     { id: 1, title: 'Dịch vụ', subtitle: 'Lựa chọn điều trị', path: 'dich-vu' },
@@ -160,6 +183,26 @@ export default function Booking() {
       setStepStore(4);
       navigate(`${basePath}/xac-nhan${querySearch}`);
     }
+  };
+
+  const handleOpenLookupPage = () => {
+    const effectiveSlug = (slug || clinicProfile?.slug || localStorage.getItem('last_clinic_slug') || '').trim().toLowerCase();
+    const returnUrl = effectiveSlug ? `${basePath}/dich-vu${querySearch}` : `/book/dich-vu${querySearch}`;
+    try {
+      if (effectiveSlug) {
+        localStorage.setItem('last_clinic_slug', effectiveSlug);
+        sessionStorage.setItem('last_clinic_slug', effectiveSlug);
+      }
+      sessionStorage.setItem('booking_return_url', returnUrl);
+    } catch {}
+    const lookupUrl = effectiveSlug ? `${basePath}/lich-hen` : '/lich-hen-cua-toi';
+    navigate(lookupUrl, {
+      state: {
+        slug: effectiveSlug || undefined,
+        returnUrl,
+        clinicName: clinicDisplayName,
+      },
+    });
   };
 
   return (
@@ -340,7 +383,39 @@ export default function Booking() {
       )}
 
       {/* Main Container */}
-      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 ${isCompact ? "py-2 space-y-3 pb-safe" : "py-4 sm:py-8 space-y-5 sm:space-y-6 pb-24 lg:pb-8"}`}>
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 ${isCompact ? "py-2 space-y-3 pb-safe" : "py-4 sm:py-8 space-y-4 sm:space-y-6 pb-24 lg:pb-8"}`}>
+        {/* Quick Entry Strip for Non-Booking Visitors & Existing Booking Lookup */}
+        {!isCompact && step < 5 && (
+          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white border border-slate-200/80 rounded-2xl p-2.5 sm:px-4 sm:py-3 shadow-2xs">
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
+              <span>Bạn muốn xem thông tin phòng khám hoặc kiểm tra lịch đã đặt?</span>
+            </div>
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <button
+                type="button"
+                onClick={() => setInfoModalOpen(true)}
+                className="flex-1 md:flex-initial min-h-[42px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Building2 className="w-4 h-4 text-teal-700 shrink-0" />
+                <span>Thông tin phòng khám</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenLookupPage}
+                className="flex-1 md:flex-initial min-h-[42px] px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200/90 text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <ClipboardList className="w-4 h-4 text-teal-700 shrink-0" />
+                <span>Tra cứu lịch đã đặt</span>
+                {trackedBookingCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-teal-700 text-white text-[10px] font-extrabold tabular-nums">
+                    {trackedBookingCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Stepper Progress Ribbon (Visible in Steps 1, 2, 3, 4) - Hidden if Simple Version */}
         {step < 5 && bookingFormConfig?.uiVersion !== 'simple' && (
           <>
@@ -492,6 +567,32 @@ export default function Booking() {
 
       {/* Floating PWA Install Prompt for Mobile */}
       <PWAInstallBanner />
+
+      {/* Clinic Information Drawer / Modal for Non-Booking Visitors */}
+      <ClinicInfoModal
+        isOpen={infoModalOpen}
+        onClose={() => setInfoModalOpen(false)}
+        clinicProfile={clinicProfile}
+        businessHours={businessHours}
+        services={bundleServices}
+        providers={bundleProviders}
+        isCurrentlyOpen={isCurrentlyOpen}
+        onBookService={(svc) => {
+          setInfoModalOpen(false);
+          clearHold();
+          setService(svc.id, svc.name, svc.price || 0, svc.durationMins || 30, svc.isFree, svc.showPrice);
+          if (bookingFormConfig?.uiVersion !== 'simple') {
+            setStepStore(2);
+            navigate(`${basePath}/chon-gio${querySearch}`);
+          }
+        }}
+        onStartBooking={() => {
+          if (bookingFormConfig?.uiVersion !== 'simple') {
+            setStepStore(1);
+            navigate(`${basePath}/dich-vu${querySearch}`);
+          }
+        }}
+      />
     </div>
   );
 }

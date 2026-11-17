@@ -942,8 +942,15 @@ appointmentRouter.patch("/:id/time", requirePermission("appointment.update"), as
     
     if (updated.length === 0) throw new NotFoundError("Không tìm thấy lịch hẹn");
 
-    // Trigger push notification to patient about rescheduled time
+    // Trigger push notification + real-time SSE popup to patient about rescheduled time
     sendAppointmentStatusPush(req.params.id, "RESCHEDULED", { newStartAt: startAt }).catch(console.error);
+    buildPatientStatusEventPayload(updated[0], { eventStatus: "RESCHEDULED" })
+      .then((statusPayload) => {
+        if (statusPayload) {
+          realtimeNotification.emitPatientStatusUpdated(statusPayload);
+        }
+      })
+      .catch(console.error);
 
     realtimeNotification.emitBookingUpdated({
       id: updated[0].id,
@@ -1027,8 +1034,18 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
     // Notification Engine, Web Push (VAPID), Waitlist & Recall Triggers
     sendAppointmentStatusPush(appointment.id, nextStatus, { cancelReason }).catch(console.error);
 
+    if (nextStatus === "CONFIRMED" || nextStatus === "CANCEL_CLINIC" || nextStatus === "CHECKED_IN" || nextStatus === "NO_SHOW") {
+      buildPatientStatusEventPayload(appointment, { eventStatus: nextStatus, cancelReason })
+        .then((statusPayload) => {
+          if (statusPayload) {
+            realtimeNotification.emitPatientStatusUpdated(statusPayload);
+          }
+        })
+        .catch(console.error);
+    }
+
     if (nextStatus === "CONFIRMED") {
-      notifyPatientAppointment(appointment.id, "CONFIRMED").catch(console.error);
+      notifyPatientAppointment(appointment.id, "CONFIRMED", undefined, { skipWebPush: true }).catch(console.error);
     } else if (nextStatus === "COMPLETED") {
       generateRecall(appointment).catch(console.error);
       // Emit real-time completion prompt strictly to the customer device holding this appointmentId
@@ -1040,7 +1057,7 @@ appointmentRouter.patch("/:id/status", requirePermission("appointment.update"), 
         })
         .catch(console.error);
     } else if (nextStatus === "CANCEL_CLINIC" || nextStatus === "CANCEL_PATIENT") {
-      notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason).catch(console.error);
+      notifyPatientAppointment(appointment.id, "CANCELLED", cancelReason, { skipWebPush: true }).catch(console.error);
       triggerWaitlistMatching(appointment).catch(console.error);
     }
 
@@ -1127,6 +1144,10 @@ async function buildPatientReviewEventPayload(appointment: any) {
     tenantId,
     clinicSlug: clinicSlug || null,
     clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
+    clinicAddress: profileVal.address || "",
+    clinicPhone: profileVal.phone || profileVal.hotline || "",
+    latitude: typeof profileVal.latitude === "number" ? profileVal.latitude : null,
+    longitude: typeof profileVal.longitude === "number" ? profileVal.longitude : null,
     patientName: appointment.bookedForName || patient?.fullName || "Quý khách",
     serviceId: appointment.serviceId || normalizedServiceIds[0] || null,
     serviceIds: normalizedServiceIds,
@@ -1134,8 +1155,23 @@ async function buildPatientReviewEventPayload(appointment: any) {
     serviceName: resolvedServiceName,
     providerName: provider?.name || profileVal.doctorName || "Bác sĩ chuyên khoa",
     startAt: appointment.startAt,
+    endAt: appointment.endAt,
     rating: appointment.rating ?? null,
     reviewedAt: appointment.reviewedAt ?? null,
+  };
+}
+
+async function buildPatientStatusEventPayload(
+  appointment: any,
+  extra?: { eventStatus?: string; cancelReason?: string }
+) {
+  const base = await buildPatientReviewEventPayload(appointment);
+  if (!base) return null;
+  return {
+    ...base,
+    eventStatus: extra?.eventStatus || base.status,
+    cancelReason: extra?.cancelReason || appointment.cancelReason || null,
+    updatedAt: appointment.updatedAt || new Date().toISOString(),
   };
 }
 

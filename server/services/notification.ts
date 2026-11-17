@@ -29,26 +29,50 @@ export interface PushMessage {
   tag?: string;
   appointmentId?: string;
   type?: string;
+  status?: string;
+  clinicName?: string;
+  clinicSlug?: string | null;
+  clinicAddress?: string;
+  clinicPhone?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  serviceName?: string;
+  providerName?: string;
+  patientName?: string;
+  startAt?: any;
+  endAt?: any;
+  cancelReason?: string;
   tenantId?: string | null;
   requireInteraction?: boolean;
+}
+
+function normalizeVnPhoneLocal(raw?: string | null): string {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("84") && digits.length >= 10) {
+    return `0${digits.slice(2)}`;
+  }
+  return digits;
 }
 
 export async function sendWebPush(
   target: string | { patientId?: string; phone?: string },
   message: PushMessage
-) {
+): Promise<{ sent: number }> {
   try {
     const patientId = typeof target === "string" ? target : target.patientId;
     let phone = typeof target === "object" ? target.phone : undefined;
 
-    const subs: any[] = [];
+    const allSubs = await db.select().from(pushSubscriptions);
+    const matchedSubs: any[] = [];
 
-    // 1. Fetch subscriptions linked to patientId
     if (patientId) {
-      const byPatient = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.patientId, patientId));
-      subs.push(...byPatient);
+      for (const sub of allSubs as any[]) {
+        if (sub?.patientId === patientId && sub?.subscriberType !== "admin") {
+          matchedSubs.push(sub);
+        }
+      }
 
-      // Also get phone from patient record if not provided
       if (!phone) {
         const pt = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
         if (pt.length > 0 && pt[0].phone) {
@@ -57,21 +81,24 @@ export async function sendWebPush(
       }
     }
 
-    // 2. Fetch subscriptions linked to patient phone
     if (phone) {
-      const cleanPhone = phone.replace(/\D/g, "");
-      const byPhone = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.phone, cleanPhone));
-      subs.push(...byPhone);
-      // Also check exact string match
-      if (cleanPhone !== phone) {
-        const byExactPhone = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.phone, phone));
-        subs.push(...byExactPhone);
+      const normalizedTarget = normalizeVnPhoneLocal(phone);
+      const suffix9 = normalizedTarget.slice(-9);
+      for (const sub of allSubs as any[]) {
+        if (sub?.subscriberType === "admin" || !sub?.phone) continue;
+        const subNorm = normalizeVnPhoneLocal(sub.phone);
+        if (
+          subNorm === normalizedTarget ||
+          sub.phone === phone ||
+          (suffix9.length >= 9 && subNorm.slice(-9) === suffix9)
+        ) {
+          matchedSubs.push(sub);
+        }
       }
     }
 
-    // 3. Deduplicate subscriptions by endpoint
     const uniqueSubsMap = new Map<string, any>();
-    for (const sub of subs) {
+    for (const sub of matchedSubs) {
       if (sub && sub.endpoint && !uniqueSubsMap.has(sub.endpoint)) {
         uniqueSubsMap.set(sub.endpoint, sub);
       }
@@ -80,7 +107,7 @@ export async function sendWebPush(
     const uniqueSubs = Array.from(uniqueSubsMap.values());
     if (uniqueSubs.length === 0) {
       console.log(`[WebPush] No active push subscription for patientId=${patientId || "none"}, phone=${phone || "none"}`);
-      return;
+      return { sent: 0 };
     }
 
     const payload = JSON.stringify({
@@ -92,11 +119,26 @@ export async function sendWebPush(
       tag: message.tag || (message.appointmentId ? `apt-${message.appointmentId}` : "dental-smart-push"),
       appointmentId: message.appointmentId || null,
       type: message.type || "patient_update",
+      status: message.status || null,
+      clinicName: message.clinicName || null,
+      clinicSlug: message.clinicSlug || null,
+      clinicAddress: message.clinicAddress || null,
+      clinicPhone: message.clinicPhone || null,
+      latitude: message.latitude ?? null,
+      longitude: message.longitude ?? null,
+      serviceName: message.serviceName || null,
+      providerName: message.providerName || null,
+      patientName: message.patientName || null,
+      startAt: message.startAt || null,
+      endAt: message.endAt || null,
+      cancelReason: message.cancelReason || null,
       tenantId: message.tenantId || null,
       requireInteraction: Boolean(message.requireInteraction),
+      vibrate: [220, 100, 220],
       timestamp: Date.now(),
     });
 
+    let sentCount = 0;
     const sendPromises = uniqueSubs.map(async (sub) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
@@ -108,9 +150,9 @@ export async function sendWebPush(
 
       try {
         await webpush.sendNotification(pushSubscription, payload);
+        sentCount++;
       } catch (err: any) {
         if (err?.statusCode === 410 || err?.statusCode === 404) {
-          // Subscription expired or unregistered by user -> remove from db
           try {
             await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
           } catch (delErr) {}
@@ -121,9 +163,11 @@ export async function sendWebPush(
     });
 
     await Promise.all(sendPromises);
-    console.log(`[WebPush] Sent notification "${message.title}" to ${uniqueSubs.length} device(s).`);
+    console.log(`[WebPush] Sent notification "${message.title}" to ${sentCount}/${uniqueSubs.length} device(s).`);
+    return { sent: sentCount };
   } catch (error) {
     console.error("[WebPush] Lỗi Notification Engine:", error);
+    return { sent: 0 };
   }
 }
 
@@ -145,8 +189,10 @@ export async function sendAppointmentStatusPush(
         id: appointments.id,
         tenantId: appointments.tenantId,
         startAt: appointments.startAt,
+        endAt: appointments.endAt,
         status: appointments.status,
         patientId: appointments.patientId,
+        bookedForName: appointments.bookedForName,
         patientName: patients.fullName,
         patientPhone: patients.phone,
         serviceName: services.name,
@@ -163,21 +209,34 @@ export async function sendAppointmentStatusPush(
     if (aptList.length === 0) return;
     const apt = aptList[0];
 
-    // Get Clinic Profile & slug (tenant-scoped when available)
     let clinicName = "Nha Khoa Dental Smart";
     let clinicSlug = "";
+    let clinicAddress = "";
+    let clinicPhone = "";
+    let clinicLat: number | null = null;
+    let clinicLng: number | null = null;
+
     try {
       const allSettings = await db.select().from(settings);
+      const aptTenantStr = apt.tenantId ? String(apt.tenantId).trim() : "";
       const profileSetting =
-        (apt.tenantId
-          ? allSettings.find((s: any) => s.id === "clinicProfile" && s.tenantId === apt.tenantId)
+        (aptTenantStr
+          ? (allSettings as any[]).find(
+              (s) =>
+                (s.id === `${aptTenantStr}__clinicProfile` ||
+                  (s.id === "clinicProfile" && String(s.tenantId || "").trim() === aptTenantStr))
+            )
           : null) ||
-        allSettings.find((s: any) => s.id === "clinicProfile" && !s.tenantId) ||
-        allSettings.find((s: any) => s.id === "clinicProfile");
+        (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+        (allSettings as any[]).find((s) => s.id === "clinicProfile");
       if (profileSetting && typeof profileSetting.value === "object") {
         const val = profileSetting.value as any;
         if (val.clinicName || val.name) clinicName = val.clinicName || val.name;
         if (val.slug) clinicSlug = String(val.slug).trim().toLowerCase();
+        if (val.address) clinicAddress = String(val.address).trim();
+        if (val.phone || val.hotline) clinicPhone = String(val.phone || val.hotline).trim();
+        if (typeof val.latitude === "number" && Number.isFinite(val.latitude)) clinicLat = val.latitude;
+        if (typeof val.longitude === "number" && Number.isFinite(val.longitude)) clinicLng = val.longitude;
       }
       if (!clinicSlug && apt.tenantId && String(apt.tenantId).startsWith("tenant_")) {
         const { users } = await import("../db/schema.js");
@@ -192,34 +251,43 @@ export async function sendAppointmentStatusPush(
     const timeStr = safeFormatDate(timeStart, "HH:mm - EEEE, dd/MM/yyyy");
     const serviceTitle = apt.customServiceName || apt.serviceName || "Khám nha khoa";
     const doctorTitle = apt.providerName ? `Bác sĩ ${apt.providerName}` : "Bác sĩ chuyên khoa";
+    const displayPatient = apt.bookedForName || apt.patientName || "Quý khách";
 
     let title = "";
     let body = "";
+    let pushType = "patient_update";
+    let requireInteraction = false;
 
     const normalizedStatus = (newStatus || "").toUpperCase();
 
     switch (normalizedStatus) {
       case "CONFIRMED":
-        title = "✅ Lịch khám đã được xác nhận";
-        body = `Lịch hẹn khám ${serviceTitle} của bạn vào lúc ${timeStr} tại ${clinicName} đã được xác nhận thành công.`;
+        title = `✅ Đã chốt lịch khám — ${clinicName}`;
+        body = `Chào ${displayPatient}, lịch ${serviceTitle} lúc ${timeStr} (${doctorTitle}) đã được xác nhận chính thức!`;
+        pushType = "patient_confirmed";
+        requireInteraction = true;
         break;
 
       case "CANCEL_CLINIC":
       case "CANCEL_PATIENT":
       case "CANCELLED":
-        title = "❌ Thông báo hủy lịch hẹn";
-        body = `Lịch hẹn khám ${serviceTitle} vào lúc ${timeStr} đã được hủy.${options?.cancelReason ? " Lý do: " + options.cancelReason : ""}`;
+        title = `⚠️ Thông báo hủy lịch hẹn — ${clinicName}`;
+        body = `Lịch hẹn ${serviceTitle} lúc ${timeStr} đã được hủy.${options?.cancelReason ? " Lý do: " + options.cancelReason : ""}`;
+        pushType = "patient_cancelled";
+        requireInteraction = normalizedStatus === "CANCEL_CLINIC";
         break;
 
       case "RESCHEDULED":
       case "TIME_CHANGED":
-        title = "⏰ Cập nhật thời gian khám mới";
-        body = `Lịch hẹn khám ${serviceTitle} của bạn đã được chuyển sang ${timeStr}. Vui lòng sắp xếp thời gian đến đúng giờ!`;
+        title = `⏰ Thay đổi giờ hẹn khám — ${clinicName}`;
+        body = `Lịch hẹn ${serviceTitle} của bạn đã được chuyển sang ${timeStr}. Vui lòng kiểm tra lại thời gian!`;
+        pushType = "patient_rescheduled";
+        requireInteraction = true;
         break;
 
       case "CHECKED_IN":
-        title = "📋 Đã tiếp nhận tại phòng khám";
-        body = `Quý khách đã làm thủ tục check-in tại ${clinicName}. ${doctorTitle} sẽ tiếp đón bạn trong ít phút.`;
+        title = `📋 Đã tiếp nhận tại ${clinicName}`;
+        body = `Quý khách đã làm thủ tục check-in. ${doctorTitle} sẽ tiếp đón bạn trong ít phút.`;
         break;
 
       case "IN_PROGRESS":
@@ -230,6 +298,8 @@ export async function sendAppointmentStatusPush(
       case "COMPLETED":
         title = `⭐ Hoàn tất khám tại ${clinicName} — Mời bạn đánh giá`;
         body = `Dịch vụ ${serviceTitle} đã hoàn tất. Chạm vào thông báo để chấm sao & đánh giá từng dịch vụ giúp phòng khám nhé!`;
+        pushType = "patient_review_request";
+        requireInteraction = true;
         break;
 
       case "NO_SHOW":
@@ -239,12 +309,12 @@ export async function sendAppointmentStatusPush(
 
       case "REQUESTED":
       case "PENDING":
-        title = "📋 Đã tiếp nhận yêu cầu đặt lịch";
-        body = `Yêu cầu đặt hẹn khám ${serviceTitle} lúc ${timeStr} đang chờ phòng khám duyệt và xác nhận.`;
+        title = `📋 Đã tiếp nhận yêu cầu đặt lịch — ${clinicName}`;
+        body = `Yêu cầu đặt hẹn ${serviceTitle} lúc ${timeStr} đang chờ phòng khám duyệt và xác nhận.`;
         break;
 
       default:
-        title = "🔔 Cập nhật trạng thái lịch hẹn";
+        title = `🔔 Cập nhật trạng thái lịch hẹn — ${clinicName}`;
         body = `Lịch hẹn khám ${serviceTitle} vào lúc ${timeStr} vừa được cập nhật trạng thái: ${newStatus}.`;
         break;
     }
@@ -256,9 +326,7 @@ export async function sendAppointmentStatusPush(
     const targetUrl =
       normalizedStatus === "COMPLETED"
         ? `${baseBookingLookupUrl}?reviewAppointmentId=${encodeURIComponent(apt.id)}`
-        : apt.patientPhone
-        ? `${baseBookingLookupUrl}?phone=${encodeURIComponent(apt.patientPhone)}`
-        : baseBookingLookupUrl;
+        : `${baseBookingLookupUrl}?highlightAppointmentId=${encodeURIComponent(apt.id)}${apt.patientPhone ? `&phone=${encodeURIComponent(apt.patientPhone)}` : ""}`;
 
     await sendWebPush(
       {
@@ -271,8 +339,21 @@ export async function sendAppointmentStatusPush(
         url: targetUrl,
         appointmentId: apt.id,
         tenantId: apt.tenantId || null,
-        type: normalizedStatus === "COMPLETED" ? "patient_review_request" : "patient_update",
-        requireInteraction: normalizedStatus === "COMPLETED",
+        type: pushType,
+        status: normalizedStatus,
+        clinicName,
+        clinicSlug: clinicSlug || null,
+        clinicAddress,
+        clinicPhone,
+        latitude: clinicLat,
+        longitude: clinicLng,
+        serviceName: serviceTitle,
+        providerName: doctorTitle,
+        patientName: displayPatient,
+        startAt: timeStart,
+        endAt: apt.endAt,
+        cancelReason: options?.cancelReason,
+        requireInteraction,
       }
     );
   } catch (err) {

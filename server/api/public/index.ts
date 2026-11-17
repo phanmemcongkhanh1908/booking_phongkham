@@ -1016,6 +1016,126 @@ publicRouter.post("/appointments/pending-reviews", async (req, res, next) => {
   }
 });
 
+// Kiểm tra trạng thái hiện tại cho danh sách appointmentId mà thiết bị khách hàng đang nắm giữ (phục vụ popup cập nhật & đồng bộ)
+publicRouter.post("/appointments/device-statuses", async (req, res, next) => {
+  try {
+    const rawIds = Array.isArray(req.body?.appointmentIds) ? req.body.appointmentIds : [];
+    const targetIds = Array.from(
+      new Set(
+        rawIds
+          .map((id: any) => String(id || "").trim())
+          .filter((id: string) => id.length >= 8)
+      )
+    ).slice(0, 50) as string[];
+
+    if (targetIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const rawClinicSlug = typeof req.body?.clinicSlug === "string" ? req.body.clinicSlug.trim().toLowerCase() : "";
+    let filterTenantId = typeof req.body?.tenantId === "string" ? req.body.tenantId.trim() : "";
+    let hasExplicitClinicFilter = Boolean(filterTenantId);
+
+    if (!filterTenantId && rawClinicSlug) {
+      try {
+        const { findClinicBySlug } = await import("../../services/clinicFirestoreService.js");
+        const matched = await findClinicBySlug(rawClinicSlug);
+        if (matched) {
+          hasExplicitClinicFilter = true;
+          filterTenantId = matched.tenantId ? String(matched.tenantId).trim() : "";
+        }
+      } catch {}
+    }
+
+    const [matchedApts, allServices, allProviders, allPatients, allSettings] = await Promise.all([
+      db.select().from(appointments).where(inArray(appointments.id, targetIds)),
+      db.select().from(services),
+      db.select().from(providers),
+      db.select().from(patients),
+      db.select().from(settings),
+    ]);
+
+    const serviceMap = new Map<string, string>();
+    for (const s of allServices as any[]) {
+      if (s?.id && s?.name) serviceMap.set(s.id, s.name);
+      if (s?.originalId && s?.name && !serviceMap.has(s.originalId)) {
+        serviceMap.set(s.originalId, s.name);
+      }
+    }
+    const providerMap = new Map((allProviders as any[]).map((p) => [p.id, p]));
+    const patientMap = new Map((allPatients as any[]).map((p) => [p.id, p]));
+
+    const summaries = matchedApts
+      .filter((apt: any) => {
+        if (hasExplicitClinicFilter) {
+          const aptTenantStr = apt.tenantId ? String(apt.tenantId).trim() : "";
+          if (aptTenantStr !== filterTenantId) return false;
+        }
+        return true;
+      })
+      .map((apt: any) => {
+        const aptTenantId = apt.tenantId ? String(apt.tenantId).trim() : null;
+        const normalizedIds = Array.from(
+          new Set(
+            [apt.serviceId, ...(Array.isArray(apt.serviceIds) ? apt.serviceIds : [])]
+              .filter(Boolean)
+              .map((s: any) => String(s).trim())
+          )
+        );
+        const serviceItems = normalizedIds.map((sId) => ({
+          id: sId,
+          name: serviceMap.get(sId) || apt.customServiceName || "Dịch vụ nha khoa",
+        }));
+        const resolvedServiceName =
+          apt.customServiceName ||
+          (serviceItems.length > 0 ? serviceItems.map((i) => i.name).join(" + ") : "Dịch vụ nha khoa");
+
+        const profileSetting =
+          (aptTenantId
+            ? (allSettings as any[]).find(
+                (s) =>
+                  s.id === `${aptTenantId}__clinicProfile` ||
+                  (s.id === "clinicProfile" && String(s.tenantId || "").trim() === aptTenantId)
+              )
+            : null) ||
+          (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+          (allSettings as any[]).find((s) => s.id === "clinicProfile");
+        const profileVal =
+          profileSetting?.value && typeof profileSetting.value === "object" ? (profileSetting.value as any) : {};
+
+        const pt = patientMap.get(apt.patientId);
+        const pr = providerMap.get(apt.providerId);
+
+        return {
+          id: apt.id,
+          status: apt.status,
+          tenantId: aptTenantId,
+          clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
+          clinicSlug: profileVal.slug ? String(profileVal.slug).trim().toLowerCase() : null,
+          clinicAddress: profileVal.address || "",
+          clinicPhone: profileVal.phone || profileVal.hotline || "",
+          latitude: typeof profileVal.latitude === "number" ? profileVal.latitude : null,
+          longitude: typeof profileVal.longitude === "number" ? profileVal.longitude : null,
+          startAt: apt.startAt,
+          endAt: apt.endAt,
+          serviceId: apt.serviceId || normalizedIds[0] || null,
+          serviceIds: normalizedIds,
+          serviceName: resolvedServiceName,
+          providerName: pr?.name || profileVal.doctorName || "Bác sĩ chuyên khoa",
+          patientName: apt.bookedForName || pt?.fullName || "Quý khách",
+          cancelReason: apt.cancelReason || null,
+          updatedAt: apt.updatedAt || apt.createdAt || null,
+          rating: apt.rating ?? null,
+          reviewedAt: apt.reviewedAt ?? null,
+        };
+      });
+
+    res.json({ success: true, data: summaries });
+  } catch (error) {
+    next(error);
+  }
+});
+
 publicRouter.get("/appointments/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -1032,6 +1152,7 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
         serviceIds: appointments.serviceIds,
         customServiceName: appointments.customServiceName,
         bookedForName: appointments.bookedForName,
+        cancelReason: appointments.cancelReason,
         serviceName: services.name,
         providerName: providers.name,
         rating: appointments.rating,
@@ -1086,7 +1207,11 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
     const rowTenantId = row.tenantId ? String(row.tenantId).trim() : null;
     const profileSetting =
       (rowTenantId
-        ? (allSettings as any[]).find((s) => s.id === "clinicProfile" && String(s.tenantId || "").trim() === rowTenantId)
+        ? (allSettings as any[]).find(
+            (s) =>
+              s.id === `${rowTenantId}__clinicProfile` ||
+              (s.id === "clinicProfile" && String(s.tenantId || "").trim() === rowTenantId)
+          )
         : null) ||
       (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
       (allSettings as any[]).find((s) => s.id === "clinicProfile");
@@ -1100,6 +1225,10 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
         tenantId: rowTenantId,
         clinicName: profileVal.clinicName || profileVal.name || "Phòng khám Nha khoa",
         clinicSlug: profileVal.slug ? String(profileVal.slug).trim().toLowerCase() : null,
+        clinicAddress: profileVal.address || "",
+        clinicPhone: profileVal.phone || profileVal.hotline || "",
+        latitude: typeof profileVal.latitude === "number" ? profileVal.latitude : null,
+        longitude: typeof profileVal.longitude === "number" ? profileVal.longitude : null,
         status: row.status,
         startAt: row.startAt,
         endAt: row.endAt,
@@ -1109,6 +1238,7 @@ publicRouter.get("/appointments/:id", async (req, res, next) => {
         serviceName: resolvedServiceName,
         providerName: row.providerName || profileVal.doctorName || "Bác sĩ chuyên khoa",
         patientName: row.bookedForName || allPatients[0]?.fullName || "Quý khách",
+        cancelReason: row.cancelReason ?? null,
         rating: row.rating ?? null,
         serviceRatings: row.serviceRatings ?? null,
         reviewComment: row.reviewComment ?? null,
@@ -1426,7 +1556,7 @@ publicRouter.patch("/appointments/:id/cancel", async (req, res, next) => {
     
     // Send Push Notification (VAPID), Waitlist matching, and multichannel alert to patient
     sendAppointmentStatusPush(id, 'CANCEL_PATIENT', { cancelReason: cancelReasonText }).catch(console.error);
-    notifyPatientAppointment(id, 'CANCELLED', cancelReasonText).catch(console.error);
+    notifyPatientAppointment(id, 'CANCELLED', cancelReasonText, { skipWebPush: true }).catch(console.error);
     import('../../jobs/waitlistMatcher.js')
       .then(({ triggerWaitlistMatching }) => triggerWaitlistMatching(apts[0]))
       .catch(console.error);
@@ -1497,7 +1627,7 @@ publicRouter.patch("/appointments/:id/reschedule", async (req, res, next) => {
     
     // Send Push Notification (VAPID) to patient
     sendAppointmentStatusPush(id, 'RESCHEDULED', { newStartAt: startAt }).catch(console.error);
-    notifyPatientAppointment(id, 'RESCHEDULED').catch(console.error);
+    notifyPatientAppointment(id, 'RESCHEDULED', undefined, { skipWebPush: true }).catch(console.error);
 
     import('../../services/appointmentFirestoreService.js')
       .then(({ syncAppointmentToFirestore }) => syncAppointmentToFirestore(id))

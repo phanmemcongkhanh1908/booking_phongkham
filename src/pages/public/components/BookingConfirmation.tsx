@@ -156,6 +156,7 @@ export default function BookingConfirmation() {
             serviceName: appointmentData.serviceName || serviceName || null,
             providerName: appointmentData.providerName || null,
             startAt: appointmentData.startAt || slotStartTime || null,
+            lastKnownStatus: appointmentData.status || 'REQUESTED',
           });
           void saveSingleOfflineAppointment(
             {

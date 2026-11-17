@@ -119,10 +119,6 @@ export default function SuccessView() {
         }
       }).catch(console.error);
     }
-
-    if ('Notification' in window && navigator.serviceWorker) {
-      Notification.requestPermission().catch(() => {});
-    }
   }, [botUsername]);
 
   const handleDownloadTicket = async () => {
@@ -252,6 +248,13 @@ export default function SuccessView() {
           )}
         </div>
       </div>
+
+      {/* Prominent Mobile & Desktop Push Notification Opt-In */}
+      <PushNotificationPrompt
+        phone={patientPhone || ''}
+        clinicSlug={slug || clinicProfile?.slug || null}
+        tenantId={store.tenantId || null}
+      />
 
       {/* Luxury Digital E-Ticket */}
       {appointmentId && (
@@ -485,8 +488,6 @@ export default function SuccessView() {
           })}
         </ul>
       </div>
-
-      <PushNotificationPrompt phone={patientPhone || ''} />
 
       {/* Post-visit Service Star Rating Callout */}
       <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
