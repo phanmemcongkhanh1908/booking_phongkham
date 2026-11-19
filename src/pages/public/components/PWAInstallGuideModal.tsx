@@ -14,9 +14,15 @@ import {
   ExternalLink,
   FileCode2,
   Sparkles,
+  QrCode,
+  ShieldCheck,
+  ChevronDown,
+  Package,
 } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'react-hot-toast';
 import { usePWAInstall } from '../../../hooks/usePWAInstall';
+import { useBookingStore } from '../../../store/booking';
 
 interface PWAInstallGuideModalProps {
   isOpen: boolean;
@@ -36,6 +42,7 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
   const {
     isInstallable,
     isIOS,
+    isAndroid,
     isPC,
     isInAppBrowser,
     isIOSSafari,
@@ -44,13 +51,23 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
     saveHtmlDesktopLauncher,
     downloadBatAutoShortcutScript,
     getQuickPowerShellCommand,
+    getAndroidInstallQrUrl,
+    openInAndroidChrome,
+    downloadAndroidApkBuilderScript,
+    downloadAndroidTwaManifest,
   } = usePWAInstall();
+
+  const clinicProfile = useBookingStore((s) => s.clinicProfile);
+  const directApkUrl = clinicProfile?.directApkUrl?.trim() || '';
+  const androidPackageName = clinicProfile?.androidPackageName?.trim() || '';
+  const clinicSlug = clinicProfile?.slug?.trim() || '';
 
   const computedDefaultTab: 'pc' | 'android' | 'ios' =
     initialTab || (isPC ? 'pc' : isIOS ? 'ios' : 'android');
   const [activeTab, setActiveTab] = useState<'pc' | 'android' | 'ios'>(computedDefaultTab);
   const [copiedKey, setCopiedKey] = useState<'url' | 'ps' | null>(null);
   const [savingHtml, setSavingHtml] = useState(false);
+  const [showApkPackager, setShowApkPackager] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -125,7 +142,20 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
     }
   };
 
+  const handleDownloadApkPackager = () => {
+    const ok = downloadAndroidApkBuilderScript(clinicName, clinicSlug, androidPackageName);
+    if (ok) {
+      toast.success(
+        'Đang tải bộ đóng gói APK (.bat). Mở file trên Windows để biên dịch & ký số app-release-signed.apk!',
+        { duration: 6000 }
+      );
+    } else {
+      toast.error('Không thể tạo script đóng gói APK.');
+    }
+  };
+
   const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const androidQrUrl = getAndroidInstallQrUrl() || currentUrl;
 
   const modalContent = (
     <div
@@ -316,38 +346,83 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
 
           {/* Content for Android */}
           {activeTab === 'android' && (
-            <div className="space-y-3 text-xs sm:text-sm text-slate-700">
+            <div className="space-y-3 text-xs text-slate-700">
+              {/* 1. Escape Zalo / Facebook In-App Browser with 1-tap Chrome Intent */}
               {isInAppBrowser && (
-                <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 space-y-2">
+                <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 space-y-2.5">
                   <p className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                     <ExternalLink className="w-4 h-4 shrink-0 text-amber-600" />
                     <span>Đang mở bên trong Zalo / Facebook</span>
                   </p>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Trình duyệt thu gọn trong Zalo/Facebook không cho cài ứng dụng. Vui lòng bấm dấu <strong>3 chấm (⋮)</strong> góc trên phải ➔ chọn <strong>&ldquo;Mở bằng trình duyệt&rdquo; (Chrome)</strong>, hoặc sao chép link dán vào Chrome:
+                    Trình duyệt nhúng trong Zalo/Facebook chặn cài ứng dụng và thông báo đẩy. Bấm nút dưới đây để bật thẳng sang <strong>Google Chrome</strong>:
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => copyText(currentUrl, 'url', 'Đã sao chép đường dẫn! Hãy dán vào trình duyệt Chrome.')}
-                    className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {copiedKey === 'url' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedKey === 'url' ? 'Đã sao chép đường dẫn' : 'Sao chép link để mở bằng Chrome'}</span>
-                  </button>
+                  <div className="space-y-1.5">
+                    {isAndroid && (
+                      <button
+                        type="button"
+                        onClick={() => openInAndroidChrome()}
+                        className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Mở ngay bằng Google Chrome</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => copyText(androidQrUrl, 'url', 'Đã sao chép đường dẫn! Hãy dán vào trình duyệt Chrome.')}
+                      className="w-full py-2 px-3 bg-white hover:bg-amber-100/60 text-amber-900 border border-amber-300 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedKey === 'url' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedKey === 'url' ? 'Đã sao chép đường dẫn' : 'Hoặc sao chép link mở bằng Chrome'}</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
+              {/* 2. Direct .APK Download Card (automatically shown if clinic configured directApkUrl) */}
+              {directApkUrl && (
+                <div className="bg-emerald-50/90 p-3.5 rounded-2xl border border-emerald-200 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs">
+                    <Package className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>Tải file cài đặt trực tiếp cho Android (.APK)</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 leading-relaxed">
+                    Tải tệp <strong>.apk</strong> chính thức của <strong>{clinicName}</strong> về máy Android, mở file vừa tải và chọn <strong>Cài đặt</strong>.
+                  </p>
+                  <a
+                    href={directApkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    onClick={() => {
+                      toast.success('Đang tải file .APK! Sau khi tải xong hãy mở file để cài đặt.', { duration: 5000 });
+                      onInstalledOrCreated?.();
+                    }}
+                    className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Tải file cài đặt (.APK) về Android</span>
+                  </a>
+                </div>
+              )}
+
+              {/* 3. Native 1-Tap Chrome WebAPK (Google Minting Service — real Android APK, Push + OAuth supported) */}
               {isInstallable && (
                 <div className="bg-teal-50 p-3.5 rounded-2xl border border-teal-200 space-y-2">
-                  <p className="text-xs text-teal-800 font-medium">
-                    Thiết bị Android của bạn hỗ trợ cài đặt ứng dụng tự động 1 chạm:
+                  <div className="flex items-center gap-1.5 font-bold text-teal-900 text-xs">
+                    <ShieldCheck className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span>Cài App Android chính chủ (WebAPK 1 chạm)</span>
+                  </div>
+                  <p className="text-[11px] text-teal-800 leading-relaxed">
+                    Google Chrome tự đóng gói &amp; cài đặt trực tiếp vào danh sách Ứng dụng Android (không cảnh báo bảo mật, nhận đủ thông báo đẩy &amp; đăng nhập Google).
                   </p>
                   <button
                     type="button"
                     onClick={async () => {
                       const accepted = await install();
                       if (accepted) {
-                        toast.success('Đã thêm ứng dụng ra màn hình chính!');
+                        toast.success('Đã cài đặt App lên điện thoại Android thành công!');
                         onInstalledOrCreated?.();
                         onClose();
                       }
@@ -360,14 +435,41 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                 </div>
               )}
 
+              {/* 4. QR Code for installing on Android from PC or sharing */}
+              {!isAndroid && androidQrUrl && (
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 flex items-center gap-3.5">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200 shrink-0 shadow-2xs">
+                    <QRCodeCanvas value={androidQrUrl} size={78} level="M" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                      <QrCode className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span>Quét trên điện thoại Android</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      Mở Camera hoặc Chrome trên Android quét mã để vào thẳng chế độ cài App.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => copyText(androidQrUrl, 'url', 'Đã sao chép link cài App Android!')}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 hover:underline cursor-pointer"
+                    >
+                      {copiedKey === 'url' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedKey === 'url' ? 'Đã copy link cài Android' : 'Copy link gửi sang điện thoại'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Manual Chrome / Samsung Internet 2-step guide */}
               <div className="flex items-start gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
                   1
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900 text-xs sm:text-sm">Mở Menu trình duyệt Chrome / Cốc Cốc / Samsung Internet</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Nhấn vào biểu tượng <strong>3 chấm dọc (⋮)</strong> ở góc trên bên phải (hoặc nút <strong>≡</strong> ở thanh dưới cùng trên Samsung Internet).
+                  <p className="font-semibold text-slate-900 text-xs">Mở Menu trình duyệt Chrome / Cốc Cốc / Samsung Internet</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Nhấn biểu tượng <strong>3 chấm dọc (⋮)</strong> góc trên bên phải (hoặc <strong>≡</strong> dưới cùng trên Samsung Internet).
                   </p>
                 </div>
               </div>
@@ -377,11 +479,58 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                   2
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900 text-xs sm:text-sm">Chọn &ldquo;Cài đặt ứng dụng&rdquo; hoặc &ldquo;Thêm vào màn hình chính&rdquo;</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Bấm <strong>Cài đặt / Thêm</strong> để đưa biểu tượng phòng khám {clinicName} ra màn hình chính điện thoại.
+                  <p className="font-semibold text-slate-900 text-xs">Chọn &ldquo;Cài đặt ứng dụng&rdquo; (WebAPK) hoặc &ldquo;Thêm vào MH chính&rdquo;</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Bấm <strong>Cài đặt</strong> để Android tự đóng gói thành App độc lập của {clinicName} ngay trên màn hình chính.
                   </p>
                 </div>
+              </div>
+
+              {/* 6. Expandable Technical Section: Export Real Signed .APK via Google Bubblewrap TWA */}
+              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowApkPackager((v) => !v)}
+                  className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 text-left text-[11px] font-bold text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                    <span>Chủ phòng khám / Kỹ thuật: Đóng gói file .APK thật (Google TWA)</span>
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showApkPackager ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showApkPackager && (
+                  <div className="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2.5 text-[11px] text-slate-600 bg-slate-50/50">
+                    <p className="leading-relaxed">
+                      Theo chuẩn bảo mật Android, file <strong>.apk</strong> cài trực tiếp bắt buộc phải biên dịch mã Dalvik &amp; ký số bằng Keystore riêng (không thể giả lập file text như <code>.bat</code>). Dùng bộ đóng gói chuẩn <strong>Google Bubblewrap TWA</strong> trên máy tính để xuất ra file <code>app-release-signed.apk</code> giữ nguyên 100% Web Push &amp; đăng nhập Google:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDownloadApkPackager}
+                        className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                        <span>Tải Tool Đóng gói APK (.bat)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          downloadAndroidTwaManifest(clinicName, clinicSlug, androidPackageName);
+                          toast.success('Đã tải cấu hình twa-manifest.json!');
+                        }}
+                        className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <FileCode2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                        <span>Tải twa-manifest.json</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      Sau khi tạo xong file <code>app-release-signed.apk</code>, bạn có thể gắn link file APK đó trong <strong>Quản trị ➔ Cài đặt ➔ Phát hành App Android</strong> để mọi điện thoại Android tải trực tiếp ngay tại đây!
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

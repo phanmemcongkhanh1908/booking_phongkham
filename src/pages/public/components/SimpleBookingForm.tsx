@@ -18,7 +18,11 @@ import {
   CUSTOMER_REVIEW_SUBMITTED_EVENT,
   recordCustomerDeviceBooking,
 } from '../../../utils/customerDeviceBookings';
-import { saveOfflineAppointments, saveSingleOfflineAppointment } from '../../../utils/offlineBookingDb';
+import {
+  enqueueOfflineBooking,
+  saveOfflineAppointments,
+  saveSingleOfflineAppointment,
+} from '../../../utils/offlineBookingDb';
 
 const VIETNAMESE_DAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const VIETNAMESE_FULL_DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -94,6 +98,7 @@ export default function SimpleBookingForm() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSession, setActiveSession] = useState<{ token: string, startAt: string, endAt: string, expiresAt: number } | null>(null);
+  const [queuedOfflineNotice, setQueuedOfflineNotice] = useState<{ id: string; serviceName: string; startAt: string } | null>(null);
   
   const bookingFormConfig = useBookingStore(s => s.bookingFormConfig);
   const clinicProfile = useBookingStore(s => s.clinicProfile);
@@ -302,14 +307,50 @@ export default function SimpleBookingForm() {
 
   const submittingRef = useRef(false);
 
+  const queueSimpleBookingOffline = async () => {
+    if (selectedServiceIds.length === 0 || !selectedSlot) return false;
+    const queued = await enqueueOfflineBooking({
+      tenantId: storeTenantId || null,
+      clinicSlug: activeSlug || clinicProfile?.slug || null,
+      clinicName: clinicProfile?.clinicName || clinicProfile?.name || null,
+      providerId: selectedSlot.providerId || null,
+      serviceId: selectedServiceIds[0],
+      serviceIds: selectedServiceIds,
+      serviceName: combinedServiceName || 'Dịch vụ nha khoa',
+      customServiceName: selectedServiceIds.length > 1 ? combinedServiceName : undefined,
+      startAt: selectedSlot.startAt,
+      endAt: selectedSlot.endAt,
+      sessionToken: activeSession?.token || null,
+      fullName: formData.fullName.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email ? formData.email.trim() : undefined,
+      notes: formData.notes ? formData.notes.trim() : undefined,
+      bookingFor,
+      isNewProfile: bookingFor === 'self' ? isNewProfile : false,
+    });
+    if (queued) {
+      try {
+        localStorage.setItem(
+          'verifiedPatient',
+          JSON.stringify({ phone: formData.phone.trim(), fullName: formData.fullName.trim() })
+        );
+      } catch {}
+      setQueuedOfflineNotice({
+        id: queued.id,
+        serviceName: queued.serviceName,
+        startAt: queued.startAt,
+      });
+      toast.success('Đã lưu lịch hẹn vào hàng đợi ngoại tuyến. Tự động đồng bộ ngay khi có mạng!', {
+        duration: 5000,
+      });
+      return true;
+    }
+    return false;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittingRef.current || isSubmitting) return;
-
-    if (!navigator.onLine) {
-      toast.error('Thiết bị đang ngoại tuyến. Vui lòng kiểm tra kết nối mạng và thử lại.');
-      return;
-    }
 
     if (selectedServiceIds.length === 0 || !selectedSlot) {
       toast.error('Vui lòng chọn ít nhất một dịch vụ và thời gian khám');
@@ -317,6 +358,21 @@ export default function SimpleBookingForm() {
     }
     if (!formData.fullName || !formData.phone) {
       toast.error('Vui lòng nhập tên và số điện thoại');
+      return;
+    }
+
+    if (!navigator.onLine) {
+      submittingRef.current = true;
+      setIsSubmitting(true);
+      try {
+        const ok = await queueSimpleBookingOffline();
+        if (!ok) {
+          toast.error('Không thể lưu lịch hẹn ngoại tuyến trên thiết bị này.');
+        }
+      } finally {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -443,12 +499,52 @@ export default function SimpleBookingForm() {
       }
     } catch (error: any) {
       console.error(error);
+      if (!error?.response) {
+        const ok = await queueSimpleBookingOffline();
+        if (ok) return;
+      }
       toast.error(error.response?.data?.error?.message || error.message || 'Có lỗi xảy ra, vui lòng thử lại.');
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
+
+  if (queuedOfflineNotice) {
+    return (
+      <div className="max-w-xl mx-auto bg-white rounded-3xl border border-amber-200 p-6 sm:p-8 shadow-lg text-center space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+          <Clock className="w-7 h-7" />
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+          Đã lưu vào hàng đợi ngoại tuyến (IndexedDB)
+        </span>
+        <h3 className="text-xl font-extrabold text-slate-900">
+          Lịch hẹn đang chờ tự động đồng bộ
+        </h3>
+        <p className="text-sm text-slate-600 leading-relaxed">
+          Yêu cầu đặt dịch vụ <strong>{queuedOfflineNotice.serviceName}</strong> lúc{' '}
+          <strong>{format(parseISO(queuedOfflineNotice.startAt), 'HH:mm - dd/MM/yyyy')}</strong> đã được lưu an toàn trên thiết bị và sẽ tự động gửi ngay khi có mạng.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => navigate(`${basePath}/lich-hen`)}
+            className="px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer"
+          >
+            Xem hàng đợi &amp; Lịch hẹn của tôi
+          </button>
+          <button
+            type="button"
+            onClick={() => setQueuedOfflineNotice(null)}
+            className="px-5 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-colors cursor-pointer"
+          >
+            Đặt thêm lịch khác
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 sm:space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500 pb-20 sm:pb-12">

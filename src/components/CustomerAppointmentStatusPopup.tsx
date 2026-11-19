@@ -34,6 +34,7 @@ export interface CustomerStatusAlertData {
   endAt?: string | null;
   cancelReason?: string | null;
   isOneHourReminder?: boolean;
+  isTwentyFourHourReminder?: boolean;
 }
 
 interface Props {
@@ -46,10 +47,12 @@ export default function CustomerAppointmentStatusPopup({ alert, onClose, onOpenL
   if (!alert) return null;
 
   const statusUpper = String(alert.eventStatus || alert.status || '').toUpperCase();
-  const isConfirmed = statusUpper === 'CONFIRMED' && !alert.isOneHourReminder;
+  const isConfirmed =
+    statusUpper === 'CONFIRMED' && !alert.isOneHourReminder && !alert.isTwentyFourHourReminder;
   const isRescheduled = statusUpper === 'RESCHEDULED' || statusUpper === 'TIME_CHANGED';
   const isCancelled = statusUpper === 'CANCEL_CLINIC' || statusUpper === 'CANCELLED';
-  const isReminder = Boolean(alert.isOneHourReminder);
+  const isReminder1h = Boolean(alert.isOneHourReminder);
+  const isReminder24h = Boolean(alert.isTwentyFourHourReminder);
 
   let headerBg = 'from-teal-700 via-teal-600 to-emerald-600';
   let HeaderIcon = CheckCircle2;
@@ -57,12 +60,18 @@ export default function CustomerAppointmentStatusPopup({ alert, onClose, onOpenL
   let title = 'Phòng khám đã chốt lịch hẹn của bạn!';
   let subtitle = 'Lịch khám đã được bác sĩ và bộ phận lễ tân xác nhận chính thức.';
 
-  if (isReminder) {
+  if (isReminder1h) {
     headerBg = 'from-blue-700 via-blue-600 to-indigo-600';
     HeaderIcon = BellRing;
     badgeLabel = 'Nhắc lịch khám sắp tới';
     title = 'Còn khoảng 1 giờ nữa đến lịch hẹn!';
     subtitle = 'Vui lòng sắp xếp di chuyển để có mặt trước giờ hẹn 5–10 phút.';
+  } else if (isReminder24h) {
+    headerBg = 'from-indigo-700 via-blue-700 to-cyan-600';
+    HeaderIcon = CalendarClock;
+    badgeLabel = 'Nhắc lịch hẹn ngày mai (trước 24h)';
+    title = 'Ngày mai bạn có lịch hẹn khám!';
+    subtitle = 'Phòng khám nhắc bạn chuẩn bị sắp xếp thời gian để buổi khám diễn ra thuận lợi.';
   } else if (isRescheduled) {
     headerBg = 'from-amber-600 via-orange-500 to-amber-500';
     HeaderIcon = CalendarClock;

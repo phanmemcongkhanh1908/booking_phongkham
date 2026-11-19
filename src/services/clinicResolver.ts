@@ -29,6 +29,8 @@ export interface ClinicBrandingInfo {
   workingHoursStr?: string;
   latitude?: number | null;
   longitude?: number | null;
+  directApkUrl?: string;
+  androidPackageName?: string;
 }
 
 export interface ClinicBundleData {
@@ -77,6 +79,10 @@ export interface ClinicBundleData {
     isVisible: boolean;
     message: string;
     type: 'info' | 'warning' | 'success';
+  } | null;
+  androidAppConfig?: {
+    packageName?: string;
+    directApkUrl?: string;
   } | null;
   telegramBotUsername: string | null;
   tenantId: string | null;

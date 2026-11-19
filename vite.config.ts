@@ -15,9 +15,38 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'sw-push.js'],
         workbox: {
           importScripts: ['/sw-push.js'],
-          navigateFallbackDenylist: [/^\/api\//, /^\/b\//, /^\/s\//],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/b\//, /^\/s\//, /^\/\.well-known\//],
           maximumFileSizeToCacheInBytes: 5000000,
           runtimeCaching: [
+            {
+              urlPattern: /\/assets\/.*\.(?:js|mjs|css)(?:\?.*)?$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'static-js-css-assets',
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            {
+              urlPattern: /\.(?:js|mjs|css)(?:\?.*)?$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'static-scripts-styles',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -47,7 +76,7 @@ export default defineConfig(() => {
               }
             },
             {
-              urlPattern: /\/api\/public\/(services|providers|clinic-info|availability)/i,
+              urlPattern: /\/api\/public\/(services|providers|clinic-info|clinic-settings|availability)/i,
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'booking-api-cache',
@@ -55,7 +84,7 @@ export default defineConfig(() => {
                   maxEntries: 50,
                   maxAgeSeconds: 60 * 60 * 24 // 1 day
                 },
-                networkTimeoutSeconds: 5, // Fallback to cache if network is too slow
+                networkTimeoutSeconds: 4, // Fallback to cache if network is too slow
                 cacheableResponse: {
                   statuses: [0, 200]
                 }

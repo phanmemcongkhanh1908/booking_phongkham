@@ -61,6 +61,8 @@ export interface ClinicBrandingInfo {
   workingHoursStr?: string;
   latitude?: number | null;
   longitude?: number | null;
+  directApkUrl?: string;
+  androidPackageName?: string;
 }
 
 export interface ClinicConfig {
@@ -102,6 +104,10 @@ export interface ClinicFullBundle {
   providers: any[];
   bookingFormConfig: any;
   announcementBanner: any;
+  androidAppConfig?: {
+    packageName?: string;
+    directApkUrl?: string;
+  } | null;
   telegramBotUsername: string | null;
   tenantId: string | null;
   slug: string | null;
@@ -712,6 +718,46 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
     }
   });
 
+  // Resolve tenant-scoped Android APK / TWA configuration (directApkUrl, packageName)
+  let resolvedAndroidAppConfig: { packageName?: string; directApkUrl?: string } | null = null;
+  try {
+    const allSettings = await db.select().from(settings);
+    const matchedSetting =
+      (tenantId
+        ? (allSettings as any[]).find(
+            (s) =>
+              s.id === `${tenantId}__androidAppConfig` ||
+              ((s.id === "androidAppConfig" || s.key === "androidAppConfig") &&
+                String(s.tenantId || "").trim() === tenantId)
+          )
+        : null) ||
+      (!tenantId
+        ? (allSettings as any[]).find(
+            (s) => (s.id === "androidAppConfig" || s.key === "androidAppConfig") && !s.tenantId
+          )
+        : null);
+    if (matchedSetting?.value && typeof matchedSetting.value === "object") {
+      const val = matchedSetting.value as any;
+      const pkg = typeof val.packageName === "string" ? val.packageName.trim() : "";
+      const apkUrl = typeof val.directApkUrl === "string" ? val.directApkUrl.trim() : "";
+      if (pkg || apkUrl) {
+        resolvedAndroidAppConfig = {
+          ...(pkg ? { packageName: pkg } : {}),
+          ...(apkUrl ? { directApkUrl: apkUrl } : {}),
+        };
+      }
+    }
+  } catch (e) {}
+
+  if (resolvedAndroidAppConfig) {
+    if (resolvedAndroidAppConfig.directApkUrl) {
+      clinicProfile.directApkUrl = resolvedAndroidAppConfig.directApkUrl;
+    }
+    if (resolvedAndroidAppConfig.packageName) {
+      clinicProfile.androidPackageName = resolvedAndroidAppConfig.packageName;
+    }
+  }
+
   // Get Telegram Bot username if configured
   let botUsername: string | null = null;
   try {
@@ -732,6 +778,7 @@ export async function getClinicFullBundle(slugOrDomain?: string): Promise<Clinic
       quickNotesTags: ["Khám tổng quát", "Nhổ răng", "Lấy cao răng", "Trám răng thẩm mỹ"]
     },
     announcementBanner: clinicConfig?.announcementBanner || null,
+    androidAppConfig: resolvedAndroidAppConfig,
     telegramBotUsername: botUsername,
     tenantId,
     slug: clinicConfig?.slug || cleanSlug || null,

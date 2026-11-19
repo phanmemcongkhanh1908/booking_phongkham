@@ -23,6 +23,7 @@ export interface FirestoreAppointmentDoc {
   notes: string | null;
   rating: number | null;
   oneHourReminderSentAt: string | null;
+  twentyFourHourReminderSentAt?: string | null;
   createdAt: string | null;
   updatedAt: string;
 }
@@ -149,6 +150,7 @@ function buildFirestoreDoc(
     notes: apt.notes ? String(apt.notes) : null,
     rating: typeof apt.rating === "number" ? apt.rating : null,
     oneHourReminderSentAt: toIsoOrNull(apt.oneHourReminderSentAt),
+    twentyFourHourReminderSentAt: toIsoOrNull(apt.twentyFourHourReminderSentAt || apt.reminderSentAt),
     createdAt: toIsoOrNull(apt.createdAt),
     updatedAt: new Date().toISOString(),
   };
@@ -446,6 +448,158 @@ export async function markOneHourReminderSent(appointmentId: string, sentAtDate 
       );
     } catch (err: any) {
       handleFirestoreErr(err, "markOneHourReminderSent");
+    }
+  }
+}
+
+/**
+ * Fetches CONFIRMED upcoming appointments ~24h ahead (`[windowStart, windowEnd]`) from Firestore `/appointments`
+ * that have not yet received a 24-hour reminder. Cross-checks local DB for strict idempotency.
+ */
+export async function fetchUpcomingConfirmedAppointmentsFor24hFromFirestore(
+  windowStart: Date,
+  windowEnd: Date
+): Promise<{ source: "firestore" | "local_fallback"; items: FirestoreAppointmentDoc[] }> {
+  const startMs = windowStart.getTime();
+  const endMs = windowEnd.getTime();
+
+  const localSentSet = new Set<string>();
+  const localStatusMap = new Map<string, string>();
+  const localCandidates: FirestoreAppointmentDoc[] = [];
+
+  await appContext.run({ isFullAdmin: true }, async () => {
+    const [allApts, allPts, allProvs, allSvcs, allSettings, allUsers] = await Promise.all([
+      db.select().from(appointments),
+      db.select().from(patients),
+      db.select().from(providers),
+      db.select().from(services),
+      db.select().from(settings),
+      db.select().from(users),
+    ]);
+
+    const ptMap = new Map(allPts.map((p: any) => [String(p.id), p]));
+    const provMap = new Map(allProvs.map((p: any) => [String(p.id), p]));
+    const svcMap = new Map(allSvcs.map((s: any) => [String(s.id), s]));
+
+    for (const apt of allApts) {
+      const idStr = String(apt.id);
+      localStatusMap.set(idStr, String(apt.status || "").toUpperCase());
+      if (apt.reminderSentAt || apt.twentyFourHourReminderSentAt) {
+        localSentSet.add(idStr);
+        continue;
+      }
+      if (String(apt.status || "").toUpperCase() !== "CONFIRMED") continue;
+      const startIso = toIsoOrNull(apt.startAt);
+      if (!startIso) continue;
+      const t = new Date(startIso).getTime();
+      if (t >= startMs && t <= endMs) {
+        const clinicMeta = await resolveClinicMetaForTenant(apt.tenantId || null, allSettings, allUsers);
+        const built = buildFirestoreDoc(
+          apt,
+          ptMap.get(String(apt.patientId)),
+          provMap.get(String(apt.providerId)),
+          svcMap.get(String(apt.serviceId)),
+          clinicMeta
+        );
+        if (built) localCandidates.push(built);
+      }
+    }
+  });
+
+  if (canUseAdminFirestore()) {
+    try {
+      const snap = await withTimeout(
+        () => adminDb!.collection("appointments").where("status", "==", "CONFIRMED").get(),
+        3000
+      );
+
+      if (snap) {
+        const matchedFromFirestore: FirestoreAppointmentDoc[] = [];
+        for (const docSnap of snap.docs) {
+          const data = docSnap.data() as Partial<FirestoreAppointmentDoc>;
+          const id = String(data.id || docSnap.id);
+          if (data.twentyFourHourReminderSentAt || localSentSet.has(id)) continue;
+
+          const localStatus = localStatusMap.get(id);
+          if (localStatus && localStatus !== "CONFIRMED") continue;
+
+          const startIso = toIsoOrNull(data.startAt);
+          if (!startIso) continue;
+          const t = new Date(startIso).getTime();
+          if (t >= startMs && t <= endMs) {
+            matchedFromFirestore.push({
+              id,
+              tenantId: data.tenantId ?? null,
+              clinicSlug: data.clinicSlug ?? null,
+              clinicName: data.clinicName || "Nha Khoa Dental Smart",
+              patientId: String(data.patientId || ""),
+              patientName: String(data.patientName || "Khách hàng"),
+              patientPhone: String(data.patientPhone || ""),
+              providerId: data.providerId ?? null,
+              providerName: data.providerName ?? null,
+              serviceId: data.serviceId ?? null,
+              serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds : [],
+              serviceName: String(data.serviceName || "Khám nha khoa"),
+              startAt: startIso,
+              endAt: toIsoOrNull(data.endAt) || startIso,
+              status: "CONFIRMED",
+              notes: data.notes ?? null,
+              rating: typeof data.rating === "number" ? data.rating : null,
+              oneHourReminderSentAt: toIsoOrNull(data.oneHourReminderSentAt),
+              twentyFourHourReminderSentAt: null,
+              createdAt: toIsoOrNull(data.createdAt),
+              updatedAt: toIsoOrNull(data.updatedAt) || new Date().toISOString(),
+            });
+          }
+        }
+        return { source: "firestore", items: matchedFromFirestore };
+      }
+    } catch (err: any) {
+      handleFirestoreErr(err, "fetchUpcomingConfirmedAppointmentsFor24hFromFirestore");
+    }
+  }
+
+  return { source: "local_fallback", items: localCandidates };
+}
+
+/**
+ * Stamps 24h reminder sent timestamp idempotently across both local DB and Firestore `/appointments/{id}`.
+ */
+export async function mark24HourReminderSent(appointmentId: string, sentAtDate = new Date()): Promise<void> {
+  const sentAtIso = sentAtDate.toISOString();
+
+  await appContext.run({ isFullAdmin: true }, async () => {
+    try {
+      await db
+        .update(appointments)
+        .set({
+          reminderSentAt: sentAtDate,
+          updatedAt: sentAtDate,
+        } as any)
+        .where(eq(appointments.id, appointmentId));
+    } catch (err) {
+      console.warn("[AppointmentFirestore] Failed to stamp local reminderSentAt:", err);
+    }
+  });
+
+  if (canUseAdminFirestore()) {
+    try {
+      await withTimeout(
+        () =>
+          adminDb!
+            .collection("appointments")
+            .doc(appointmentId)
+            .set(
+              {
+                twentyFourHourReminderSentAt: sentAtIso,
+                updatedAt: sentAtIso,
+              },
+              { merge: true }
+            ),
+        2500
+      );
+    } catch (err: any) {
+      handleFirestoreErr(err, "mark24HourReminderSent");
     }
   }
 }

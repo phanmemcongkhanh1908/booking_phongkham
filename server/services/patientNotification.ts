@@ -214,13 +214,17 @@ export async function remindPatientAppointment(
     const aptRecords = await db
       .select({
         id: appointments.id,
+        tenantId: appointments.tenantId,
         startAt: appointments.startAt,
+        endAt: appointments.endAt,
         status: appointments.status,
         patientId: appointments.patientId,
+        bookedForName: appointments.bookedForName,
         patientName: patients.fullName,
         patientPhone: patients.phone,
         patientTelegramId: patients.telegramId,
         serviceName: services.name,
+        customServiceName: appointments.customServiceName,
         providerName: providers.name,
       })
       .from(appointments)
@@ -242,43 +246,79 @@ export async function remindPatientAppointment(
       return result;
     }
 
-    const { email } = await getPatientContact(apt.patientId);
+    const contact = await getPatientContact(apt.patientId, apt.patientPhone || undefined);
+    const email = contact.email;
+    const telegramId = contact.telegramId || apt.patientTelegramId;
     if (email) result.patientEmail = email;
-    if (apt.patientTelegramId) result.patientTelegramId = apt.patientTelegramId;
+    if (telegramId) result.patientTelegramId = telegramId;
 
     const dateStr = safeFormatDate(new Date(apt.startAt), "dd/MM/yyyy");
     const timeStr = safeFormatDate(new Date(apt.startAt), "HH:mm");
+    const resolvedServiceTitle = apt.customServiceName || apt.serviceName || "Khám nha khoa";
+    const resolvedPatientName = apt.bookedForName || apt.patientName || "Quý khách";
 
-    // Lấy config
-    const settingsRecords = await db.select().from(settings);
-    const settingsObj: any = {};
-    settingsRecords.forEach((s: any) => {
-      settingsObj[s.id] = s.value;
-    });
-
-    const clinicProfile = settingsObj.clinicProfile || {
-      clinicName: "Phòng khám",
+    // Resolve tenant-scoped clinic profile
+    let clinicProfile: any = {
+      clinicName: "Nha Khoa Dental Smart",
+      doctorName: "Bác sĩ chuyên khoa",
+      address: "",
       phone: "",
-      address: ""
+      slug: "",
+      latitude: null,
+      longitude: null,
     };
 
-    const pushTitle = "Nhắc nhở lịch hẹn ngày mai";
-    const pushBody = `Bạn có lịch hẹn ${apt.serviceName} vào lúc ${timeStr} ngày mai tại ${clinicProfile.clinicName}. Vui lòng đến đúng giờ.`;
+    try {
+      const allSettings = await db.select().from(settings);
+      const aptTenantStr = apt.tenantId ? String(apt.tenantId).trim() : "";
+      const settingMatch =
+        (aptTenantStr
+          ? (allSettings as any[]).find(
+              (s) =>
+                s.id === `${aptTenantStr}__clinicProfile` ||
+                (s.id === "clinicProfile" && String(s.tenantId || "").trim() === aptTenantStr)
+            )
+          : null) ||
+        (allSettings as any[]).find((s) => s.id === "clinicProfile" && !s.tenantId) ||
+        (allSettings as any[]).find((s) => s.id === "clinicProfile");
+      if (settingMatch && typeof settingMatch.value === "object") {
+        clinicProfile = { ...clinicProfile, ...settingMatch.value };
+      }
+      if (!clinicProfile.slug && aptTenantStr.startsWith("tenant_")) {
+        clinicProfile.slug = aptTenantStr.replace(/^tenant_/i, "").trim().toLowerCase();
+      }
+    } catch (e) {
+      console.warn("[Remind24h] Could not read clinicProfile:", e);
+    }
+
+    const clinicName = clinicProfile.clinicName || clinicProfile.name || "Nha Khoa Dental Smart";
+    const clinicSlug = clinicProfile.slug ? String(clinicProfile.slug).trim().toLowerCase() : null;
+    const baseBookingUrl = clinicSlug
+      ? `/b/${encodeURIComponent(clinicSlug)}/lich-hen`
+      : "/lich-hen-cua-toi";
+    const targetUrl = `${baseBookingUrl}?highlightAppointmentId=${encodeURIComponent(apt.id)}${
+      apt.patientPhone ? `&phone=${encodeURIComponent(apt.patientPhone)}` : ""
+    }`;
+
+    const pushTitle = `📅 Nhắc lịch hẹn ngày mai lúc ${timeStr} tại ${clinicName}`;
+    const pushBody = `Còn 24 giờ nữa đến lịch khám ${resolvedServiceTitle}${
+      apt.providerName ? ` với ${apt.providerName}` : ""
+    } (${timeStr} - ${dateStr}). Vui lòng đến đúng giờ nhé!`;
 
     if (email) {
       try {
         const emailData: AppointmentNotificationData = {
           appointmentId: apt.id,
-          patientName: apt.patientName,
+          patientName: resolvedPatientName,
           patientPhone: apt.patientPhone || "",
           patientEmail: email,
-          serviceName: apt.serviceName || "Khám nha khoa",
-          providerName: apt.providerName,
+          serviceName: resolvedServiceTitle,
+          providerName: apt.providerName || clinicProfile.doctorName,
           startAt: new Date(apt.startAt),
           status: "CONFIRMED",
-          clinicName: clinicProfile.clinicName,
-          clinicAddress: clinicProfile.address,
-          clinicPhone: clinicProfile.phone
+          clinicName,
+          clinicAddress: clinicProfile.address || "",
+          clinicPhone: clinicProfile.phone || "",
         };
         await sendPatientAppointmentEmail("REMINDER", emailData);
         result.emailSent = true;
@@ -287,14 +327,59 @@ export async function remindPatientAppointment(
       }
     }
 
-    // Web Push
+    if (telegramId) {
+      try {
+        const bot = getTelegramBotInstance();
+        if (bot) {
+          const tgMsg =
+            `📅 *NHẮC LỊCH HẸN NGÀY MAI (TRƯỚC 24 GIỜ)*\n\n` +
+            `Kính gửi *${resolvedPatientName}*,\n` +
+            `Bạn có lịch hẹn khám nha khoa tại *${clinicName}* vào ngày mai:\n\n` +
+            `🦷 *Dịch vụ:* ${resolvedServiceTitle}\n` +
+            `👨‍⚕️ *Bác sĩ:* ${apt.providerName || clinicProfile.doctorName}\n` +
+            `⏰ *Thời gian:* ${timeStr} - ${dateStr}\n` +
+            (clinicProfile.address ? `📍 *Địa chỉ:* ${clinicProfile.address}\n` : "") +
+            (clinicProfile.phone ? `📞 *Hotline:* ${clinicProfile.phone}\n` : "");
+          await bot.sendMessage(telegramId, tgMsg, { parse_mode: "Markdown" });
+          result.telegramSent = true;
+        }
+      } catch (err: any) {
+        result.errors.push(`Telegram error: ${err.message}`);
+      }
+    }
+
+    // Web Push via Service Worker (supports patientId + normalized phone lookup)
     try {
-      await sendWebPush(apt.patientId, {
-        title: pushTitle,
-        body: pushBody,
-        icon: "/icon-192x192.png",
-      } as any);
-      result.webPushSent = true;
+      const pushSummary = await sendWebPush(
+        {
+          patientId: apt.patientId || undefined,
+          phone: apt.patientPhone || undefined,
+        },
+        {
+          title: pushTitle,
+          body: pushBody,
+          icon: "/pwa-192x192.png",
+          url: targetUrl,
+          tag: `24h-reminder-${apt.id}`,
+          appointmentId: apt.id,
+          type: "appointment_24h_reminder",
+          status: "CONFIRMED",
+          clinicName,
+          clinicSlug,
+          clinicAddress: clinicProfile.address || null,
+          clinicPhone: clinicProfile.phone || null,
+          latitude: clinicProfile.latitude ?? null,
+          longitude: clinicProfile.longitude ?? null,
+          serviceName: resolvedServiceTitle,
+          providerName: apt.providerName || clinicProfile.doctorName || null,
+          patientName: resolvedPatientName,
+          startAt: new Date(apt.startAt).toISOString(),
+          endAt: apt.endAt ? new Date(apt.endAt).toISOString() : undefined,
+          tenantId: apt.tenantId || null,
+          requireInteraction: true,
+        }
+      );
+      result.webPushSent = (pushSummary?.sent || 0) > 0;
     } catch (err: any) {
       result.errors.push(`WebPush error: ${err.message}`);
     }

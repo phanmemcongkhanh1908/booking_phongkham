@@ -511,3 +511,215 @@ export async function forceSyncAppointmentsToSheet(
 
   return { count: appointments.length };
 }
+
+export interface DailyAppointmentSummaryPayload {
+  date: string;
+  clinicName: string;
+  tenantId?: string | null;
+  generatedAt: string;
+  stats: {
+    total: number;
+    requested: number;
+    confirmed: number;
+    checkedIn: number;
+    inService: number;
+    completed: number;
+    cancelled: number;
+    noShow: number;
+  };
+  appointments: Array<{
+    id: string;
+    startAt: string;
+    endAt?: string;
+    status: string;
+    patientName: string;
+    patientPhone: string;
+    serviceName: string;
+    providerName: string;
+    notes?: string;
+    rating?: number | null;
+  }>;
+}
+
+export async function uploadTextFileToDrive(
+  fileName: string,
+  content: string,
+  mimeType: string,
+  accessToken: string,
+  folderId?: string
+): Promise<{ id: string; name: string; webViewLink: string }> {
+  const metadata: Record<string, any> = {
+    name: fileName,
+    mimeType,
+  };
+  if (folderId) {
+    metadata.parents = [folderId];
+  }
+
+  const boundary = '-------314159265358979323846_daily_backup';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelim = `\r\n--${boundary}--`;
+
+  const body =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    `Content-Type: ${mimeType}; charset=UTF-8\r\n\r\n` +
+    content +
+    closeDelim;
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    const err: any = new Error(`Lỗi tải file sao lưu lên Google Drive (${res.status}): ${errText}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  const data = await res.json();
+  return {
+    id: data.id,
+    name: data.name || fileName,
+    webViewLink: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
+  };
+}
+
+export async function checkDailyBackupFilesInFolder(
+  targetDate: string,
+  folderId: string,
+  accessToken: string
+): Promise<Array<{ id: string; name: string; webViewLink?: string; modifiedTime?: string }>> {
+  const prefix = `Bao_Cao_Lich_Hen_${targetDate}`;
+  const query = `name contains '${prefix.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,modifiedTime)`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.files) ? data.files : [];
+}
+
+function escapeCsvCell(value: any): string {
+  const s = String(value ?? '').replace(/\r?\n/g, ' ');
+  if (/[",]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+export function generateDailyAppointmentSummaryReport(summary: DailyAppointmentSummaryPayload): {
+  csvContent: string;
+  jsonContent: string;
+} {
+  const summaryHeader = [
+    `Phòng khám,${escapeCsvCell(summary.clinicName)}`,
+    `Ngày báo cáo,${escapeCsvCell(summary.date)}`,
+    `Thời điểm sao lưu,${escapeCsvCell(new Date(summary.generatedAt).toLocaleString('vi-VN'))}`,
+    `Tổng lịch hẹn,${summary.stats.total}`,
+    `Đã xác nhận,${summary.stats.confirmed}`,
+    `Chờ duyệt,${summary.stats.requested}`,
+    `Đã đến khám,${summary.stats.checkedIn}`,
+    `Hoàn thành,${summary.stats.completed}`,
+    `Đã hủy / Vắng mặt,${summary.stats.cancelled + summary.stats.noShow}`,
+    '',
+  ];
+
+  const tableHeader = [
+    'Mã lịch hẹn',
+    'Giờ khám',
+    'Bệnh nhân',
+    'Số điện thoại',
+    'Dịch vụ',
+    'Bác sĩ phụ trách',
+    'Trạng thái',
+    'Đánh giá (sao)',
+    'Ghi chú',
+  ].join(',');
+
+  const rows = summary.appointments.map((apt) => {
+    const startTime = apt.startAt
+      ? new Date(apt.startAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return [
+      escapeCsvCell(apt.id),
+      escapeCsvCell(startTime),
+      escapeCsvCell(apt.patientName),
+      escapeCsvCell(apt.patientPhone),
+      escapeCsvCell(apt.serviceName),
+      escapeCsvCell(apt.providerName),
+      escapeCsvCell(apt.status),
+      escapeCsvCell(apt.rating ?? ''),
+      escapeCsvCell(apt.notes || ''),
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [...summaryHeader, tableHeader, ...rows].join('\r\n');
+  const jsonContent = JSON.stringify(summary, null, 2);
+
+  return { csvContent, jsonContent };
+}
+
+export async function runDailyAppointmentDriveBackup(params: {
+  accessToken: string;
+  summary: DailyAppointmentSummaryPayload;
+  folderId?: string | null;
+  folderName?: string;
+}): Promise<{
+  folderId: string;
+  folderUrl: string;
+  csvFile: { id: string; name: string; webViewLink: string };
+  jsonFile: { id: string; name: string; webViewLink: string };
+}> {
+  const targetFolderName = (params.folderName || '').trim() || 'Dental Smart - Sao lưu Lịch hẹn Hằng ngày';
+  const resolvedFolderId =
+    (params.folderId || '').trim() ||
+    (await findOrCreateFolder(targetFolderName, params.accessToken));
+
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const baseFileName = `Bao_Cao_Lich_Hen_${params.summary.date}_${hh}${mm}${ss}`;
+
+  const { csvContent, jsonContent } = generateDailyAppointmentSummaryReport(params.summary);
+
+  const [csvFile, jsonFile] = await Promise.all([
+    uploadTextFileToDrive(
+      `${baseFileName}.csv`,
+      csvContent,
+      'text/csv',
+      params.accessToken,
+      resolvedFolderId
+    ),
+    uploadTextFileToDrive(
+      `${baseFileName}.json`,
+      jsonContent,
+      'application/json',
+      params.accessToken,
+      resolvedFolderId
+    ),
+  ]);
+
+  return {
+    folderId: resolvedFolderId,
+    folderUrl: `https://drive.google.com/drive/folders/${resolvedFolderId}`,
+    csvFile,
+    jsonFile,
+  };
+}
+

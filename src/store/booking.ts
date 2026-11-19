@@ -64,6 +64,8 @@ interface BookingState {
     slug?: string;
     latitude?: number | null;
     longitude?: number | null;
+    directApkUrl?: string;
+    androidPackageName?: string;
   } | null;
   bookingFormConfig: {
     uiVersion?: 'full' | 'simple';

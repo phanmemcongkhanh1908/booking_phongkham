@@ -26,6 +26,7 @@ import ExportAppointmentsModal from './components/ExportAppointmentsModal';
 import CreateAppointmentModal from './components/CreateAppointmentModal';
 import { DataCleanModal } from './components/DataCleanModal';
 import GoogleBackupWarningBanner from '../../components/admin/GoogleBackupWarningBanner';
+import DailyDriveBackupRunner from '../../components/admin/DailyDriveBackupRunner';
 import { useGoogleAuthStore } from '../../store/googleAuthStore';
 import { fetchDriveQuota, formatBytes } from '../../lib/googleWorkspace';
 import { useNavigate } from 'react-router-dom';
@@ -2053,6 +2054,7 @@ export default function Dashboard() {
       </nav>
 
       <IdleTimeoutManager />
+      <DailyDriveBackupRunner />
 
       {/* Unified Notification, Broadcast & Device Setup Modal */}
       {showMobileNotifModal && (

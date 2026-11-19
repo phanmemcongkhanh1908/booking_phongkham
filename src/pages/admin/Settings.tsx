@@ -44,7 +44,10 @@ import {
   MapPin,
   LocateFixed,
   Search,
-  Navigation
+  Navigation,
+  Smartphone,
+  FileCode2,
+  Package
 } from 'lucide-react';
 import { useAuthStore } from "../../store/auth";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -60,6 +63,11 @@ import {
   fetchDriveQuota, 
   formatBytes 
 } from '../../lib/googleWorkspace';
+import {
+  checkExistingDailyDriveBackup,
+  executeDailyDriveSummaryBackup,
+  getTodayVnDateString,
+} from '../../services/dailyDriveBackup';
 
 declare global {
   interface Window {
@@ -84,6 +92,15 @@ export default function Settings() {
     setSpreadsheetInfo,
     lastSyncAt,
     setLastSyncAt,
+    driveBackupFolderId,
+    driveBackupFolderName,
+    autoDailyDriveBackupEnabled,
+    dailyBackupHour,
+    lastDailyBackupDate,
+    lastDailyBackupAt,
+    lastDailyBackupFileUrl,
+    recentDailyBackups,
+    setDailyDriveBackupConfig,
     customClientId,
     activeClientId
   } = useGoogleAuthStore();
@@ -96,6 +113,14 @@ export default function Settings() {
   const [isSyncingAppointments, setIsSyncingAppointments] = useState(false);
   const [googleStatusMsg, setGoogleStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [manualSheetInput, setManualSheetInput] = useState('');
+  const [backupFolderNameInput, setBackupFolderNameInput] = useState(driveBackupFolderName || 'Dental Smart - Sao lưu Lịch hẹn Hằng ngày');
+  const [backupFolderIdInput, setBackupFolderIdInput] = useState(driveBackupFolderId || '');
+  const [runningDailyBackup, setRunningDailyBackup] = useState(false);
+  const [confirmDailyBackupModal, setConfirmDailyBackupModal] = useState<{
+    isOpen: boolean;
+    existingCount: number;
+    targetDate: string;
+  }>({ isOpen: false, existingCount: 0, targetDate: '' });
 
   // Telegram Config
   const [telegramToken, setTelegramToken] = useState('');
@@ -160,6 +185,20 @@ export default function Settings() {
   const [googleLoginMsg, setGoogleLoginMsg] = useState('');
   const [googleLoginError, setGoogleLoginError] = useState(false);
   const [googleLoginSaving, setGoogleLoginSaving] = useState(false);
+
+  // Cấu hình Phát hành App Android (.APK / Digital Asset Links)
+  const [androidAppConfig, setAndroidAppConfig] = useState<{
+    packageName: string;
+    sha256Text: string;
+    directApkUrl: string;
+  }>({
+    packageName: '',
+    sha256Text: '',
+    directApkUrl: '',
+  });
+  const [androidConfigMsg, setAndroidConfigMsg] = useState('');
+  const [androidConfigError, setAndroidConfigError] = useState(false);
+  const [androidConfigSaving, setAndroidConfigSaving] = useState(false);
 
   // Cấu hình Trang Hồ Sơ Tiếp Đón Chu Đáo
   const DEFAULT_TAGS = [
@@ -373,7 +412,7 @@ export default function Settings() {
 
   useEffect(() => {
     api.get('/admin/settings').then(res => {
-      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner, googleLoginConfig: dbGoogleLoginConfig } = res.data.data || {};
+      const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig: dbEmailConfig, bookingFormConfig: dbBookingFormConfig, announcementBanner: dbAnnouncementBanner, googleLoginConfig: dbGoogleLoginConfig, androidAppConfig: dbAndroidAppConfig } = res.data.data || {};
       if (telegramToken) setTelegramToken(prev => prev === telegramToken ? prev : telegramToken);
       if (telegramChatId) setTelegramChatId(prev => prev === telegramChatId ? prev : telegramChatId);
       if (telegramBotUsername) setTelegramBotUsername(prev => prev === telegramBotUsername ? prev : telegramBotUsername);
@@ -399,6 +438,16 @@ export default function Settings() {
         setGoogleLoginConfig({
           enabled: Boolean(parsedGl?.enabled),
           allowedEmails: Array.isArray(parsedGl?.allowedEmails) ? parsedGl.allowedEmails : [],
+        });
+      }
+      if (dbAndroidAppConfig) {
+        const parsedAndroid = typeof dbAndroidAppConfig === 'string' ? JSON.parse(dbAndroidAppConfig) : dbAndroidAppConfig;
+        setAndroidAppConfig({
+          packageName: String(parsedAndroid?.packageName || ''),
+          sha256Text: Array.isArray(parsedAndroid?.sha256Fingerprints)
+            ? parsedAndroid.sha256Fingerprints.join('\n')
+            : String(parsedAndroid?.sha256Fingerprints || ''),
+          directApkUrl: String(parsedAndroid?.directApkUrl || ''),
         });
       }
       if (dbBookingFormConfig) {
@@ -591,6 +640,66 @@ export default function Settings() {
     });
   };
 
+  const handleSaveDriveBackupConfig = () => {
+    setDailyDriveBackupConfig({
+      driveBackupFolderName: backupFolderNameInput.trim() || 'Dental Smart - Sao lưu Lịch hẹn Hằng ngày',
+      driveBackupFolderId: backupFolderIdInput.trim() || null,
+    });
+    setGoogleStatusMsg({
+      type: 'success',
+      text: 'Đã lưu cấu hình thư mục Google Drive sao lưu hằng ngày!'
+    });
+  };
+
+  const handlePrepareDailyDriveBackup = async () => {
+    if (!googleToken) {
+      setGoogleStatusMsg({
+        type: 'error',
+        text: 'Phiên Google Drive đã hết hạn hoặc chưa kết nối. Vui lòng kết nối lại Google trước khi sao lưu.'
+      });
+      return;
+    }
+    const todayStr = getTodayVnDateString();
+    setRunningDailyBackup(true);
+    try {
+      const { existingFiles } = await checkExistingDailyDriveBackup(todayStr);
+      setConfirmDailyBackupModal({
+        isOpen: true,
+        existingCount: existingFiles.length,
+        targetDate: todayStr,
+      });
+    } catch (e: any) {
+      setGoogleStatusMsg({
+        type: 'error',
+        text: e?.message || 'Không thể kiểm tra thư mục Google Drive.'
+      });
+    } finally {
+      setRunningDailyBackup(false);
+    }
+  };
+
+  const handleConfirmDailyDriveBackup = async () => {
+    const targetDate = confirmDailyBackupModal.targetDate || getTodayVnDateString();
+    setConfirmDailyBackupModal({ isOpen: false, existingCount: 0, targetDate: '' });
+    setRunningDailyBackup(true);
+    setGoogleStatusMsg(null);
+    try {
+      const result = await executeDailyDriveSummaryBackup({ targetDate, isAutomatic: false });
+      setBackupFolderIdInput(result.folderId);
+      setGoogleStatusMsg({
+        type: 'success',
+        text: `Đã sao lưu tóm tắt ${result.totalAppointments} lịch hẹn ngày ${result.date} vào file "${result.fileName}" trên Google Drive!`
+      });
+    } catch (e: any) {
+      setGoogleStatusMsg({
+        type: 'error',
+        text: e?.message || 'Lỗi khi tạo file sao lưu lịch hẹn lên Google Drive.'
+      });
+    } finally {
+      setRunningDailyBackup(false);
+    }
+  };
+
   const handleSaveTelegram = async (e: React.FormEvent) => {
     e.preventDefault();
     setTelegramMsg('');
@@ -643,6 +752,33 @@ export default function Settings() {
       setEmailMsg('❌ ' + (err.response?.data?.error?.message || 'Không thể gửi email kiểm tra. Vui lòng kiểm tra lại mật khẩu ứng dụng / Host'));
     } finally {
       setEmailTesting(false);
+    }
+  };
+
+  const handleSaveAndroidAppConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAndroidConfigSaving(true);
+    setAndroidConfigMsg('');
+    setAndroidConfigError(false);
+    try {
+      const fingerprints = androidAppConfig.sha256Text
+        .split(/[\s,;]+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      const res = await api.post('/admin/settings', {
+        androidAppConfig: {
+          packageName: androidAppConfig.packageName.trim(),
+          sha256Fingerprints: fingerprints,
+          directApkUrl: androidAppConfig.directApkUrl.trim(),
+        },
+      });
+      invalidateClinicCache(clinicProfile.slug || undefined);
+      setAndroidConfigMsg(res.data?.message || 'Đã lưu cấu hình App Android (.APK) & Digital Asset Links thành công!');
+    } catch (err: any) {
+      setAndroidConfigError(true);
+      setAndroidConfigMsg(err.response?.data?.error?.message || 'Không thể lưu cấu hình App Android.');
+    } finally {
+      setAndroidConfigSaving(false);
     }
   };
 
@@ -1949,6 +2085,164 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Phát hành App Android (.APK thật - Google TWA) */}
+      <Card className="col-span-1 md:col-span-2 border-emerald-200/80 shadow-sm">
+        <CardHeader className="bg-emerald-50/40 border-b border-emerald-100/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                  <span>Phát hành App Android (.APK thật - Google TWA)</span>
+                </CardTitle>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Đóng gói tệp .APK cài trực tiếp trên Android hoặc đồng bộ chữ ký Digital Asset Links (chạy toàn màn hình, giữ nguyên Web Push &amp; Google Login)
+                </p>
+              </div>
+            </div>
+            <a
+              href="/.well-known/assetlinks.json"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-white hover:bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl shrink-0"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Kiểm tra assetlinks.json</span>
+            </a>
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 sm:p-6 space-y-5">
+          {(() => {
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            const cleanSlug = (clinicProfile.slug || user?.slug || '').trim();
+            const clinicTargetUrl = cleanSlug ? `${origin}/booking/${cleanSlug}?mode=customer` : origin;
+            const displayClinicName = clinicProfile.clinicName || user?.clinicName || 'Dental Smart';
+            const cleanPkgSlug = (cleanSlug || 'clinic').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'clinic';
+            const defaultPackageId = `com.dentalsmart.${cleanPkgSlug.slice(0, 28)}`;
+            const effectivePkg = androidAppConfig.packageName.trim() || defaultPackageId;
+            const apkBuilderUrl = `/api/public/android-apk-builder?url=${encodeURIComponent(
+              clinicTargetUrl
+            )}&name=${encodeURIComponent(displayClinicName)}&slug=${encodeURIComponent(
+              cleanSlug
+            )}&pkg=${encodeURIComponent(effectivePkg)}`;
+            const twaManifestUrl = `/api/public/android-twa-manifest?url=${encodeURIComponent(
+              clinicTargetUrl
+            )}&name=${encodeURIComponent(displayClinicName)}&slug=${encodeURIComponent(
+              cleanSlug
+            )}&pkg=${encodeURIComponent(effectivePkg)}`;
+
+            return (
+              <>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+                      <Package className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Bước 1: Đóng gói &amp; ký số file app-release-signed.apk trên Windows</span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+                      Chạy script tự động (dùng Google <code>@bubblewrap/cli</code>) để tạo ra tệp <strong>.apk</strong> đã ký số chuẩn Google Play Protect cho phòng khám <strong>{displayClinicName}</strong>.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <a
+                      href={apkBuilderUrl}
+                      download
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400" />
+                      <span>Tải Tool Đóng gói APK (.bat)</span>
+                    </a>
+                    <a
+                      href={twaManifestUrl}
+                      download="twa-manifest.json"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 text-xs font-semibold transition-colors"
+                    >
+                      <FileCode2 className="w-4 h-4 text-teal-600" />
+                      <span>Tải twa-manifest.json</span>
+                    </a>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveAndroidAppConfig} className="space-y-4">
+                  {androidConfigMsg && (
+                    <div
+                      className={`text-xs p-3 rounded-xl flex items-start gap-2 border ${
+                        androidConfigError
+                          ? 'bg-red-50 text-red-700 border-red-200'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      }`}
+                    >
+                      <span className="shrink-0">{androidConfigError ? '⚠️' : '✅'}</span>
+                      <span className="font-medium leading-relaxed">{androidConfigMsg}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted block">
+                        Package ID Android (VD: {defaultPackageId})
+                      </label>
+                      <Input
+                        type="text"
+                        placeholder={defaultPackageId}
+                        value={androidAppConfig.packageName}
+                        onChange={(e) =>
+                          setAndroidAppConfig((prev) => ({ ...prev, packageName: e.target.value }))
+                        }
+                        className="font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted block">
+                        Link tải trực tiếp file .APK đã xuất (Tùy chọn)
+                      </label>
+                      <Input
+                        type="url"
+                        placeholder="https://.../app-release-signed.apk"
+                        value={androidAppConfig.directApkUrl}
+                        onChange={(e) =>
+                          setAndroidAppConfig((prev) => ({ ...prev, directApkUrl: e.target.value }))
+                        }
+                        className="text-xs"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        Khi điền link này, khách hàng mở trên Android sẽ thấy nút <strong>&ldquo;Tải file .APK&rdquo;</strong> cài trực tiếp ngay!
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wide text-text-muted block">
+                      SHA-256 Certificate Fingerprint (để ẩn thanh URL Chrome trong file APK)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="AA:BB:CC:DD:... (mỗi dòng 1 mã SHA-256 thu được sau khi chạy Tool đóng gói APK)"
+                      value={androidAppConfig.sha256Text}
+                      onChange={(e) =>
+                        setAndroidAppConfig((prev) => ({ ...prev, sha256Text: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+                    />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={androidConfigSaving}
+                    className="w-full sm:w-auto font-bold bg-emerald-700 hover:bg-emerald-800 text-white px-6 cursor-pointer"
+                  >
+                    {androidConfigSaving ? 'Đang lưu cấu hình Android...' : 'Lưu cấu hình App Android (.APK)'}
+                  </Button>
+                </form>
+              </>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
       {/* Data Management & Wipe Data (Chỉ hiển thị cho Tài khoản Quản trị Hệ thống Gốc - Super Admin) */}
       {!isSimpleMode && isSuperAdmin && (
         <>
@@ -2391,16 +2685,20 @@ export default function Settings() {
                         <HardDrive className="w-4 h-4" />
                       </div>
                       <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                        Google Drive Lưu trữ File
+                        Google Drive Lưu trữ &amp; Sao lưu Hằng ngày
                       </h4>
                     </div>
                     <a
-                      href="https://drive.google.com"
+                      href={
+                        driveBackupFolderId
+                          ? `https://drive.google.com/drive/folders/${driveBackupFolderId}`
+                          : 'https://drive.google.com'
+                      }
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
                     >
-                      <span>Mở Drive</span>
+                      <span>{driveBackupFolderId ? 'Mở Thư mục' : 'Mở Drive'}</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
@@ -2425,14 +2723,138 @@ export default function Settings() {
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500">
-                      Tự động tải lên phim X-quang, hồ sơ bệnh án và file đính kèm trực tiếp vào thư mục an toàn của phòng khám trên Google Drive.
+                      Tự động tạo báo cáo tóm tắt lịch hẹn hằng ngày (CSV + JSON) và lưu trực tiếp vào thư mục chỉ định trên Google Drive.
                     </p>
                   )}
 
-                  <div className="pt-1">
-                    <span className="text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-1 rounded-md border border-slate-200/70 inline-block">
-                      Thư mục lưu trữ: 📁 Dental Smart Clinic Files
-                    </span>
+                  {/* Daily Automated Summary Backup Config */}
+                  <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">
+                          Tự động sao lưu tóm tắt cuối ngày
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          Tự động tổng hợp lịch hẹn &amp; tải lên Drive mỗi ngày sau giờ hẹn
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={autoDailyDriveBackupEnabled}
+                        onClick={() =>
+                          setDailyDriveBackupConfig({
+                            autoDailyDriveBackupEnabled: !autoDailyDriveBackupEnabled,
+                          })
+                        }
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                          autoDailyDriveBackupEnabled ? 'bg-blue-600' : 'bg-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                            autoDailyDriveBackupEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="sm:col-span-2">
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                          Tên thư mục Drive chỉ định
+                        </label>
+                        <Input
+                          value={backupFolderNameInput}
+                          onChange={(e) => setBackupFolderNameInput(e.target.value)}
+                          placeholder="Dental Smart - Sao lưu Lịch hẹn Hằng ngày"
+                          className="text-xs h-8"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                          Giờ sao lưu
+                        </label>
+                        <input
+                          type="time"
+                          value={dailyBackupHour}
+                          onChange={(e) => setDailyDriveBackupConfig({ dailyBackupHour: e.target.value })}
+                          className="w-full h-8 rounded-md border border-slate-200 px-2 text-xs font-semibold text-slate-800 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        value={backupFolderIdInput}
+                        onChange={(e) => setBackupFolderIdInput(e.target.value)}
+                        placeholder="Hoặc dán Folder ID có sẵn (tùy chọn)..."
+                        className="text-xs h-8 flex-1 font-mono"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSaveDriveBackupConfig}
+                        className="text-xs h-8 shrink-0"
+                      >
+                        Lưu thư mục
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <div className="text-[11px] text-slate-500">
+                        {lastDailyBackupDate ? (
+                          <span>
+                            Sao lưu gần nhất: <strong className="text-slate-700">{lastDailyBackupDate}</strong>
+                            {lastDailyBackupFileUrl && (
+                              <>
+                                {' · '}
+                                <a
+                                  href={lastDailyBackupFileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline font-semibold"
+                                >
+                                  Xem file Drive
+                                </a>
+                              </>
+                            )}
+                          </span>
+                        ) : (
+                          <span>Chưa có bản sao lưu cuối ngày nào.</span>
+                        )}
+                      </div>
+
+                      <Button
+                        type="button"
+                        onClick={handlePrepareDailyDriveBackup}
+                        disabled={runningDailyBackup || !googleToken}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 px-3 rounded-lg gap-1.5"
+                      >
+                        <Upload className={`w-3.5 h-3.5 ${runningDailyBackup ? 'animate-spin' : ''}`} />
+                        <span>{runningDailyBackup ? 'Đang sao lưu...' : 'Sao lưu báo cáo hôm nay'}</span>
+                      </Button>
+                    </div>
+
+                    {recentDailyBackups && recentDailyBackups.length > 0 && (
+                      <div className="pt-1 text-[11px] text-slate-500 space-y-1">
+                        <span className="font-semibold text-slate-600 block">Lịch sử sao lưu gần đây:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {recentDailyBackups.slice(0, 3).map((b, idx) => (
+                            <a
+                              key={`${b.fileUrl}_${idx}`}
+                              href={b.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200 text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                            >
+                              <span>{b.date}</span>
+                              <span>({b.totalAppointments} lịch)</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2440,6 +2862,58 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {confirmDailyBackupModal.isOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[130] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setConfirmDailyBackupModal({ isOpen: false, existingCount: 0, targetDate: '' })}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 sm:p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <Upload className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Xác nhận sao lưu lịch hẹn lên Google Drive
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Hệ thống sẽ xuất báo cáo tóm tắt lịch hẹn ngày{' '}
+                  <strong>{confirmDailyBackupModal.targetDate}</strong> (định dạng CSV &amp; JSON) vào thư mục{' '}
+                  <strong>{driveBackupFolderName}</strong> trên Google Drive của bạn.
+                  {confirmDailyBackupModal.existingCount > 0 && (
+                    <span className="block mt-1.5 text-amber-800 font-semibold">
+                      Lưu ý: Thư mục đã có {confirmDailyBackupModal.existingCount} file sao lưu cho ngày này — bản mới sẽ được lưu bổ sung kèm mốc giờ để không ghi đè dữ liệu cũ.
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmDailyBackupModal({ isOpen: false, existingCount: 0, targetDate: '' })}
+              >
+                Hủy
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDailyDriveBackup}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Xác nhận tải lên Drive
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isDiagnosticOpen && (
         <SyncDiagnosticModal 

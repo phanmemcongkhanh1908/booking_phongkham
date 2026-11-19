@@ -1059,6 +1059,18 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
       };
     }
 
+    if (!settingsObj.androidAppConfig || typeof settingsObj.androidAppConfig !== 'object') {
+      settingsObj.androidAppConfig = { packageName: '', sha256Fingerprints: [], directApkUrl: '' };
+    } else {
+      settingsObj.androidAppConfig = {
+        packageName: String(settingsObj.androidAppConfig.packageName || '').trim(),
+        sha256Fingerprints: Array.isArray(settingsObj.androidAppConfig.sha256Fingerprints)
+          ? settingsObj.androidAppConfig.sha256Fingerprints
+          : [],
+        directApkUrl: String(settingsObj.androidAppConfig.directApkUrl || '').trim(),
+      };
+    }
+
     // 3. Đảm bảo thông tin phòng khám luôn đồng bộ chuẩn xác với hồ sơ phòng khám của tài khoản
     if (myTenantId && req.user?.userId) {
       const userRows = await db.select().from(users).where(eq(users.id, req.user.userId));
@@ -1122,7 +1134,7 @@ adminRouter.get("/settings", requireAuth, async (req, res, next) => {
 // Cập nhật cài đặt hệ thống & hồ sơ phòng khám
 adminRouter.post("/settings", requireAuth, async (req, res, next) => {
   try {
-    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes, googleLoginConfig } = req.body;
+    const { telegramToken, telegramChatId, telegramBotUsername, clinicProfile, emailConfig, bookingFormConfig, announcementBanner, idleTimeoutMinutes, googleLoginConfig, androidAppConfig } = req.body;
     const myTenantId = req.user?.tenantId;
     
     // Kiểm tra quyền: Chỉ yêu cầu setting.manage đối với các cài đặt hệ thống / hạ tầng nhạy cảm (Telegram, SMTP, Banner toàn site, Đăng nhập Gmail)
@@ -1253,6 +1265,40 @@ adminRouter.post("/settings", requireAuth, async (req, res, next) => {
       await db.insert(settings)
         .values({ id: 'googleLoginConfig', key: 'googleLoginConfig', value: sanitizedGoogleLoginConfig, tenantId: myTenantId })
         .onConflictDoUpdate({ target: settings.id, set: { value: sanitizedGoogleLoginConfig } });
+    }
+    if (androidAppConfig !== undefined && typeof androidAppConfig === 'object') {
+      const rawPkg = String(androidAppConfig.packageName || '').trim();
+      const rawApkUrl = String(androidAppConfig.directApkUrl || '').trim();
+      if (rawApkUrl && !/^https?:\/\//i.test(rawApkUrl) && !rawApkUrl.startsWith('/')) {
+        throw new BadRequestError("Link tải file APK phải bắt đầu bằng https:// hoặc http://");
+      }
+      const rawFps = Array.isArray(androidAppConfig.sha256Fingerprints)
+        ? androidAppConfig.sha256Fingerprints
+        : typeof androidAppConfig.sha256Fingerprints === 'string'
+          ? androidAppConfig.sha256Fingerprints.split(/[\s,;]+/)
+          : [];
+      const sanitizedFps = Array.from(
+        new Set(
+          rawFps
+            .map((fp: any) => String(fp || '').trim().toUpperCase())
+            .filter((fp: string) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(fp))
+        )
+      );
+      const sanitizedAndroidConfig = {
+        packageName: rawPkg,
+        sha256Fingerprints: sanitizedFps,
+        directApkUrl: rawApkUrl,
+        updatedAt: new Date().toISOString(),
+      };
+      await db.insert(settings)
+        .values({ id: 'androidAppConfig', key: 'androidAppConfig', value: sanitizedAndroidConfig, tenantId: myTenantId })
+        .onConflictDoUpdate({ target: settings.id, set: { value: sanitizedAndroidConfig } });
+
+      try {
+        const { invalidateClinicSlugCache } = await import("../../services/clinicFirestoreService.js");
+        const activeSlug = (req.user as any)?.slug || (myTenantId ? String(myTenantId).replace(/^tenant_/i, "") : "");
+        invalidateClinicSlugCache(activeSlug || undefined);
+      } catch {}
     }
 
     // Chỉ reload Telegram bot nếu có cập nhật cấu hình Telegram
@@ -1610,6 +1656,119 @@ adminRouter.get("/pwa-installs", requireAuth, async (req, res, next) => {
       recentInstalls: []
     };
     res.json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get("/appointments/daily-summary", requireAuth, async (req, res, next) => {
+  try {
+    const rawDate = typeof req.query.date === "string" ? req.query.date.trim() : "";
+    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? rawDate
+      : new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Ho_Chi_Minh",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+
+    const tenantId = req.user?.tenantId || null;
+
+    const [allApts, allPts, allProvs, allSvcs, allSettings] = await Promise.all([
+      db.select().from(appointments),
+      db.select().from(patients),
+      db.select().from(providers),
+      db.select().from(services),
+      db.select().from(settings),
+    ]);
+
+    const ptMap = new Map((allPts as any[]).map((p) => [String(p.id), p]));
+    const provMap = new Map((allProvs as any[]).map((p) => [String(p.id), p]));
+    const svcMap = new Map((allSvcs as any[]).map((s) => [String(s.id), s]));
+
+    let clinicName = "Phòng khám Nha khoa";
+    const profileSetting =
+      (tenantId
+        ? (allSettings as any[]).find(
+            (s) =>
+              s.id === `${tenantId}__clinicProfile` ||
+              (s.id === "clinicProfile" && String(s.tenantId || "") === String(tenantId))
+          )
+        : null) || (allSettings as any[]).find((s) => s.id === "clinicProfile");
+    if (profileSetting?.value && typeof profileSetting.value === "object") {
+      clinicName = profileSetting.value.clinicName || profileSetting.value.name || clinicName;
+    }
+
+    const vnDateFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    const filtered = (allApts as any[])
+      .filter((apt) => {
+        if (!apt?.startAt) return false;
+        if (tenantId && apt.tenantId && String(apt.tenantId) !== String(tenantId)) {
+          return false;
+        }
+        const d = new Date(apt.startAt);
+        if (isNaN(d.getTime())) return false;
+        return vnDateFormatter.format(d) === targetDate;
+      })
+      .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+
+    const stats = {
+      total: filtered.length,
+      requested: 0,
+      confirmed: 0,
+      checkedIn: 0,
+      inService: 0,
+      completed: 0,
+      cancelled: 0,
+      noShow: 0,
+    };
+
+    const items = filtered.map((apt) => {
+      const status = String(apt.status || "REQUESTED").toUpperCase();
+      if (status === "REQUESTED" || status === "PENDING") stats.requested++;
+      else if (status === "CONFIRMED") stats.confirmed++;
+      else if (status === "CHECKED_IN") stats.checkedIn++;
+      else if (status === "IN_SERVICE" || status === "IN_PROGRESS") stats.inService++;
+      else if (status === "COMPLETED") stats.completed++;
+      else if (status === "NO_SHOW") stats.noShow++;
+      else if (status.startsWith("CANCEL")) stats.cancelled++;
+
+      const pt = ptMap.get(String(apt.patientId));
+      const prov = provMap.get(String(apt.providerId));
+      const svc = svcMap.get(String(apt.serviceId));
+
+      return {
+        id: String(apt.id),
+        startAt: apt.startAt,
+        endAt: apt.endAt,
+        status,
+        patientName: String(apt.bookedForName || pt?.fullName || "Khách hàng"),
+        patientPhone: String(pt?.phone || ""),
+        serviceName: String(apt.customServiceName || svc?.name || "Khám nha khoa"),
+        providerName: prov?.name ? String(prov.name) : "Bác sĩ chuyên khoa",
+        notes: apt.notes ? String(apt.notes) : "",
+        rating: typeof apt.rating === "number" ? apt.rating : null,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        date: targetDate,
+        clinicName,
+        tenantId,
+        generatedAt: new Date().toISOString(),
+        stats,
+        appointments: items,
+      },
+    });
   } catch (error) {
     next(error);
   }

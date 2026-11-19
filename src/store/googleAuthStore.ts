@@ -28,6 +28,14 @@ export interface GoogleUserProfile {
   uid: string;
 }
 
+export interface DailyBackupRecord {
+  date: string;
+  fileName: string;
+  fileUrl: string;
+  totalAppointments: number;
+  backedUpAt: string;
+}
+
 interface GoogleAuthState {
   accessToken: string | null;
   user: GoogleUserProfile | null;
@@ -40,6 +48,16 @@ interface GoogleAuthState {
   spreadsheetUrl: string | null;
   driveFolderId: string | null;
   lastSyncAt: string | null;
+
+  // Daily Google Drive summary backup config (non-sensitive metadata only)
+  driveBackupFolderId: string | null;
+  driveBackupFolderName: string;
+  autoDailyDriveBackupEnabled: boolean;
+  dailyBackupHour: string;
+  lastDailyBackupDate: string | null;
+  lastDailyBackupAt: string | null;
+  lastDailyBackupFileUrl: string | null;
+  recentDailyBackups: DailyBackupRecord[];
   
   // UI warning dismissal for the session
   warningDismissed: boolean;
@@ -52,6 +70,13 @@ interface GoogleAuthState {
   setSpreadsheetInfo: (id: string, url: string) => void;
   setDriveFolderId: (id: string) => void;
   setLastSyncAt: (timestamp: string) => void;
+  setDailyDriveBackupConfig: (config: {
+    driveBackupFolderId?: string | null;
+    driveBackupFolderName?: string;
+    autoDailyDriveBackupEnabled?: boolean;
+    dailyBackupHour?: string;
+  }) => void;
+  recordDailyDriveBackupResult: (record: DailyBackupRecord & { folderId?: string }) => void;
   setWarningDismissed: (dismissed: boolean) => void;
   
   // Custom Google Client ID (for custom domains like Render, Vercel, etc.)
@@ -207,6 +232,17 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
     spreadsheetUrl: savedMeta.spreadsheetUrl || null,
     driveFolderId: savedMeta.driveFolderId || null,
     lastSyncAt: savedMeta.lastSyncAt || null,
+    driveBackupFolderId: savedMeta.driveBackupFolderId || null,
+    driveBackupFolderName: savedMeta.driveBackupFolderName || 'Dental Smart - Sao lưu Lịch hẹn Hằng ngày',
+    autoDailyDriveBackupEnabled:
+      savedMeta.autoDailyDriveBackupEnabled !== undefined
+        ? Boolean(savedMeta.autoDailyDriveBackupEnabled)
+        : true,
+    dailyBackupHour: savedMeta.dailyBackupHour || '20:00',
+    lastDailyBackupDate: savedMeta.lastDailyBackupDate || null,
+    lastDailyBackupAt: savedMeta.lastDailyBackupAt || null,
+    lastDailyBackupFileUrl: savedMeta.lastDailyBackupFileUrl || null,
+    recentDailyBackups: Array.isArray(savedMeta.recentDailyBackups) ? savedMeta.recentDailyBackups : [],
     warningDismissed: false,
     customClientId: normalizedCustom,
     serverClientId: null,
@@ -704,6 +740,44 @@ export const useGoogleAuthStore = create<GoogleAuthState>((set, get) => {
         localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
           ...prev,
           lastSyncAt: timestamp,
+        }));
+      } catch (e) {}
+    },
+
+    setDailyDriveBackupConfig: (config) => {
+      const nextPatch: Record<string, any> = {};
+      if (config.driveBackupFolderId !== undefined) nextPatch.driveBackupFolderId = config.driveBackupFolderId;
+      if (config.driveBackupFolderName !== undefined) nextPatch.driveBackupFolderName = config.driveBackupFolderName;
+      if (config.autoDailyDriveBackupEnabled !== undefined) {
+        nextPatch.autoDailyDriveBackupEnabled = config.autoDailyDriveBackupEnabled;
+      }
+      if (config.dailyBackupHour !== undefined) nextPatch.dailyBackupHour = config.dailyBackupHour;
+      set(nextPatch);
+      try {
+        const prev = JSON.parse(localStorage.getItem(STORAGE_KEY_CONFIG) || '{}');
+        localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
+          ...prev,
+          ...nextPatch,
+        }));
+      } catch (e) {}
+    },
+
+    recordDailyDriveBackupResult: (record) => {
+      const prevList = get().recentDailyBackups || [];
+      const nextList = [record, ...prevList.filter((r) => r.fileUrl !== record.fileUrl)].slice(0, 7);
+      const nextPatch: Record<string, any> = {
+        lastDailyBackupDate: record.date,
+        lastDailyBackupAt: record.backedUpAt,
+        lastDailyBackupFileUrl: record.fileUrl,
+        recentDailyBackups: nextList,
+        ...(record.folderId ? { driveBackupFolderId: record.folderId } : {}),
+      };
+      set(nextPatch);
+      try {
+        const prev = JSON.parse(localStorage.getItem(STORAGE_KEY_CONFIG) || '{}');
+        localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({
+          ...prev,
+          ...nextPatch,
         }));
       } catch (e) {}
     },

@@ -1,7 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
-import { Calendar as CalendarIcon, Clock, Stethoscope, ArrowLeft, Loader2, Edit3, XCircle, AlertCircle, Star, Sparkles, CalendarClock, User, Users, WifiOff } from 'lucide-react';
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Stethoscope,
+  ArrowLeft,
+  Loader2,
+  Edit3,
+  XCircle,
+  AlertCircle,
+  Star,
+  Sparkles,
+  CalendarClock,
+  User,
+  Users,
+  WifiOff,
+  CloudUpload,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { APPOINTMENT_STATUSES, STATUS_ALIASES, LABEL_OVERRIDES } from '../../constants/appointmentStatus';
@@ -22,9 +40,14 @@ import {
 } from '../../utils/customerDeviceBookings';
 import {
   getOfflineAppointments,
+  getPendingOfflineBookings,
+  OFFLINE_QUEUE_UPDATED_EVENT,
   patchOfflineAppointment,
+  PendingOfflineBooking,
+  removePendingOfflineBooking,
   saveOfflineAppointments,
 } from '../../utils/offlineBookingDb';
+import { triggerOfflineQueueSync } from '../../utils/offlineQueueSync';
 
 interface AppointmentData {
   id: string;
@@ -130,17 +153,46 @@ export default function MyBooking() {
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   );
   const [isOfflineDataShown, setIsOfflineDataShown] = useState(false);
+  const [pendingBookings, setPendingBookings] = useState<PendingOfflineBooking[]>([]);
+  const [syncingQueue, setSyncingQueue] = useState(false);
+
+  const refreshPendingQueue = async () => {
+    const queue = await getPendingOfflineBookings({
+      clinicSlug: effectiveSlug || undefined,
+    });
+    setPendingBookings(queue);
+  };
 
   useEffect(() => {
+    void refreshPendingQueue();
     const onOnline = () => setIsOfflineMode(false);
     const onOffline = () => setIsOfflineMode(true);
+    const onQueueUpdated = () => {
+      void refreshPendingQueue();
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    window.addEventListener(OFFLINE_QUEUE_UPDATED_EVENT, onQueueUpdated);
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      window.removeEventListener(OFFLINE_QUEUE_UPDATED_EVENT, onQueueUpdated);
     };
-  }, []);
+  }, [effectiveSlug]);
+
+  const handleManualQueueSync = async () => {
+    if (!navigator.onLine) {
+      toast.error('Thiết bị vẫn đang ngoại tuyến. Sẽ tự động đồng bộ ngay khi có mạng.');
+      return;
+    }
+    setSyncingQueue(true);
+    try {
+      await triggerOfflineQueueSync({ silent: false, includeConflicts: true });
+      await refreshPendingQueue();
+    } finally {
+      setSyncingQueue(false);
+    }
+  };
   
   const handleReviewSuccess = (updatedData?: any) => {
     if (!reviewModalApt) return;
@@ -488,9 +540,78 @@ export default function MyBooking() {
           </div>
         )}
 
+        {pendingBookings.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5 space-y-3 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CloudUpload className="w-4 h-4 text-amber-700 shrink-0" />
+                <h3 className="text-sm font-extrabold text-amber-950">
+                  Lịch hẹn đang chờ đồng bộ ({pendingBookings.length})
+                </h3>
+              </div>
+              {!isOfflineMode && (
+                <button
+                  type="button"
+                  onClick={handleManualQueueSync}
+                  disabled={syncingQueue}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingQueue ? 'animate-spin' : ''}`} />
+                  <span>{syncingQueue ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2.5">
+              {pendingBookings.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-xl border border-amber-200/80 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900">{item.serviceName}</span>
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${
+                          item.status === 'conflict'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : item.status === 'syncing'
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}
+                      >
+                        {item.status === 'conflict'
+                          ? 'Cần chọn lại khung giờ'
+                          : item.status === 'syncing'
+                          ? 'Đang gửi...'
+                          : 'Chờ đồng bộ tự động'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      {format(new Date(item.startAt), 'HH:mm - dd/MM/yyyy')} · {item.fullName} ({item.phone})
+                    </p>
+                    {item.lastError && (
+                      <p className="text-[11px] text-rose-700 font-medium">{item.lastError}</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void removePendingOfflineBooking(item.id)}
+                    className="self-start sm:self-center inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors cursor-pointer shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Xóa</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-12 text-text-muted">Đang tải...</div>
-        ) : appointments.length === 0 ? (
+        ) : appointments.length === 0 && pendingBookings.length === 0 ? (
           <div className="text-center py-12 bg-surface rounded-card border border-border-subtle">
             <p className="text-text-muted mb-4">Bạn chưa có lịch hẹn nào hoặc bạn dùng trình duyệt khác.</p>
             <button

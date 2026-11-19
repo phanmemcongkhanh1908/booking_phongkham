@@ -187,6 +187,54 @@ const app = express();
 
   app.use(globalErrorHandler);
 
+  // Android Digital Asset Links (Trusted Web Activity / APK URL verification)
+  app.get("/.well-known/assetlinks.json", async (_req, res) => {
+    try {
+      const { db } = await import("./server/db/index.js");
+      const { settings } = await import("./server/db/schema.js");
+      const allSettings = await db.select().from(settings);
+      const statements: any[] = [];
+      const seenPackages = new Set<string>();
+
+      for (const s of allSettings as any[]) {
+        if ((s.id === "androidAppConfig" || s.key === "androidAppConfig") && s.value && typeof s.value === "object") {
+          const val = s.value as any;
+          const pkg = typeof val.packageName === "string" ? val.packageName.trim() : "";
+          const rawFps = Array.isArray(val.sha256Fingerprints)
+            ? val.sha256Fingerprints
+            : typeof val.sha256Fingerprints === "string"
+              ? val.sha256Fingerprints.split(/[\s,;]+/)
+              : [];
+          const fingerprints = Array.from(
+            new Set(
+              rawFps
+                .map((fp: any) => String(fp || "").trim().toUpperCase())
+                .filter((fp: string) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(fp))
+            )
+          );
+          if (/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(pkg) && fingerprints.length > 0 && !seenPackages.has(pkg)) {
+            seenPackages.add(pkg);
+            statements.push({
+              relation: ["delegate_permission/common.handle_all_urls"],
+              target: {
+                namespace: "android_app",
+                package_name: pkg,
+                sha256_cert_fingerprints: fingerprints,
+              },
+            });
+          }
+        }
+      }
+
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json(statements);
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.json([]);
+    }
+  });
+
   // Direct internal short links: /b/:slug and /s/:slug -> /booking/:slug?mode=customer
   app.get(["/b/:slug", "/s/:slug"], (req, res) => {
     const slug = encodeURIComponent(req.params.slug);

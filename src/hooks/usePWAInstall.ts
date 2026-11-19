@@ -317,6 +317,107 @@ export function usePWAInstall() {
     return `powershell -NoP -W Hidden -C "$d=[Environment]::GetFolderPath('Desktop');$w=New-Object -Com WScript.Shell;$s=$w.CreateShortcut(\"$d\\${psEsc(displayTitle)}.lnk\");$s.TargetPath='${psEsc(targetUrl)}';$s.Save()"`;
   };
 
+  /**
+   * Builds clean share/QR URL that signals Android Chrome to prioritize app installation.
+   */
+  const getAndroidInstallQrUrl = (): string => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('highlightAppointmentId');
+      url.searchParams.delete('status');
+      url.searchParams.set('install', 'android');
+      return url.toString();
+    } catch {
+      return window.location.href;
+    }
+  };
+
+  /**
+   * Escapes Zalo / Facebook / Messenger In-App Browsers directly into Google Chrome on Android
+   * using Android's native intent:// URI scheme.
+   */
+  const openInAndroidChrome = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const targetUrl = new URL(getAndroidInstallQrUrl());
+      const scheme = targetUrl.protocol.replace(':', '') || 'https';
+      const hostAndPath = `${targetUrl.host}${targetUrl.pathname}${targetUrl.search}`;
+      const intentUri = `intent://${hostAndPath}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(targetUrl.toString())};end`;
+      window.location.href = intentUri;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Downloads Google Bubblewrap TWA APK packager script (.bat) for Windows
+   * to compile & cryptographically sign a real app-release-signed.apk.
+   */
+  const downloadAndroidApkBuilderScript = (
+    clinicName = 'Dental_Smart',
+    clinicSlug = '',
+    customPackageId = ''
+  ): boolean => {
+    try {
+      const targetUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const params = new URLSearchParams({
+        url: targetUrl,
+        name: clinicName,
+      });
+      if (clinicSlug) params.set('slug', clinicSlug);
+      if (customPackageId) params.set('pkg', customPackageId);
+      const endpoint = `/api/public/android-apk-builder?${params.toString()}`;
+      const a = document.createElement('a');
+      a.href = endpoint;
+      a.download = `Dong_Goi_APK_${toAsciiSafeName(clinicName)}.bat`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return true;
+    } catch (e) {
+      console.error('Error downloading Android APK builder script:', e);
+      return false;
+    }
+  };
+
+  /**
+   * Downloads Bubblewrap twa-manifest.json pre-configured for the clinic.
+   */
+  const downloadAndroidTwaManifest = (
+    clinicName = 'Dental_Smart',
+    clinicSlug = '',
+    customPackageId = ''
+  ): boolean => {
+    try {
+      const targetUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const params = new URLSearchParams({
+        url: targetUrl,
+        name: clinicName,
+      });
+      if (clinicSlug) params.set('slug', clinicSlug);
+      if (customPackageId) params.set('pkg', customPackageId);
+      const endpoint = `/api/public/android-twa-manifest?${params.toString()}`;
+      const a = document.createElement('a');
+      a.href = endpoint;
+      a.download = 'twa-manifest.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return true;
+    } catch (e) {
+      console.error('Error downloading twa-manifest.json:', e);
+      return false;
+    }
+  };
+
+  const isInstallRequestedFromUrl =
+    typeof window !== 'undefined' &&
+    ['android', 'app', '1', 'true'].includes(
+      (new URLSearchParams(window.location.search).get('install') || '').toLowerCase()
+    );
+
   // Backwards-compatible wrapper
   const createDesktopShortcut = async (clinicName = 'Dat_Lich_Kham') => {
     const res = await saveHtmlDesktopLauncher(clinicName);
@@ -331,11 +432,16 @@ export function usePWAInstall() {
     isPC: platform.isPC,
     isInAppBrowser: platform.isInAppBrowser,
     isIOSSafari: platform.isIOSSafari,
+    isInstallRequestedFromUrl,
     supportsFilePicker: typeof window !== 'undefined' && typeof (window as any).showSaveFilePicker === 'function',
     install,
     saveHtmlDesktopLauncher,
     downloadBatAutoShortcutScript,
     getQuickPowerShellCommand,
+    getAndroidInstallQrUrl,
+    openInAndroidChrome,
+    downloadAndroidApkBuilderScript,
+    downloadAndroidTwaManifest,
     createDesktopShortcut,
   };
 }

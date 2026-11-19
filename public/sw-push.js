@@ -37,6 +37,7 @@ self.addEventListener('push', (event) => {
     data.type === 'patient_rescheduled' ||
     data.type === 'patient_cancelled' ||
     data.type === 'appointment_1h_reminder' ||
+    data.type === 'appointment_24h_reminder' ||
     data.type === 'patient_test';
 
   const notificationOptions = {

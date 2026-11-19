@@ -115,7 +115,11 @@ export default function CustomerStatusWatcher() {
       const effectiveStatus = String(payload.eventStatus || payload.status || '').toUpperCase();
       if (!effectiveStatus) return;
 
-      const dedupeKeyStatus = payload.isOneHourReminder ? 'REMINDER_1H' : effectiveStatus;
+      const dedupeKeyStatus = payload.isOneHourReminder
+        ? 'REMINDER_1H'
+        : payload.isTwentyFourHourReminder
+        ? 'REMINDER_24H'
+        : effectiveStatus;
       if (!options?.force && hasSeenStatusNotification(payload.id, dedupeKeyStatus, payload.startAt)) {
         return;
       }
@@ -213,11 +217,18 @@ export default function CustomerStatusWatcher() {
           !hasSeenStatusNotification(apt.id, 'RESCHEDULED', apt.startAt);
 
         let shouldAlert1hReminder = false;
+        let shouldAlert24hReminder = false;
         if (serverStatus === 'CONFIRMED' && apt.startAt) {
           try {
             const diffMins = differenceInMinutes(parseISO(String(apt.startAt)), now);
             if (diffMins > 0 && diffMins <= 65 && !hasSeenStatusNotification(apt.id, 'REMINDER_1H', apt.startAt)) {
               shouldAlert1hReminder = true;
+            } else if (
+              diffMins >= 23 * 60 &&
+              diffMins <= 25 * 60 &&
+              !hasSeenStatusNotification(apt.id, 'REMINDER_24H', apt.startAt)
+            ) {
+              shouldAlert24hReminder = true;
             }
           } catch {}
         }
@@ -234,6 +245,9 @@ export default function CustomerStatusWatcher() {
             break;
           } else if (shouldAlert1hReminder) {
             triggerStatusPopup({ ...apt, eventStatus: 'CONFIRMED', isOneHourReminder: true });
+            break;
+          } else if (shouldAlert24hReminder) {
+            triggerStatusPopup({ ...apt, eventStatus: 'CONFIRMED', isTwentyFourHourReminder: true });
             break;
           }
         }
@@ -327,6 +341,7 @@ export default function CustomerStatusWatcher() {
           status: p.status || 'CONFIRMED',
           eventStatus: p.type === 'patient_rescheduled' ? 'RESCHEDULED' : p.status || 'CONFIRMED',
           isOneHourReminder: p.type === 'appointment_1h_reminder',
+          isTwentyFourHourReminder: p.type === 'appointment_24h_reminder',
           clinicName: p.clinicName,
           clinicSlug: p.clinicSlug,
           clinicAddress: p.clinicAddress,
@@ -350,6 +365,7 @@ export default function CustomerStatusWatcher() {
               status: p.status || 'CONFIRMED',
               eventStatus: p.type === 'patient_rescheduled' ? 'RESCHEDULED' : p.status || 'CONFIRMED',
               isOneHourReminder: p.type === 'appointment_1h_reminder',
+              isTwentyFourHourReminder: p.type === 'appointment_24h_reminder',
               clinicName: p.clinicName,
               clinicSlug: p.clinicSlug,
               clinicAddress: p.clinicAddress,

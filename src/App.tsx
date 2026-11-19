@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useAuthStore } from './store/auth';
 import NotificationManager from './components/NotificationManager';
 import { NetworkStatusNotification } from './components/NetworkStatusNotification';
+import { AddToHomeScreenPrompt } from './components/AddToHomeScreenPrompt';
+import { initOfflineQueueAutoSync } from './utils/offlineQueueSync';
 
 // Dynamic import with retry to protect against network hiccups or stale chunk cache
 function lazyWithRetry<T extends React.ComponentType<any>>(
@@ -131,12 +133,17 @@ function ScrollToTop() {
 }
 
 export default function App() {
+  useEffect(() => {
+    return initOfflineQueueAutoSync();
+  }, []);
+
   return (
     <ErrorBoundary>
       <BrowserRouter>
         <NetworkStatusNotification />
         <ScrollToTop />
         <NotificationManager />
+        <AddToHomeScreenPrompt />
         <React.Suspense
           fallback={
             <div className="flex h-screen items-center justify-center text-slate-500 gap-2">

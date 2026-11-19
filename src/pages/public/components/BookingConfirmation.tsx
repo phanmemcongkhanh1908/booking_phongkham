@@ -22,7 +22,11 @@ import { vi } from 'date-fns/locale';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getClinicBasePath, getActiveRouteClinicSlug } from '../../../services/clinicResolver';
 import { recordCustomerDeviceBooking } from '../../../utils/customerDeviceBookings';
-import { saveSingleOfflineAppointment } from '../../../utils/offlineBookingDb';
+import {
+  enqueueOfflineBooking,
+  saveSingleOfflineAppointment,
+} from '../../../utils/offlineBookingDb';
+import { toast } from 'react-hot-toast';
 
 export default function BookingConfirmation() {
   const { 
@@ -49,6 +53,7 @@ export default function BookingConfirmation() {
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedOfflineRecordId, setQueuedOfflineRecordId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isNavigatingSuccess, setIsNavigatingSuccess] = useState(false);
 
@@ -93,35 +98,94 @@ export default function BookingConfirmation() {
 
   const submittingRef = useRef(false);
 
+  const queueBookingOffline = async (
+    cleanPhone: string,
+    targetServiceIds: string[] | undefined,
+    customName: string | undefined,
+    patientNote: string
+  ) => {
+    if (!patientDraft || !slotStartTime) return false;
+    const bookingState = useBookingStore.getState();
+    const resolvedEnd =
+      bookingState.slotEndTime ||
+      new Date(new Date(slotStartTime).getTime() + (serviceDuration || 30) * 60_000).toISOString();
+
+    const queued = await enqueueOfflineBooking({
+      tenantId: bookingState.tenantId || null,
+      clinicSlug: getActiveRouteClinicSlug() || bookingState.clinicProfile?.slug || null,
+      clinicName: bookingState.clinicProfile?.clinicName || bookingState.clinicProfile?.name || null,
+      providerId: bookingState.providerId || null,
+      providerName: bookingState.providerName || null,
+      serviceId: serviceId || (targetServiceIds && targetServiceIds[0]) || null,
+      serviceIds: targetServiceIds,
+      serviceName: serviceName || 'Khám nha khoa',
+      customServiceName: customName,
+      startAt: slotStartTime,
+      endAt: resolvedEnd,
+      sessionToken: sessionToken || null,
+      fullName: patientDraft.fullName.trim(),
+      phone: cleanPhone,
+      email: patientDraft.email ? patientDraft.email.trim() : undefined,
+      telegramId: patientDraft.telegramId ? patientDraft.telegramId.trim() : undefined,
+      notes: patientNote || undefined,
+      bookingFor: patientDraft.bookingFor,
+      isNewProfile: (patientDraft as any).isNewProfile,
+    });
+
+    if (queued) {
+      try {
+        localStorage.setItem(
+          'verifiedPatient',
+          JSON.stringify({ phone: cleanPhone, fullName: patientDraft.fullName.trim() })
+        );
+      } catch {}
+      setQueuedOfflineRecordId(queued.id);
+      setError(null);
+      toast.success('Đã lưu lịch hẹn vào hàng đợi ngoại tuyến. Hệ thống sẽ tự đồng bộ khi có mạng!');
+      return true;
+    }
+    return false;
+  };
+
   const handleConfirmAppointment = async () => {
     if (submittingRef.current || submitting) return;
-    
+    if (!patientDraft) return;
+
+    const rawPhone = (patientDraft.phone || '').trim();
+    const cleanPhone = rawPhone.replace(/[\s.-]/g, '');
+    const patientNote = (patientDraft.notes || '').trim();
+    const targetServiceIds = (selectedServices && selectedServices.length > 0)
+      ? selectedServices.map(s => s.id)
+      : (serviceId ? [serviceId] : undefined);
+    const customName = selectedServices && selectedServices.length > 1
+      ? (serviceName || selectedServices.map(s => s.name).join(' + '))
+      : undefined;
+
     if (!navigator.onLine) {
-      setError('Thiết bị đang ngoại tuyến. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        const ok = await queueBookingOffline(cleanPhone, targetServiceIds, customName, patientNote);
+        if (!ok) {
+          setError('Không thể lưu hàng đợi ngoại tuyến trên trình duyệt này.');
+        }
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
       return;
     }
+
     if (isExpired) {
       setError('Thời gian giữ chỗ đã hết. Vui lòng quay lại chọn lại giờ khám để tiếp tục.');
       return;
     }
-    if (!patientDraft) return;
 
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
 
-    const patientNote = (patientDraft.notes || '').trim();
-
     try {
-      const targetServiceIds = (selectedServices && selectedServices.length > 0)
-        ? selectedServices.map(s => s.id)
-        : (serviceId ? [serviceId] : undefined);
-      const customName = selectedServices && selectedServices.length > 1
-        ? (serviceName || selectedServices.map(s => s.name).join(' + '))
-        : undefined;
-
-      const rawPhone = (patientDraft.phone || '').trim();
-      const cleanPhone = rawPhone.replace(/[\s.-]/g, '');
 
       const res = await api.post('/public/appointments', {
         sessionToken,
@@ -208,6 +272,10 @@ export default function BookingConfirmation() {
       }
     } catch (err: any) {
       console.error("Booking error:", err);
+      if (!err.response) {
+        const ok = await queueBookingOffline(cleanPhone, targetServiceIds, customName, patientNote);
+        if (ok) return;
+      }
       if (err.response?.data?.error?.details) {
         const details = err.response.data.error.details;
         if (Array.isArray(details)) {
@@ -231,6 +299,46 @@ export default function BookingConfirmation() {
   };
 
   const parsedDate = slotStartTime ? new Date(slotStartTime) : null;
+
+  if (queuedOfflineRecordId) {
+    return (
+      <div className="rounded-3xl border border-amber-200 bg-white p-6 sm:p-8 shadow-lg space-y-5 text-center max-w-xl mx-auto">
+        <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+          <Clock className="w-7 h-7" />
+        </div>
+        <div className="space-y-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+            Đã lưu vào hàng đợi ngoại tuyến (IndexedDB)
+          </span>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+            Lịch hẹn đang chờ tự động đồng bộ
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Thiết bị hiện chưa có kết nối Internet. Hệ thống đã lưu an toàn yêu cầu đặt lịch{' '}
+            <strong>{serviceName || 'Khám nha khoa'}</strong> vào lúc{' '}
+            <strong>{parsedDate ? format(parsedDate, 'HH:mm - dd/MM/yyyy') : ''}</strong> và sẽ tự động gửi lên phòng khám ngay khi có mạng trở lại.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => navigate(`${basePath}/lich-hen`)}
+            className="px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer"
+          >
+            Xem hàng đợi &amp; Lịch hẹn của tôi
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`${basePath}/dich-vu`)}
+            className="px-5 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm transition-colors cursor-pointer"
+          >
+            Quay lại trang chủ
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 pb-24 sm:pb-0">

@@ -2140,6 +2140,237 @@ Write-Host ("CREATED: " + $lnkPath)
   res.send(batContent);
 });
 
+// Helper: build valid Android package ID and TWA manifest for Bubblewrap CLI
+function buildAndroidTwaManifestData(params: {
+  targetUrl: string;
+  clinicName: string;
+  slug?: string;
+  customPackageId?: string;
+}) {
+  const parsedUrl = new URL(params.targetUrl);
+  const rawName = params.clinicName.trim() || "Nha Khoa Dental Smart";
+  const shortName = buildClinicShortName(rawName);
+  const cleanSlug = (params.slug || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  let packageId = (params.customPackageId || "").trim();
+  if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(packageId)) {
+    const pkgSuffix = cleanSlug
+      ? cleanSlug
+      : parsedUrl.hostname
+          .replace(/[^a-z0-9]/gi, "")
+          .toLowerCase()
+          .slice(0, 18) || "clinic";
+    const safeSuffix = /^[a-z]/.test(pkgSuffix) ? pkgSuffix : `c${pkgSuffix}`;
+    packageId = `com.dentalsmart.${safeSuffix.slice(0, 28)}`;
+  }
+
+  const startUrl = `${parsedUrl.pathname || "/"}${parsedUrl.search || ""}`;
+  const webManifestUrl = params.slug
+    ? `${parsedUrl.origin}/api/public/clinic-manifest.webmanifest?slug=${encodeURIComponent(params.slug)}&name=${encodeURIComponent(rawName)}`
+    : `${parsedUrl.origin}/manifest.webmanifest`;
+
+  return {
+    packageId,
+    host: parsedUrl.host,
+    name: `${rawName} - Đặt Lịch Khám`,
+    launcherName: shortName,
+    display: "standalone",
+    themeColor: "#0d9488",
+    themeColorDark: "#0f766e",
+    navigationColor: "#0d9488",
+    navigationColorDark: "#0f766e",
+    navigationDividerColor: "#0d9488",
+    navigationDividerColorDark: "#0f766e",
+    backgroundColor: "#ffffff",
+    enableNotifications: true,
+    startUrl,
+    iconUrl: `${parsedUrl.origin}/pwa-512x512.png`,
+    maskableIconUrl: `${parsedUrl.origin}/pwa-maskable-512x512.png`,
+    monochromeIconUrl: `${parsedUrl.origin}/pwa-192x192.png`,
+    splashScreenFadeOutDuration: 300,
+    signingKey: {
+      path: "./android.keystore",
+      alias: "android",
+    },
+    appVersionName: "1.0.0",
+    appVersionCode: 1,
+    shortcuts: [],
+    generatorApp: "bubblewrap-cli",
+    webManifestUrl,
+    fallbackType: "customtabs",
+    features: {
+      locationDelegation: {
+        enabled: true,
+      },
+    },
+    alphaDependencies: {
+      enabled: false,
+    },
+    enableSiteSettingsShortcut: true,
+    isChromeOSOnly: false,
+    isMetaQuest: false,
+    fullScopeUrl: `${parsedUrl.origin}/`,
+    minSdkVersion: 21,
+    orientation: "portrait-primary",
+    fingerprints: [],
+    additionalTrustedOrigins: [],
+    retainedBundles: [],
+    protocolHandlers: [],
+    fileHandlers: [],
+    launchHandlerClientMode: "",
+    appVersion: "1",
+  };
+}
+
+// Dynamic Google Bubblewrap twa-manifest.json for building a signed Android APK
+publicRouter.get("/android-twa-manifest", (req, res) => {
+  const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+  const rawName = typeof req.query.name === "string" ? req.query.name.trim() : "Nha Khoa Dental Smart";
+  const rawSlug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+  const rawPkg = typeof req.query.pkg === "string" ? req.query.pkg.trim() : "";
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+    }
+  } catch {
+    return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+  }
+
+  const manifest = buildAndroidTwaManifestData({
+    targetUrl: parsedUrl.toString(),
+    clinicName: rawName,
+    slug: rawSlug,
+    customPackageId: rawPkg,
+  });
+
+  if (req.query.preview !== "1") {
+    res.setHeader("Content-Disposition", 'attachment; filename="twa-manifest.json"');
+  }
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.send(JSON.stringify(manifest, null, 2));
+});
+
+// Windows Helper Script (.bat) powered by Google @bubblewrap/cli to compile & sign a real app-release-signed.apk
+publicRouter.get("/android-apk-builder", (req, res) => {
+  const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+  const rawName = typeof req.query.name === "string" ? req.query.name.trim() : "Nha Khoa Dental Smart";
+  const rawSlug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+  const rawPkg = typeof req.query.pkg === "string" ? req.query.pkg.trim() : "";
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+    }
+  } catch {
+    return res.status(400).json({ success: false, error: { message: "URL không hợp lệ" } });
+  }
+
+  const displayTitle =
+    rawName.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) ||
+    "Dental_Smart";
+  const asciiFilenameBase =
+    displayTitle
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "Dental_Smart";
+
+  const twaManifestUrl = `${parsedUrl.origin}/api/public/android-twa-manifest?url=${encodeURIComponent(
+    parsedUrl.toString()
+  )}&name=${encodeURIComponent(displayTitle)}&slug=${encodeURIComponent(rawSlug)}&pkg=${encodeURIComponent(rawPkg)}&preview=1`;
+
+  const webManifestUrl = rawSlug
+    ? `${parsedUrl.origin}/api/public/clinic-manifest.webmanifest?slug=${encodeURIComponent(
+        rawSlug
+      )}&name=${encodeURIComponent(displayTitle)}`
+    : `${parsedUrl.origin}/manifest.webmanifest`;
+
+  const twaPreview = buildAndroidTwaManifestData({
+    targetUrl: parsedUrl.toString(),
+    clinicName: displayTitle,
+    slug: rawSlug,
+    customPackageId: rawPkg,
+  });
+
+  const psDownloadScript = `$ErrorActionPreference = 'Stop'; Invoke-WebRequest -Uri '${twaManifestUrl.replace(/'/g, "''")}' -OutFile 'twa-manifest.json' -UseBasicParsing`;
+  const psDownloadEncoded = Buffer.from(psDownloadScript, "utf16le").toString("base64");
+  const batSafeWebManifestUrl = webManifestUrl.replace(/%/g, "%%");
+
+  const batContent = [
+    "@echo off",
+    "chcp 65001 >nul",
+    `title Dong goi App Android (.APK) - ${asciiFilenameBase}`,
+    "echo ======================================================================",
+    `echo   CONG CU DONG GOI FILE .APK CHINH CHU GOOGLE TWA - ${asciiFilenameBase}`,
+    `echo   Package ID: ${twaPreview.packageId}`,
+    "echo ======================================================================",
+    "echo.",
+    "where node >nul 2>nul",
+    "if %errorlevel% neq 0 (",
+    "  echo [LOI] May tinh chua cai dat Node.js!",
+    "  echo Vui long cai Node.js LTS tai https://nodejs.org roi chay lai file nay.",
+    "  start https://nodejs.org/",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    "",
+    `set "APK_DIR=%USERPROFILE%\\Desktop\\APK_${asciiFilenameBase}"`,
+    `if not exist "%APK_DIR%" mkdir "%APK_DIR%"`,
+    `cd /d "%APK_DIR%"`,
+    "echo [1/3] Dang tai cau hinh Web App Manifest & TWA...",
+    `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${psDownloadEncoded}`,
+    "if %errorlevel% neq 0 (",
+    "  echo [LOI] Khong the tai twa-manifest.json tu may chu.",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    "",
+    "echo [2/3] Dang khoi tao & cap nhat ma nguon Android (Google Bubblewrap CLI)...",
+    "echo (Neu la lan dau chay, vui long nhan Enter/Y de dong y tai JDK & Android SDK tu Google)",
+    `if not exist "%USERPROFILE%\\.bubblewrap\\config.json" (`,
+    `  call npx --yes @bubblewrap/cli init --manifest="${batSafeWebManifestUrl}"`,
+    `) else if not exist "app\\build.gradle" (`,
+    `  call npx --yes @bubblewrap/cli update`,
+    `)`,
+    "",
+    "echo [3/3] Dang bien dich & ky so file app-release-signed.apk...",
+    "call npx --yes @bubblewrap/cli build",
+    "if %errorlevel% equ 0 (",
+    "  echo.",
+    "  echo ======================================================================",
+    "  echo [THANH CONG] Da dong goi xong file APK tai thu muc:",
+    `  echo %APK_DIR%\\app-release-signed.apk`,
+    "  echo Ban co the gui file .apk nay sang dien thoai Android de cai dat ngay!",
+    "  echo ======================================================================",
+    `  explorer "%APK_DIR%"`,
+    "  pause",
+    ") else (",
+    "  echo.",
+    "  echo [LOI] Qua trinh dong goi APK chua hoan tat. Kiem tra thong bao ben tren.",
+    "  pause",
+    ")",
+    "",
+  ].join("\r\n");
+
+  res.setHeader("Content-Type", "application/bat; charset=utf-8");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="Dong_Goi_APK_${asciiFilenameBase}.bat"`
+  );
+  res.send(batContent);
+});
+
 // Runtime Google OAuth Client ID configuration (public identifier, synced across all browsers/devices)
 publicRouter.get("/google-oauth-config", async (req, res, next) => {
   try {
